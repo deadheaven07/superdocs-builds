@@ -245,6 +245,24 @@ class PacketBuilderService:
         if errors:
             raise ValueError("Cannot build packet: " + "; ".join(errors))
 
+    def _verify_pdf_page_count(self, pdf_path: Path, expected_count: int, context: str) -> int:
+        """Open a PDF and verify its actual page count matches expected.
+        
+        Returns the actual page count. Raises ValueError if mismatch.
+        """
+        try:
+            doc = fitz.open(pdf_path)
+            actual_count = len(doc)
+            doc.close()
+        except Exception as e:
+            raise ValueError(f"Failed to read {context} PDF at {pdf_path}: {e}")
+
+        if actual_count != expected_count:
+            raise ValueError(
+                f"Page count mismatch in {context}: expected {expected_count}, got {actual_count}"
+            )
+        return actual_count
+
     async def build_packet(
         self,
         session,
@@ -283,6 +301,23 @@ class PacketBuilderService:
 
         self._verify_applied_redactions(documents)
 
+        valid, errors, warnings = self._run_validation(packet, documents, bates_list)
+        if not valid:
+            audit_event = AuditEvent(
+                packet_id=packet.id,
+                event_type=AuditEventType.PACKET_VALIDATED,
+                user_id="system",
+                event_metadata={
+                    "valid": False,
+                    "errors": errors,
+                    "warnings": warnings,
+                    "stage": "pre_build_validation",
+                },
+            )
+            session.add(audit_event)
+            await session.commit()
+            raise ValueError("Packet validation failed: " + "; ".join(errors))
+
         final_dir = settings.final_path / packet_id
         if final_dir.exists():
             shutil.rmtree(final_dir)
@@ -292,6 +327,7 @@ class PacketBuilderService:
 
         writer = PdfWriter()
         manifest_entries = []
+        exhibit_page_counts = []
 
         for i, document in enumerate(documents):
             exhibit_letter = chr(65 + i)
@@ -342,6 +378,10 @@ class PacketBuilderService:
             stamped_exhibit_path = exhibits_dir / f"EX-{exhibit_letter}.pdf"
             stamped_writer.write(stamped_exhibit_path)
 
+            exhibit_page_count = document.page_count + 1
+            self._verify_pdf_page_count(stamped_exhibit_path, exhibit_page_count, f"exhibit {exhibit_letter}")
+            exhibit_page_counts.append(exhibit_page_count)
+
             applied_redactions = []
             for candidate in document.redaction_candidates:
                 if candidate.status == RedactionStatus.APPLIED and candidate.approval:
@@ -370,7 +410,7 @@ class PacketBuilderService:
                 exhibit_identifier=f"EX-{exhibit_letter}",
                 bates_start=bates_start,
                 bates_end=bates_end,
-                page_count=document.page_count + 1,
+                page_count=exhibit_page_count,
                 original_sha256=document.original_sha256,
                 processed_sha256=document.processed_sha256,
                 final_sha256=self._calculate_sha256(stamped_exhibit_path),
@@ -386,6 +426,9 @@ class PacketBuilderService:
         final_packet_path = final_dir / "final_packet.pdf"
         writer.write(final_packet_path)
 
+        expected_final_pages = sum(exhibit_page_counts)
+        self._verify_pdf_page_count(final_packet_path, expected_final_pages, "final packet")
+
         exhibit_index_path = final_dir / "exhibit_index.pdf"
         with open(exhibit_index_path, "wb") as f:
             f.write(self._create_exhibit_index(packet, documents, manifest_entries))
@@ -393,8 +436,6 @@ class PacketBuilderService:
         privilege_log_path = final_dir / "privilege_log.pdf"
         with open(privilege_log_path, "wb") as f:
             f.write(self._create_privilege_log(packet, documents))
-
-        valid, errors, warnings = self._run_validation(packet, documents, bates_list)
 
         existing_manifest_result = await session.execute(
             select(Manifest).where(Manifest.packet_id == packet.id)
@@ -410,8 +451,8 @@ class PacketBuilderService:
             total_documents=len(documents),
             bates_start=manifest_entries[0].bates_start if manifest_entries else None,
             bates_end=manifest_entries[-1].bates_end if manifest_entries else None,
-            validation_passed=valid,
-            validation_details={"errors": errors, "warnings": warnings},
+            validation_passed=True,
+            validation_details={"errors": [], "warnings": warnings},
             final_packet_sha256=self._calculate_sha256(final_packet_path),
             final_packet_path=str(final_packet_path.relative_to(settings.final_path)),
         )
@@ -477,7 +518,7 @@ class PacketBuilderService:
                 "final_packet": str(final_packet_path),
                 "total_documents": len(documents),
                 "total_pages": manifest.total_pages,
-                "validation_passed": valid,
+                "validation_passed": True,
             },
         )
         session.add(audit_event)

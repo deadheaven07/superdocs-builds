@@ -25,6 +25,7 @@ import {
   useRequestAIAnalysis, useAnalysisStatus, useApproveAIChanges, useContinueAIJob,
 } from "@/hooks/useReview";
 import { useToast } from "@/components/ui/use-toast";
+import { DocumentPdfViewer } from "@/components/DocumentPdfViewer";
 import type {
   DocumentListResponse, PrivilegeDecision, PrivilegeStatus, PrivilegeCategory, RedactionCandidate,
 } from "@/types/api";
@@ -1008,15 +1009,15 @@ export function PacketWorkspace() {
                       </div>
                     </div>
 
-                    <div className="aspect-video bg-gray-100 rounded-lg border flex items-center justify-center">
-                      <div className="text-center text-gray-500">
-                        <FileText className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-                        <p>PDF Document Viewer</p>
-                        <p className="text-sm mt-1">{selectedDoc.page_count} pages</p>
-                        {selectedDoc.bates_range && (
-                          <p className="text-xs text-primary-600 mt-1 font-mono">{selectedDoc.bates_range}</p>
-                        )}
-                      </div>
+                    <div className="flex-1 min-h-[500px]">
+                      <DocumentPdfViewer
+                        packetId={packetId}
+                        documentId={selectedDoc.id}
+                        fileName={selectedDoc.filename}
+                        pageCount={selectedDoc.page_count}
+                        batesRange={selectedDoc.bates_range}
+                        onDownload={() => handleDownloadDocument(selectedDoc)}
+                      />
                     </div>
 
                     <div className="mt-4 grid grid-cols-3 gap-4 text-sm text-gray-600">
