@@ -21,9 +21,12 @@ interface StatusBadgeProps {
   step: string;
   progress?: string;
   error?: string;
+  canRetry?: boolean;
+  onRetry?: () => void;
+  onDismiss?: () => void;
 }
 
-export function StatusBadge({ step, progress, error }: StatusBadgeProps) {
+export function StatusBadge({ step, progress, error, canRetry, onRetry, onDismiss }: StatusBadgeProps) {
   const stepInfo = STEPS.find(s => s.key === step);
   const currentIndex = STEP_ORDER.indexOf(step);
 
@@ -96,6 +99,24 @@ export function StatusBadge({ step, progress, error }: StatusBadgeProps) {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.36 0L3.36 16c-.77 1.333.192 3 1.732 3z" />
           </svg>
           <span className="text-red-600 flex-1">Error: {error}</span>
+          {canRetry && onRetry && (
+            <button
+              onClick={onRetry}
+              className="px-3 py-1 text-xs font-medium bg-red-600 text-white rounded hover:bg-red-700 transition-colors focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+              aria-label="Retry"
+            >
+              Retry
+            </button>
+          )}
+          {onDismiss && (
+            <button
+              onClick={onDismiss}
+              className="px-3 py-1 text-xs font-medium bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+              aria-label="Dismiss"
+            >
+              Dismiss
+            </button>
+          )}
         </div>
       )}
     </div>

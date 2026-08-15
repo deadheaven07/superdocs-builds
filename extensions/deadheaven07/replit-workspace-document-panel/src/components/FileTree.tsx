@@ -9,6 +9,7 @@ interface FileTreeProps {
   onSelectionChange: (selectedPaths: string[]) => void;
   selectedPaths: string[];
   searchQuery: string;
+  onSearchChange: (query: string) => void;
 }
 
 const FILE_ICONS: Record<string, string> = {
@@ -165,7 +166,7 @@ function FileTreeNodeComponent({
   );
 }
 
-export function FileTree({ nodes, onSelectionChange, selectedPaths, searchQuery = '' }: FileTreeProps) {
+export function FileTree({ nodes, onSelectionChange, selectedPaths, searchQuery = '', onSearchChange }: FileTreeProps) {
   const handleToggle = useCallback((path: string) => {
     const newPaths = selectedPaths.includes(path)
       ? selectedPaths.filter((p) => p !== path)
@@ -252,7 +253,7 @@ export function FileTree({ nodes, onSelectionChange, selectedPaths, searchQuery 
             placeholder="Search files..."
             value={searchQuery}
             onChange={(e) => {
-              window.dispatchEvent(new CustomEvent('file-search', { detail: e.target.value }));
+              onSearchChange(e.target.value);
             }}
             className="w-full pl-10 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white"
             aria-label="Search files"

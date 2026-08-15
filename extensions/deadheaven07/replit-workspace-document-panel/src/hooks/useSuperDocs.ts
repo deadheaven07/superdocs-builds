@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import { createSuperDocsClient } from '../services/superdocs';
 import { parseProposedChangeBatch } from '../utils/parser';
 import { DocumentUploadResult, ProposedChange, ExportResult, ProposedChangeBatch } from '../types/superdocs';
@@ -25,13 +25,19 @@ export interface SuperDocsState {
   exportResult?: ExportResult;
   error?: string;
   progress?: string;
+  canRetry?: boolean;
+  lastInstruction?: string;
+  lastDocumentType?: string;
 }
 
 export interface SuperDocsActions {
-  generateDocument: (instruction: string, projectContext: string, documentType: string) => Promise<void>;
+  generateDocument: (instruction: string, documentType: string) => Promise<void>;
   approveChanges: (approved: boolean, changes: ProposedChange[]) => Promise<void>;
   continueJob: (continueJob: boolean) => Promise<void>;
   exportDocument: (format: 'pdf' | 'docx') => Promise<Blob>;
+  cancel: () => void;
+  retry: () => void;
+  dismissError: () => void;
   reset: () => void;
 }
 
@@ -41,35 +47,54 @@ export function useSuperDocs(apiKey: string): [SuperDocsState, SuperDocsActions]
   });
 
   const client = useMemo(() => createSuperDocsClient(apiKey), [apiKey]);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const reset = useCallback(() => {
     setState({ step: 'idle' });
   }, []);
 
   const updateStep = useCallback((step: GenerationStep, progress?: string) => {
-    setState(prev => ({ ...prev, step, progress, error: undefined }));
+    setState(prev => ({ ...prev, step, progress, error: undefined, canRetry: false }));
   }, []);
 
-  const setError = useCallback((error: string) => {
-    setState(prev => ({ ...prev, step: 'failed', error }));
+  const setError = useCallback((error: string, canRetry = false) => {
+    setState(prev => ({ ...prev, step: 'failed', error, canRetry, lastInstruction: prev.lastInstruction, lastDocumentType: prev.lastDocumentType }));
+  }, []);
+
+  const cancel = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    setState(prev => ({ ...prev, step: 'idle', error: undefined, progress: undefined }));
+  }, []);
+
+  const dismissError = useCallback(() => {
+    setState(prev => ({ ...prev, step: 'idle', error: undefined, canRetry: false }));
   }, []);
 
   const generateDocument = useCallback(async (
     instruction: string,
-    projectContext: string,
     documentType: string
   ) => {
     if (!apiKey) {
-      setError('SuperDocs API key is required');
+      setError('SuperDocs API key is required', true);
       return;
     }
+
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    const signal = abortController.signal;
+
+    setState(prev => ({ ...prev, lastInstruction: instruction, lastDocumentType: documentType }));
 
     try {
       updateStep('uploading', 'Uploading document to SuperDocs...');
       
       const filename = `${documentType.toUpperCase()}.md`;
-      const uploadResult = await client.uploadDocument(filename, projectContext);
+      const uploadResult = await client.uploadDocument(filename, instruction, undefined, true, signal);
       
+      if (signal.aborted) return;
+
       setState(prev => ({ ...prev, sessionId: uploadResult.session_id, documentId: uploadResult.document_id, uploadResult }));
       
       updateStep('generating', 'Starting document generation...');
@@ -79,15 +104,20 @@ export function useSuperDocs(apiKey: string): [SuperDocsState, SuperDocsActions]
         session_id: uploadResult.session_id,
         approval_mode: 'ask_every_time',
         model_tier: 'core',
-      });
+      }, signal);
       
+      if (signal.aborted) return;
+
       setState(prev => ({ ...prev, jobId }));
       updateStep('polling', 'Waiting for SuperDocs to process...');
       
       const jobStatus = await client.waitForJob(jobId, (status) => {
+        if (signal.aborted) return;
         updateStep('polling', `Processing... (${status.status})`);
-      });
+      }, signal);
       
+      if (signal.aborted) return;
+
       setState(prev => ({ ...prev, jobId: jobStatus.job_id }));
       
       if (jobStatus.status === 'failed') {
@@ -111,9 +141,19 @@ export function useSuperDocs(apiKey: string): [SuperDocsState, SuperDocsActions]
         updateStep('completed', 'Document generation completed');
       }
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Unknown error');
+      if (error instanceof Error && error.name === 'AbortError') {
+        return;
+      }
+      setError(error instanceof Error ? error.message : 'Unknown error', true);
     }
   }, [apiKey, client, updateStep, setError]);
+
+  const retry = useCallback(() => {
+    const { lastInstruction, lastDocumentType } = state;
+    if (lastInstruction && lastDocumentType) {
+      generateDocument(lastInstruction, lastDocumentType);
+    }
+  }, [state, generateDocument]);
 
   const approveChanges = useCallback(async (approved: boolean, changes: ProposedChange[]) => {
     const { sessionId, jobId } = state;
@@ -122,15 +162,21 @@ export function useSuperDocs(apiKey: string): [SuperDocsState, SuperDocsActions]
       return;
     }
 
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    const signal = abortController.signal;
+
     try {
-      updateStep(approved ? 'approving' : 'generating', approved ? 'Applying approved changes...' : 'Continuing with rejected changes...');
+      const step = approved ? 'approving' : 'polling';
+      const progress = approved ? 'Applying approved changes...' : 'Rejecting changes and continuing...';
+      updateStep(step, progress);
       
       const jobStatus = await client.approveChanges({
         session_id: sessionId,
         job_id: jobId,
         approved,
         changes,
-      });
+      }, signal);
       
       if (jobStatus.status === 'awaiting_approval') {
         const metadata = jobStatus.metadata;
@@ -149,7 +195,7 @@ export function useSuperDocs(apiKey: string): [SuperDocsState, SuperDocsActions]
         throw new Error(jobStatus.error || 'Job failed after approval');
       }
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to approve changes');
+      setError(error instanceof Error ? error.message : 'Failed to approve changes', true);
     }
   }, [state, client, updateStep, setError]);
 
@@ -160,10 +206,14 @@ export function useSuperDocs(apiKey: string): [SuperDocsState, SuperDocsActions]
       return;
     }
 
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    const signal = abortController.signal;
+
     try {
-      updateStep('generating', continueJob ? 'Continuing generation...' : 'Stopping job...');
+      updateStep('polling', continueJob ? 'Continuing generation...' : 'Stopping job...');
       
-      const jobStatus = await client.continueJob({ job_id: jobId, continue: continueJob }, sessionId);
+      const jobStatus = await client.continueJob({ job_id: jobId, continue: continueJob }, sessionId, signal);
       
       if (jobStatus.status === 'awaiting_approval') {
         const metadata = jobStatus.metadata;
@@ -182,7 +232,7 @@ export function useSuperDocs(apiKey: string): [SuperDocsState, SuperDocsActions]
         throw new Error(jobStatus.error || 'Job failed');
       }
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to continue job');
+      setError(error instanceof Error ? error.message : 'Failed to continue job', true);
     }
   }, [state, client, updateStep, setError]);
 
@@ -192,27 +242,36 @@ export function useSuperDocs(apiKey: string): [SuperDocsState, SuperDocsActions]
       throw new Error('No active SuperDocs session');
     }
 
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    const signal = abortController.signal;
+
     try {
       updateStep('exporting', `Exporting ${format.toUpperCase()}...`);
       
       const exportResult = await client.exportDocument({
         session_id: sessionId,
         format,
-      });
+      }, signal);
       
+      if (signal.aborted) throw new Error('Aborted');
+
       setState(prev => ({ ...prev, exportResult }));
       updateStep('saving', 'Downloading exported document...');
       
-      const blob = await client.downloadExport(exportResult.download_url);
+      const blob = await client.downloadExport(exportResult.download_url, signal);
       updateStep('completed', 'Export downloaded successfully');
       
       return blob;
     } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw error;
+      }
       const message = error instanceof Error ? error.message : 'Export failed';
-      setError(message);
+      setError(message, true);
       throw error;
     }
   }, [state, client, updateStep, setError]);
 
-  return [state, { generateDocument, approveChanges, continueJob, exportDocument, reset }];
+  return [state, { generateDocument, approveChanges, continueJob, exportDocument, cancel, retry, dismissError, reset }];
 }

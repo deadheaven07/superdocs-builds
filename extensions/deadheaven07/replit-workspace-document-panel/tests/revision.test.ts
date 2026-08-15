@@ -1,8 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { buildProjectContext } from '../src/services/replit';
 import { buildRevisionInstruction, createGenerationContext } from '../src/services/context';
 import { computeFileHashesAsync, detectChangedFiles } from '../src/utils/hash';
-import { createSuperDocsClient } from '../src/services/superdocs';
+import { createSuperDocsClient, SuperDocsClient } from '../src/services/superdocs';
 
 const mockFiles = new Map([
   ['src/main.ts', 'export function main() { console.log("hello"); }'],
@@ -56,6 +56,37 @@ describe('Revision flow regression tests', () => {
       const fixedContextSection = fixedInstruction.split('Project Context (Updated)')[1];
       expect(fixedContextSection?.trim()).not.toBe('');
       expect(fixedContextSection).toContain('src/main.ts');
+    });
+
+    it('does NOT accumulate previous revision instructions (regression test for instruction accumulation bug)', () => {
+      const context = createGenerationContext('readme', 'Original user instruction', mockFiles);
+
+      // Simulate first revision
+      const firstRevision = buildRevisionInstruction(context, ['src/main.ts'], 'Original user instruction');
+
+      // Simulate buggy behavior where previous revision instruction is used as "previous instruction"
+      const buggyContext = {
+        ...context,
+        instruction: firstRevision, // This is the bug - using full revision instruction
+      };
+      const buggySecondRevision = buildRevisionInstruction(buggyContext, ['package.json'], firstRevision);
+
+      // The buggy version would contain the first revision's change list (src/main.ts)
+      expect(buggySecondRevision).toContain('Original user instruction');
+      expect(buggySecondRevision).toContain('Code Changes Detected');
+      expect(buggySecondRevision).toContain('src/main.ts');
+      expect(buggySecondRevision).toContain('package.json');
+
+      // The FIXED version should only contain the original user instruction, not the full previous revision
+      const fixedSecondRevision = buildRevisionInstruction(context, ['package.json'], 'Original user instruction');
+      expect(fixedSecondRevision).toContain('Original user instruction');
+      expect(fixedSecondRevision).toContain('Code Changes Detected');
+      expect(fixedSecondRevision).toContain('package.json');
+      // Should NOT contain the first revision's change list (src/main.ts in the changes section)
+      // But it WILL contain src/main.ts in the project context (which is correct)
+      const changesSection = fixedSecondRevision.split('Code Changes Detected')[1]?.split('---')[0] || '';
+      expect(changesSection).not.toContain('src/main.ts');
+      expect(changesSection).toContain('package.json');
     });
   });
 
@@ -162,5 +193,198 @@ describe('Revision flow regression tests', () => {
       expect(jobId2).toBe('job-1'); // Same job ID from mock
       expect(mockFetch).toHaveBeenCalledTimes(4); // init + upload + 2 chatAsync
     });
+  });
+});
+
+describe('SuperDocsClient retry logic', () => {
+  const apiKey = 'test-api-key';
+  const baseUrl = 'https://api.superdocs.app';
+
+  // Create client with test retry config
+  function createTestClient() {
+    return createSuperDocsClient(apiKey, baseUrl, { maxRetries: 3, retryDelayMs: 10 });
+  }
+
+  it('retries on network error and succeeds', async () => {
+    const mockFetch = vi.fn()
+      .mockRejectedValueOnce(new Error('Network error'))
+      .mockRejectedValueOnce(new Error('Network error'))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ session_id: 'session-123' }),
+      });
+
+    global.fetch = mockFetch;
+
+    const client = createTestClient();
+    const sessionId = await client.initSession();
+
+    expect(sessionId).toBe('session-123');
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+  });
+
+  it('fails after max retries exhausted', async () => {
+    const mockFetch = vi.fn()
+      .mockRejectedValue(new Error('Network error'));
+
+    global.fetch = mockFetch;
+
+    const client = createTestClient();
+    await expect(client.initSession()).rejects.toThrow('Network error');
+    expect(mockFetch).toHaveBeenCalledTimes(4); // initial + 3 retries
+  });
+
+  it('does not retry on non-retriable errors (e.g., 401)', async () => {
+    const mockFetch = vi.fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        text: async () => 'Unauthorized',
+      });
+
+    global.fetch = mockFetch;
+
+    const client = createTestClient();
+    await expect(client.initSession()).rejects.toThrow('SuperDocs API error (401)');
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries on 503 service unavailable', async () => {
+    const mockFetch = vi.fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        text: async () => 'Service Unavailable',
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 503,
+        text: async () => 'Service Unavailable',
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ session_id: 'session-123' }),
+      });
+
+    global.fetch = mockFetch;
+
+    const client = createTestClient();
+    const sessionId = await client.initSession();
+
+    expect(sessionId).toBe('session-123');
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not retry mutation POST requests (uploadDocument)', async () => {
+    const mockFetch = vi.fn()
+      .mockRejectedValueOnce(new Error('Network error'))
+      .mockRejectedValueOnce(new Error('Network error'))
+      .mockRejectedValueOnce(new Error('Network error'))
+      .mockRejectedValueOnce(new Error('Network error'));
+
+    global.fetch = mockFetch;
+
+    const client = createTestClient();
+
+    // uploadDocument should NOT retry (it's a mutation)
+    // Provide sessionId to avoid initSession call which does retry
+    await expect(client.uploadDocument('test.md', 'content', 'existing-session')).rejects.toThrow('Network error');
+    // Should only be called once (no retries for mutations)
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry chatAsync (mutation)', async () => {
+    const mockFetch = vi.fn()
+      .mockRejectedValueOnce(new Error('Network error'))
+      .mockRejectedValueOnce(new Error('Network error'));
+
+    global.fetch = mockFetch;
+
+    const client = createTestClient();
+
+    await expect(client.chatAsync({ message: 'test', session_id: 's1' })).rejects.toThrow('Network error');
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry approveChanges (mutation)', async () => {
+    const mockFetch = vi.fn()
+      .mockRejectedValueOnce(new Error('Network error'))
+      .mockRejectedValueOnce(new Error('Network error'));
+
+    global.fetch = mockFetch;
+
+    const client = createTestClient();
+
+    await expect(client.approveChanges({
+      session_id: 's1',
+      job_id: 'j1',
+      approved: true,
+      changes: []
+    })).rejects.toThrow('Network error');
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry continueJob (mutation)', async () => {
+    const mockFetch = vi.fn()
+      .mockRejectedValueOnce(new Error('Network error'))
+      .mockRejectedValueOnce(new Error('Network error'));
+
+    global.fetch = mockFetch;
+
+    const client = createTestClient();
+
+    await expect(client.continueJob({ job_id: 'j1', continue: true }, 's1')).rejects.toThrow('Network error');
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry exportDocument (mutation)', async () => {
+    const mockFetch = vi.fn()
+      .mockRejectedValueOnce(new Error('Network error'))
+      .mockRejectedValueOnce(new Error('Network error'));
+
+    global.fetch = mockFetch;
+
+    const client = createTestClient();
+
+    await expect(client.exportDocument({ session_id: 's1', format: 'pdf' })).rejects.toThrow('Network error');
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries pollJob (safe read operation)', async () => {
+    const mockFetch = vi.fn()
+      .mockRejectedValueOnce(new Error('Network error'))
+      .mockRejectedValueOnce(new Error('Network error'))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ job_id: 'j1', status: 'completed' }),
+      });
+
+    global.fetch = mockFetch;
+
+    const client = createTestClient();
+    const status = await client.pollJob('j1');
+
+    expect(status.job_id).toBe('j1');
+    expect(status.status).toBe('completed');
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+  });
+
+  it('retries waitForJob (safe polling operation)', async () => {
+    const mockFetch = vi.fn()
+      .mockRejectedValueOnce(new Error('Network error'))
+      .mockRejectedValueOnce(new Error('Network error'))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ job_id: 'j1', status: 'completed' }),
+      });
+
+    global.fetch = mockFetch;
+
+    const client = createTestClient();
+    const status = await client.waitForJob('j1');
+
+    expect(status.job_id).toBe('j1');
+    expect(status.status).toBe('completed');
+    expect(mockFetch).toHaveBeenCalledTimes(3);
   });
 });

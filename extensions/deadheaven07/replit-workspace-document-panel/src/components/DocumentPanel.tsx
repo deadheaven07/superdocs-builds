@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { useReplit } from '@replit/extensions-react';
 import { FileTree } from './FileTree';
 import { DraftTab } from './DraftTab';
@@ -21,17 +21,10 @@ export function DocumentPanel() {
   const [selectedPaths, setSelectedPaths] = useState<string[]>([]);
   const [apiKey, setApiKey] = useState<string>('');
   const [showApiKeyInput, setShowApiKeyInput] = useState(false);
-  const [lastContext, setLastContext] = useState<{ files: Map<string, string>; documentType: string; instruction: string } | null>(null);
+  const [lastContext, setLastContext] = useState<{ files: Map<string, string>; documentType: string; instruction: string; originalInstruction: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
-
-  // Listen for search events from FileTree
-  useEffect(() => {
-    const handleSearch = (event: CustomEvent<string>) => {
-      setSearchQuery(event.detail);
-    };
-    window.addEventListener('file-search', handleSearch as EventListener);
-    return () => window.removeEventListener('file-search', handleSearch as EventListener);
-  }, []);
+  const [noChangesDetected, setNoChangesDetected] = useState(false);
+  const [fileLoading, setFileLoading] = useState(false);
 
   const [superDocsState, superDocsActions] = useSuperDocs(apiKey);
   const { captureHashes, updateCurrentHashes, getChanges } = useFileHashes();
@@ -40,12 +33,18 @@ export function DocumentPanel() {
 
   const handleGenerate = useCallback(async (documentType: 'readme' | 'spec' | 'user-guide', instruction: string) => {
     const files = new Map<string, string>();
+    const pathsToRead = [...selectedPaths];
     
-    for (const path of selectedPaths) {
-      const content = await readFile(path);
-      if (content !== null) {
-        files.set(path, content);
+    setFileLoading(true);
+    try {
+      for (const path of pathsToRead) {
+        const content = await readFile(path);
+        if (content !== null) {
+          files.set(path, content);
+        }
       }
+    } finally {
+      setFileLoading(false);
     }
 
     if (files.size === 0) return;
@@ -53,10 +52,10 @@ export function DocumentPanel() {
     const context = createGenerationContext(documentType, instruction, files);
     const superDocsInstruction = buildSuperDocsInstruction(context);
 
-    setLastContext({ files, documentType, instruction: superDocsInstruction });
+    setLastContext({ files, documentType, instruction: superDocsInstruction, originalInstruction: instruction });
     await captureHashes(files);
 
-    await superDocsActions.generateDocument(superDocsInstruction, '', documentType);
+    await superDocsActions.generateDocument(superDocsInstruction, documentType);
     
     setActiveTab('review');
   }, [selectedPaths, readFile, superDocsActions, captureHashes]);
@@ -88,11 +87,18 @@ export function DocumentPanel() {
     if (!lastContext) return;
 
     const files = new Map<string, string>();
-    for (const path of lastContext.files.keys()) {
-      const content = await readFile(path);
-      if (content !== null) {
-        files.set(path, content);
+    const pathsToRead = Array.from(lastContext.files.keys());
+
+    setFileLoading(true);
+    try {
+      for (const path of pathsToRead) {
+        const content = await readFile(path);
+        if (content !== null) {
+          files.set(path, content);
+        }
       }
+    } finally {
+      setFileLoading(false);
     }
 
     await updateCurrentHashes(files);
@@ -102,7 +108,7 @@ export function DocumentPanel() {
       const revisionInstruction = buildRevisionInstruction(
         {
           documentType: lastContext.documentType as 'readme' | 'spec' | 'user-guide',
-          instruction: lastContext.instruction,
+          instruction: lastContext.originalInstruction,
           projectContext: buildProjectContext(
             files,
             lastContext.documentType as 'readme' | 'spec' | 'user-guide'
@@ -110,14 +116,15 @@ export function DocumentPanel() {
           selectedPaths: Array.from(files.keys()),
         },
         [...changes.changed, ...changes.added],
-        lastContext.instruction
+        lastContext.originalInstruction
       );
 
-      setLastContext({ files, documentType: lastContext.documentType, instruction: revisionInstruction });
-      await superDocsActions.generateDocument(revisionInstruction, '', lastContext.documentType);
+      setLastContext({ ...lastContext, files, instruction: revisionInstruction });
+      await superDocsActions.generateDocument(revisionInstruction, lastContext.documentType);
       setActiveTab('review');
     } else {
-      alert('No project changes detected since last generation.');
+      setNoChangesDetected(true);
+      setTimeout(() => setNoChangesDetected(false), 3000);
     }
   }, [lastContext, readFile, updateCurrentHashes, getChanges, superDocsActions]);
 
@@ -245,7 +252,28 @@ export function DocumentPanel() {
           step={superDocsState.step} 
           progress={superDocsState.progress} 
           error={superDocsState.error}
+          canRetry={superDocsState.canRetry}
+          onRetry={superDocsActions.retry}
+          onDismiss={superDocsActions.dismissError}
         />
+        {isProcessing && (
+          <div className="mt-2 flex justify-end">
+            <button
+              onClick={superDocsActions.cancel}
+              className="px-3 py-1.5 text-xs font-medium bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+        {fileLoading && !isProcessing && (
+          <div className="mt-2 flex justify-center">
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary-600" />
+              <span>Reading project files...</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Content */}
@@ -257,6 +285,7 @@ export function DocumentPanel() {
               selectedPaths={selectedPaths}
               onSelectionChange={setSelectedPaths}
               searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
             />
             
             <div className="pt-4 border-t border-gray-200">
@@ -303,7 +332,7 @@ export function DocumentPanel() {
 
         {/* Revision Check */}
         {lastContext && superDocsState.step === 'completed' && (
-          <div className="mt-6 pt-4 border-t border-gray-200">
+          <div className="mt-6 pt-4 border-t border-gray-200 space-y-3">
             <button
               onClick={handleCheckChanges}
               disabled={isProcessing}
@@ -314,9 +343,18 @@ export function DocumentPanel() {
               </svg>
               Check for Code Changes & Update Document
             </button>
-            <p className="text-xs text-gray-500 text-center mt-2">
+            <p className="text-xs text-gray-500 text-center">
               Scans selected files for changes and generates an updated revision using the same SuperDocs session.
             </p>
+
+            {noChangesDetected && (
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center gap-2" role="status">
+                <svg className="w-5 h-5 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="text-sm text-blue-800">No project changes detected since last generation.</span>
+              </div>
+            )}
           </div>
         )}
       </div>
