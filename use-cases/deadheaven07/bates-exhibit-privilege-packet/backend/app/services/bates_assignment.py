@@ -4,10 +4,15 @@ from collections.abc import Sequence
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.domain.bates import BatesAssignment
 from app.domain.document import Document, ProcessingStatus
 from app.domain.packet import Packet
 from app.domain.page import Page
+from app.services.bates_journal import BatesJournal, JournalEntry
+from app.time import utc_now
+
+settings = get_settings()
 
 
 def format_bates_number(prefix: str, number: int, padding: int) -> str:
@@ -30,14 +35,25 @@ class BatesAssignmentService:
         session: AsyncSession,
         packet_id: str | uuid.UUID,
     ) -> list[BatesAssignment]:
-        """Assign Bates numbers to all completed documents, resuming from the
-        highest existing bates_number. Idempotent at the page level: pages that
-        already have an assignment are skipped, so a crash mid-run can be safely
-        restarted without double-stamping.
+        """Assign Bates numbers to all completed documents in display order.
+
+        Full reassignment: existing assignments for the packet are replaced,
+        so reorder/removal never leaves stale numbers or gaps. Every
+        assignment is fsync'd into the packet journal before the next page is
+        numbered — a crash mid-run resumes safely (never double-stamps) and
+        the final sequence can be proven gap-free via
+        ``BatesJournal.prove_continuity``.
         """
         packet = await session.get(Packet, packet_id)
         if not packet:
             raise ValueError(f"Packet {packet_id} not found")
+
+        existing = await session.execute(
+            select(BatesAssignment).where(BatesAssignment.packet_id == packet_id)
+        )
+        for assignment in existing.scalars().all():
+            await session.delete(assignment)
+        await session.flush()
 
         documents_result = await session.execute(
             select(Document)
@@ -47,23 +63,9 @@ class BatesAssignmentService:
         )
         documents: Sequence[Document] = documents_result.scalars().all()
 
-        existing = await session.execute(
-            select(BatesAssignment).where(BatesAssignment.packet_id == packet_id)
-        )
-        existing_assignments: Sequence[BatesAssignment] = existing.scalars().all()
-
-        assigned_pages = {(a.document_id, a.page_number) for a in existing_assignments}
-
-        max_bates_result = await session.execute(
-            select(func.max(BatesAssignment.bates_number)).where(
-                BatesAssignment.packet_id == packet_id
-            )
-        )
-        max_bates = max_bates_result.scalar()
-
-        next_number = (max_bates + 1) if max_bates is not None else packet.bates_start_number
-
+        journal = BatesJournal(settings.working_path / f"bates_journal_{packet_id}.jsonl")
         assignments = []
+        next_number = packet.bates_start_number
 
         for document in documents:
             pages_result = await session.execute(
@@ -72,10 +74,6 @@ class BatesAssignmentService:
             pages: Sequence[Page] = pages_result.scalars().all()
 
             for page in pages:
-                page_key = (document.id, page.page_number)
-                if page_key in assigned_pages:
-                    continue
-
                 bates_label = format_bates_number(
                     packet.bates_prefix, next_number, packet.bates_padding
                 )
@@ -89,7 +87,16 @@ class BatesAssignmentService:
                 )
                 session.add(assignment)
                 assignments.append(assignment)
-                assigned_pages.add(page_key)
+                journal.append(
+                    JournalEntry(
+                        page_key=f"{document.id}:p{page.page_number}",
+                        document_id=str(document.id),
+                        page_number=page.page_number,
+                        bates_number=next_number,
+                        bates_label=bates_label,
+                        assigned_at=utc_now().isoformat(),
+                    )
+                )
                 next_number += 1
 
         await session.commit()

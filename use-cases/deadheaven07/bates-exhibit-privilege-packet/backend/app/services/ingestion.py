@@ -102,7 +102,7 @@ class IngestionService:
         except FileValidationError:
             raise
         except Exception as e:
-            raise FileValidationError(f"Corrupt or unreadable file: {e}") from e
+            raise FileValidationError(f"Corrupt or unreadable PDF: {e}") from e
 
     def _count_docx_pages(self, file_path: Path) -> int:
         try:
@@ -167,6 +167,84 @@ class IngestionService:
         except Exception as e:
             logger.warning(f"Failed to convert {file_path} to PDF: {e}")
             return None
+
+    def extract_text(self, file_path: Path, document_type: DocumentType) -> tuple[str, bool]:
+        """Extract text from a file, returning (text, is_searchable).
+
+        Text PDFs are read directly via PyMuPDF. Scanned/OCR content falls
+        back to tesseract when available; otherwise an empty (non-searchable)
+        result is returned — SuperDocs is the primary intelligence layer for
+        OCR, so local extraction is best-effort only.
+        """
+        try:
+            if document_type in (DocumentType.PDF, DocumentType.SCANNED_PDF):
+                import fitz
+
+                doc = fitz.open(file_path)
+                try:
+                    text = "".join(page.get_text() for page in doc)
+                finally:
+                    doc.close()
+                if text.strip():
+                    return text, True
+                return self._ocr_text(file_path)
+
+            if document_type == DocumentType.DOCX:
+                return self._extract_docx_text(file_path)
+
+            if document_type == DocumentType.IMAGE:
+                return self._ocr_text(file_path)
+
+            return "", False
+        except Exception as e:
+            logger.warning(f"Failed to extract text from {file_path}: {e}")
+            return "", False
+
+    def _ocr_text(self, file_path: Path) -> tuple[str, bool]:
+        """Best-effort local OCR via tesseract (demoted fallback; SuperDocs
+        is the primary OCR path)."""
+        try:
+            from PIL import Image
+
+            import pytesseract
+
+            image = Image.open(file_path)
+            text = pytesseract.image_to_string(image).strip()
+            return text, bool(text)
+        except Exception as e:
+            logger.warning(f"Local OCR unavailable for {file_path}: {e}")
+            return "", False
+
+    def _extract_docx_text(self, file_path: Path) -> tuple[str, bool]:
+        try:
+            import zipfile
+
+            from xml.etree import ElementTree
+
+            with zipfile.ZipFile(file_path) as zf:
+                xml = zf.read("word/document.xml")
+            root = ElementTree.fromstring(xml)
+            namespaces = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+            paragraphs = [
+                "".join(node.itertext())
+                for node in root.iter("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p")
+            ]
+            text = "\n".join(p for p in paragraphs if p.strip())
+            return text, bool(text)
+        except Exception as e:
+            logger.warning(f"Failed to extract DOCX text from {file_path}: {e}")
+            return "", False
+
+    def create_searchable_pdf(self, file_path: Path, document_type: DocumentType) -> Path | None:
+        """Produce a searchable PDF for packet building.
+
+        Text PDFs are already searchable. DOCX/image originals are converted
+        via LibreOffice/Pillow; OCR'd text is layered on by SuperDocs in the
+        primary flow, so local conversion is best-effort only.
+        """
+        if document_type in (DocumentType.PDF, DocumentType.SCANNED_PDF):
+            return file_path
+        return self.convert_to_pdf(file_path, document_type)
 
     def extract_text_from_superdocs(self, document) -> tuple[str, bool]:
         """Extract text from SuperDocs HTML output if available."""

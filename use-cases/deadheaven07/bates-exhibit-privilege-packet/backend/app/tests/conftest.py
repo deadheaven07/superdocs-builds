@@ -18,7 +18,7 @@ from app.domain import (  # noqa: F401,E402
     redaction,
 )
 
-TEST_DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/bates_packet"
+TEST_DATABASE_URL = "postgresql+asyncpg://deadheaven07@localhost:5432/bates_packet_test"
 
 
 @pytest.fixture(scope="session")
@@ -41,7 +41,7 @@ async def test_engine():
         await conn.run_sync(Base.metadata.create_all, checkfirst=True)
     yield engine
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(Base.metadata.drop_all, checkfirst=True)
     await engine.dispose()
 
 

@@ -87,17 +87,47 @@ bates-exhibit-privilege-packet/
 │   │   ├── database.py # engine/session, async init
 │   │   └── time.py     # utc_now
 │   ├── alembic/        # migrations
+│   ├── Dockerfile      # production image (Python + tesseract + libreoffice)
 │   ├── live_e2e_phase13.py   # repeatable live end-to-end QA script
 │   ├── pyproject.toml
 │   └── .env            # (gitignored) real SUPERDOCS_API_KEY + DB URL
 ├── frontend/
-│   └── src/            # React components, hooks, services, types
-├── docker-compose.yml  # PostgreSQL
+│   ├── src/            # React components, hooks, services, types
+│   ├── Dockerfile      # multi-stage build (Node build + nginx)
+│   └── nginx.conf      # SPA routing + /api proxy to backend
+├── docker-compose.yml  # postgres + backend + frontend
+├── .env.docker         # Docker environment template
 ├── .env.example        # environment variable template (no secrets)
-��── README.md / ARCHITECTURE.md
+├── README.md / ARCHITECTURE.md
 ```
 
 ## Getting Started
+
+### Quick Start — Docker (Recommended)
+
+One command runs everything — database, backend, and frontend:
+
+```bash
+cd bates-exhibit-privilege-packet
+export SUPERDOCS_API_KEY=sk_78ac4ac421c8146acadd1cf2b1b9b87d
+docker compose up --build
+```
+
+Or with a `.env` file:
+
+```bash
+cp .env.docker .env   # edit SUPERDOCS_API_KEY if needed
+docker compose up --build
+```
+
+| Service    | URL                          | Description                    |
+| ---------- | ---------------------------- | ------------------------------ |
+| Frontend   | http://localhost:5173         | React SPA                      |
+| Backend    | http://localhost:8000/docs    | FastAPI + OpenAPI docs         |
+| PostgreSQL | localhost:5432               | Database (user: postgres/postgres) |
+
+To stop: `docker compose down`
+To wipe data: `docker compose down -v`
 
 ### Prerequisites
 
@@ -107,7 +137,7 @@ bates-exhibit-privilege-packet/
 - **Recommended for full functionality:** LibreOffice (`libreoffice`) and Tesseract (`tesseract`) on `PATH`. Without them, DOCX conversion and OCR are disabled — document processing still works for text-based PDFs (see [Known Environment Requirements](#known-environment-requirements)).
 - A SuperDocs API key (set `SUPERDOCS_API_KEY`).
 
-### Backend
+### Backend (Manual)
 
 ```bash
 cd backend
@@ -122,7 +152,7 @@ uvicorn app.main:app --reload --port 8000
 
 The API is then available at `http://localhost:8000` (OpenAPI at `/docs`).
 
-### Frontend
+### Frontend (Manual)
 
 ```bash
 cd frontend
