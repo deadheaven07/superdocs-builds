@@ -86,7 +86,10 @@ def verify_reconciliation(
             except ValueError as e:
                 discrepancies.append(f"{exhibit_id}: {e}")
         else:
-            discrepancies.append(f"{exhibit_id}: Missing or invalid Bates range ({bates_start} - {bates_end})")
+            discrepancies.append(
+                f"{exhibit_id}: Missing or invalid Bates range "
+                f"({bates_start} - {bates_end})"
+            )
 
     proof_steps.append(f"Sum of Bates range pages = {sum_bates_pages}")
 
@@ -96,7 +99,9 @@ def verify_reconciliation(
     # Step 3: Calculate expected total (Bates pages + cover sheets)
     num_exhibits = len([e for e in manifest_entries if e.get("bates_start") != "N/A"])
     expected_total = sum_bates_pages + num_exhibits
-    proof_steps.append(f"Expected total (Bates pages + {num_exhibits} cover sheets) = {expected_total}")
+    proof_steps.append(
+            f"Expected total (Bates pages + {num_exhibits} cover sheets) = {expected_total}"
+        )
 
     # Step 4: Verify
     is_valid = True
@@ -120,7 +125,9 @@ def verify_reconciliation(
 
     proof = {
         "steps": proof_steps,
-        "invariant": "Total Packet Pages == Sum(Exhibit Bates Pages) + Number of Exhibits (cover sheets)",
+        "invariant": (
+            "Total Packet Pages == Sum(Exhibit Bates Pages) + Number of Exhibits (cover sheets)"
+        ),
         "exhibit_calculations": exhibit_calculations,
         "sum_bates_pages": sum_bates_pages,
         "num_exhibits": num_exhibits,
@@ -147,7 +154,8 @@ def generate_reconciliation_readme(result: ReconciliationResult) -> str:
         f"**Status:** {status}",
         "",
         "### Invariant Verified",
-        "> Total Packet Page Count == Sum of All Exhibit Bates Ranges ((End Bates - Start Bates) + 1) + Cover Sheets",
+        "> Total Packet Page Count == Sum of All Exhibit Bates Ranges "
+        "((End Bates - Start Bates) + 1) + Cover Sheets",
         "",
         "### Proof Steps",
         ""
