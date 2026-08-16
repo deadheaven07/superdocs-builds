@@ -224,6 +224,44 @@ New surgical edit instruction
 
 This ensures revision prompts remain focused and don't grow exponentially with each iteration. Combined with surgical edits, **manual user edits to the document are never overwritten** — only the affected chunks are modified.
 
+## Live Code-to-Document Diff Tracking (S2 Spec)
+
+The **Live** tab provides real-time synchronization between code changes and document revisions:
+
+### Live Status Header
+- **Watching indicator**: Green pulse animation when actively polling selected files
+- **Code Delta Hash**: Combined SHA-256 of all tracked files (truncated display)
+- **Changed file count**: Number of files modified since last baseline capture
+- **Timestamp**: Last poll completion time
+- **Auto-update toggle**: When enabled, automatically triggers surgical edit on detected file changes
+
+### Live Changes Log
+- Real-time list of file events (`created`/`modified`/`deleted`) with timestamps
+- Color-coded by change type (green=created, yellow=modified, red=deleted)
+- Shows hash delta indicator when file content actually changed
+- Clear button to reset the log
+
+### Live Document Diff
+- Displays SuperDocs proposed changes as they arrive (insert/replace/delete/move)
+- Side-by-side before/after HTML snippets with AI explanations
+- Bulk **Accept All** / **Reject All** actions
+- Updates in real-time as file changes trigger new SuperDocs chat jobs
+
+### Manual Sync
+- "Check for Code Changes & Apply Surgical Edits" button for on-demand sync
+- Respects current auto-update setting
+
+### How It Works
+1. **File Watcher** polls selected files every 3 seconds via Replit API
+2. **Code Delta Hash** computed from combined SHA-256 of all tracked files
+3. On hash change → **Conflict Check** re-reads files, compares against baseline
+4. If clean → sends **SurgicalEditInstruction** to SuperDocs via `/v1/chat/async`
+5. SuperDocs returns **ProposedChangeBatch** → displayed in Live Diff
+6. User approves → `/v1/chat/{session_id}/approve` applies patches
+7. On export → `captureHashes()` updates baseline for next cycle
+
+This creates a tight feedback loop: **code change → live diff → surgical patch → updated document**.
+
 ## User Workflow
 
 ```text
@@ -485,3 +523,5 @@ All reliability changes (retry policy, cancellation, revision stability) are cov
 - ✅ **Surgical Edits**: Granular chunk operations (insert/replace/delete/move) preserve manual document edits
 - ✅ **State Persistence**: Survives browser tab refresh via localStorage + workspace `.superdocs-state.json`
 - ✅ **Dynamic `.gitignore`**: Runtime parsing replaces hardcoded exclusions
+- ✅ **Live Diff Tracking**: Real-time file watching with Code Delta Hash, auto-update on changes
+- ✅ **Conflict Resolution**: Optimistic UI interception with Overwrite/Keep Local/Abort options
