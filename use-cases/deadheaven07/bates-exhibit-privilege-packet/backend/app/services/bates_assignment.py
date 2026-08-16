@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.packet import Packet
@@ -28,10 +28,10 @@ class BatesAssignmentService:
         session: AsyncSession,
         packet_id: str | uuid.UUID,
     ) -> list[BatesAssignment]:
-        """Reassign Bates numbers contiguously across all completed documents.
-
-        Existing assignments are replaced so the numbering always matches the
-        current display order without gaps or duplicates.
+        """Assign Bates numbers to all completed documents, resuming from the
+        highest existing bates_number. Idempotent at the page level: pages that
+        already have an assignment are skipped, so a crash mid-run can be safely
+        restarted without double-stamping.
         """
         packet = await session.get(Packet, packet_id)
         if not packet:
@@ -49,13 +49,21 @@ class BatesAssignmentService:
             select(BatesAssignment).where(BatesAssignment.packet_id == packet_id)
         )
         existing_assignments = existing.scalars().all()
-        for assignment in existing_assignments:
-            await session.delete(assignment)
-        if existing_assignments:
-            await session.flush()
+
+        assigned_pages = {
+            (a.document_id, a.page_number) for a in existing_assignments
+        }
+
+        max_bates_result = await session.execute(
+            select(func.max(BatesAssignment.bates_number)).where(
+                BatesAssignment.packet_id == packet_id
+            )
+        )
+        max_bates = max_bates_result.scalar()
+
+        next_number = (max_bates + 1) if max_bates is not None else packet.bates_start_number
 
         assignments = []
-        next_number = packet.bates_start_number
 
         for document in documents:
             pages = await session.execute(
@@ -64,6 +72,10 @@ class BatesAssignmentService:
             pages = pages.scalars().all()
 
             for page in pages:
+                page_key = (document.id, page.page_number)
+                if page_key in assigned_pages:
+                    continue
+
                 bates_label = format_bates_number(packet.bates_prefix, next_number, packet.bates_padding)
                 assignment = BatesAssignment(
                     packet_id=packet_id,
@@ -75,6 +87,7 @@ class BatesAssignmentService:
                 )
                 session.add(assignment)
                 assignments.append(assignment)
+                assigned_pages.add(page_key)
                 next_number += 1
 
         await session.commit()

@@ -2,6 +2,8 @@
 
 A production-grade legal e-discovery tool that ingests court filings and exhibits, applies deterministic Bates numbering, detects and redacts PII, marks privileges, and exports a reconciled exhibit packet with a tamper-evident manifest.
 
+**I built this for the SuperDocs task.**
+
 ## Overview
 
 Law firms and litigation-support teams produce exhibit packets for production and disclosure. A packet is a **Bates-stamped**, **privilege-logged**, **redacted** PDF bundle whose integrity can be independently verified from a manifest of SHA-256 hashes. This system makes the full workflow reproducible and auditable: from raw upload through to a final, PII-free, privilege-filtered PDF packet.
@@ -20,6 +22,10 @@ Law firms and litigation-support teams produce exhibit packets for production an
 - **Export** — final packet, per-exhibit PDFs, privilege log, and manifest for download.
 - **Audit trail** — every significant lifecycle event (upload, processing, Bates, redaction, privilege, validate, build, AI) is recorded with metadata.
 - **Reference-aware storage cleanup** — original/stamped/redacted files are deleted only when no document references them; uploads roll back on failure so no orphan files are left.
+
+## Supported Formats
+
+Accepts **DOCX**, **native PDFs**, **scanned PDFs**, and **image formats** (PNG, JPG, TIFF, WebP). Native PDFs and DOCX (via LibreOffice) are processed directly. Scanned PDFs and images are OCR'd via Tesseract to produce searchable PDFs with invisible text layers.
 
 ## Architecture
 
@@ -180,6 +186,17 @@ docker run -d --name bates-pg-test \
 - **File deletion** is reference-aware — a shared source file is removed only when the last referencing document is deleted.
 - **SuperDocs session reuse** — re-running analysis on a document reuses its existing session instead of re-uploading.
 - **Failed AI analysis** reverts the document to `completed` so it is never stuck in `ai_analysis`.
+
+## Resilience & Assumptions (Crash Recovery)
+
+The **Bates stamping process is fully idempotent at the page level**. The `assign_bates()` function in `backend/app/services/bates_assignment.py` implements graceful re-entry:
+
+1. **No destructive wipe** — the function no longer deletes existing assignments. Instead, it queries the `BatesAssignment` table for all existing rows for the packet.
+2. **`MAX(bates_number)` resume** — it computes `next_number = MAX(bates_number) + 1` (or falls back to `packet.bates_start_number` on first run).
+3. **`assigned_pages` tracking** — it builds a set of `(document_id, page_number)` tuples for pages already assigned.
+4. **Page-level skip** — when iterating documents/pages, any page whose key exists in `assigned_pages` is skipped entirely.
+
+**Result:** If the process is killed on page 45 of 100, pages 1–45 are already persisted with contiguous Bates numbers 1–45. On restart, the query returns `max_bates = 45`, `next_number = 46`, and the `assigned_pages` set contains pages 1–45. The loop skips them and resumes cleanly at page 46. No double-stamping, no gaps, no manual intervention.
 
 ## Known Environment Requirements
 
