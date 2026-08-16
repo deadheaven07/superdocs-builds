@@ -1,6 +1,30 @@
 from abc import ABC, abstractmethod
 from typing import Optional
 from dataclasses import dataclass
+from enum import Enum
+
+
+class PIICategory(str, Enum):
+    SSN = "ssn"
+    EMAIL = "email"
+    PHONE = "phone"
+    ACCOUNT_NUMBER = "account_number"
+    MEDICAL_TERM = "medical_term"
+    NAME = "name"
+    ADDRESS = "address"
+    DATE_OF_BIRTH = "date_of_birth"
+    CREDIT_CARD = "credit_card"
+    DRIVERS_LICENSE = "drivers_license"
+    PASSPORT = "passport"
+    OTHER = "other"
+
+
+class PrivilegeCategory(str, Enum):
+    ATTORNEY_CLIENT = "attorney_client"
+    WORK_PRODUCT = "work_product"
+    JOINT_DEFENSE = "joint_defense"
+    COMMON_INTEREST = "common_interest"
+    OTHER = "other"
 
 
 @dataclass
@@ -65,6 +89,43 @@ class ExportResult:
     download_url: str
     filename: str
     format: str
+
+
+@dataclass
+class PIIEntity:
+    category: PIICategory
+    text: str
+    page_number: int
+    start_offset: int
+    end_offset: int
+    confidence: float
+    context_before: str = ""
+    context_after: str = ""
+
+
+@dataclass
+class PIIDetectionResult:
+    entities: list[PIIEntity]
+    total_count: int
+    session_id: str
+    document_id: str
+
+
+@dataclass
+class PrivilegeAnalysisResult:
+    is_privileged: bool
+    category: Optional[PrivilegeCategory]
+    reason: str
+    confidence: float
+    key_phrases: list[str]
+
+
+@dataclass
+class RedactionCandidate:
+    entity: PIIEntity
+    approved: bool = False
+    approved_by: Optional[str] = None
+    approved_at: Optional[str] = None
 
 
 class SuperDocsPort(ABC):
@@ -137,4 +198,39 @@ class SuperDocsPort(ABC):
 
     @abstractmethod
     def parse_proposed_change_batch(self, content: str) -> ProposedChangeBatch:
+        pass
+
+    @abstractmethod
+    async def detect_pii(
+        self,
+        session_id: str,
+        document_id: str,
+        categories: Optional[list[PIICategory]] = None,
+    ) -> PIIDetectionResult:
+        pass
+
+    @abstractmethod
+    async def analyze_privilege(
+        self,
+        session_id: str,
+        document_id: str,
+    ) -> PrivilegeAnalysisResult:
+        pass
+
+    @abstractmethod
+    async def apply_redactions(
+        self,
+        session_id: str,
+        document_id: str,
+        candidates: list[RedactionCandidate],
+    ) -> JobStatus:
+        pass
+
+    @abstractmethod
+    async def get_redaction_preview(
+        self,
+        session_id: str,
+        document_id: str,
+        candidates: list[RedactionCandidate],
+    ) -> ExportResult:
         pass

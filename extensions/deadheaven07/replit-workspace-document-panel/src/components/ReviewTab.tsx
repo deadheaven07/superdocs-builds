@@ -1,4 +1,4 @@
-import { ProposedChangeBatch, ProposedChange, FileConflict, ConflictCheckResult } from '../types/superdocs';
+import { ProposedChangeBatch, ProposedChange } from '../types/superdocs';
 
 interface ReviewTabProps {
   proposedChanges: ProposedChangeBatch | undefined;
@@ -6,10 +6,6 @@ interface ReviewTabProps {
   onContinue: (continueJob: boolean) => void;
   disabled: boolean;
   step: string;
-  conflictResolution?: { active: boolean; conflicts: FileConflict[] } | undefined;
-  conflictCheckResult?: ConflictCheckResult | undefined;
-  onResolveConflict?: (action: { type: 'overwrite_ai' | 'keep_local' | 'abort'; conflictPath: string }) => void;
-  onSkipConflictCheck?: () => void;
 }
 
 const OPERATION_STYLES: Record<string, { bg: string; text: string; border: string; label: string }> = {
@@ -79,88 +75,6 @@ function ChangeItem({ change }: { change: ProposedChange }) {
   );
 }
 
-function ConflictItem({ conflict, onResolve }: { conflict: FileConflict; onResolve: (action: { type: 'overwrite_ai' | 'keep_local' | 'abort'; conflictPath: string }) => void }) {
-  const isResolved = !!conflict.resolved;
-  const resolution = conflict.resolution;
-
-  return (
-    <div className={`border rounded-lg p-4 ${isResolved ? 'bg-green-50 border-green-200' : 'bg-yellow-50 border-yellow-200'} bg-white`}>
-      <div className="flex items-start justify-between gap-2 mb-3">
-        <div className="flex-1">
-          <div className="flex items-center gap-2 mb-1">
-            <svg className="w-5 h-5 text-yellow-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77 1.333-2.694-1.333-3.36 0L3.36 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-            <span className="font-medium text-yellow-800">File Conflict Detected</span>
-            {isResolved && (
-              <span className={`px-2 py-0.5 text-xs font-medium rounded ${resolution === 'overwrite_ai' ? 'bg-green-100 text-green-700' : resolution === 'keep_local' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}`}>
-                Resolved: {resolution === 'overwrite_ai' ? 'Overwrite with AI' : resolution === 'keep_local' ? 'Keep Local' : 'Aborted'}
-              </span>
-            )}
-          </div>
-          <p className="text-sm text-gray-600 font-mono ml-7">{conflict.path}</p>
-        </div>
-        {conflict.currentHash === 'deleted' && <span className="px-2 py-1 text-xs font-medium bg-red-100 text-red-700 rounded">Deleted locally</span>}
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs mb-3">
-        <div className="bg-gray-50 border border-gray-200 rounded p-3">
-          <div className="flex items-center gap-2 mb-1">
-            <svg className="w-4 h-4 text-gray-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4-4m0 0l4 4m-4-4h18" />
-            </svg>
-            <span className="font-medium text-gray-700">Baseline (at session start)</span>
-          </div>
-          <pre className="whitespace-pre-wrap text-gray-800 max-h-40 overflow-auto font-mono text-xs">
-            {conflict.baselineContent.slice(0, 500)}{conflict.baselineContent.length > 500 ? '...' : ''}
-          </pre>
-        </div>
-        <div className="bg-gray-50 border border-gray-200 rounded p-3">
-          <div className="flex items-center gap-2 mb-1">
-            <svg className="w-4 h-4 text-gray-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            <span className="font-medium text-gray-700">Current (local)</span>
-          </div>
-          <pre className="whitespace-pre-wrap text-gray-800 max-h-40 overflow-auto font-mono text-xs">
-            {conflict.currentContent.slice(0, 500) || '(file deleted)'}{conflict.currentContent.length > 500 ? '...' : ''}
-          </pre>
-        </div>
-      </div>
-
-      <details className="mb-3">
-        <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700">Show diff</summary>
-        <pre className="mt-2 p-2 bg-gray-100 rounded text-xs overflow-auto font-mono">
-          {conflict.diff}
-        </pre>
-      </details>
-
-      {!isResolved && (
-        <div className="flex flex-col sm:flex-row gap-2">
-          <button
-            onClick={() => onResolve({ type: 'overwrite_ai', conflictPath: conflict.path })}
-            className="flex-1 px-3 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
-          >
-            Overwrite with AI Patch
-          </button>
-          <button
-            onClick={() => onResolve({ type: 'keep_local', conflictPath: conflict.path })}
-            className="flex-1 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-          >
-            Keep Local Changes
-          </button>
-          <button
-            onClick={() => onResolve({ type: 'abort', conflictPath: conflict.path })}
-            className="px-3 py-2 bg-gray-600 text-white rounded-lg text-sm font-medium hover:bg-gray-700 transition-colors focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
-          >
-            Abort
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 interface ReviewTabProps {
   proposedChanges: ProposedChangeBatch | undefined;
   onApprove: (approved: boolean, changes: ProposedChange[]) => void;
@@ -175,44 +89,7 @@ export function ReviewTab({
   onContinue, 
   disabled, 
   step,
-  conflictResolution,
-  onResolveConflict,
-  onSkipConflictCheck,
 }: ReviewTabProps) {
-  // Show conflict resolution UI
-  if (conflictResolution?.active && conflictResolution.conflicts.length > 0) {
-    return (
-      <div className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <p className="font-medium text-gray-900">
-              {conflictResolution.conflicts.length} file conflict{conflictResolution.conflicts.length !== 1 ? 's' : ''} detected
-            </p>
-            <p className="text-sm text-yellow-600 mt-0.5">
-              Local files were modified while preparing surgical edits. Choose how to resolve each conflict.
-            </p>
-          </div>
-        </div>
-
-        <div className="space-y-3 max-h-[600px] overflow-auto" role="list" aria-label="File conflicts">
-          {conflictResolution.conflicts.map((conflict) => (
-            <ConflictItem key={conflict.path} conflict={conflict} onResolve={onResolveConflict!} />
-          ))}
-        </div>
-
-        <div className="flex flex-col sm:flex-row gap-3 pt-3 border-t border-gray-200">
-          <button
-            onClick={onSkipConflictCheck}
-            disabled={disabled}
-            className="flex-1 px-4 py-2.5 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
-            aria-label="Skip conflict check and proceed"
-          >
-            Skip Check & Proceed Anyway
-          </button>
-        </div>
-      </div>
-    );
-  }
   if (!proposedChanges || proposedChanges.changes.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-gray-500">
@@ -231,7 +108,6 @@ export function ReviewTab({
       </div>
     );
   }
-
 
   const isProcessing = ['polling', 'generating', 'approving'].includes(step);
 
