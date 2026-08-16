@@ -51,13 +51,21 @@ AUDIT_EVENT_TYPE_ADDITIONS = [
 
 
 async def init_db() -> None:
+    import app.domain  # noqa: F401  — ensure all ORM models register with Base
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         if settings.database_url.startswith("postgresql"):
             for value in AUDIT_EVENT_TYPE_ADDITIONS:
-                await conn.execute(
-                    text(f"ALTER TYPE auditeventtype ADD VALUE IF NOT EXISTS '{value}'")
-                )
+                try:
+                    await conn.execute(
+                        text(
+                            f"ALTER TYPE auditeventtype ADD VALUE"
+                            f" IF NOT EXISTS '{value}'"
+                        )
+                    )
+                except Exception:
+                    pass  # type may not exist yet on fresh DB; create_all will handle it
 
 
 async def close_db() -> None:
