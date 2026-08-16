@@ -84,7 +84,8 @@ class RedactionDetectionService:
         document_id: str,
         candidates: list[DBRedactionCandidate],
     ) -> tuple[list[DBRedactionCandidate], int]:
-        """Return (new_candidates, skipped_count) so repeated detection never duplicates existing candidates."""
+        """Return (new_candidates, skipped_count) so repeated detection never
+        duplicates existing candidates."""
         result = await session.execute(
             select(DBRedactionCandidate).where(DBRedactionCandidate.document_id == document_id)
         )

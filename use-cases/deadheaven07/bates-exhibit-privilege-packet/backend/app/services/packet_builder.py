@@ -160,7 +160,8 @@ class PacketBuilderService:
                 bates_end = bates_assignments[-1].bates_label if bates_assignments else "N/A"
                 lines.append(
                     f"{doc.original_filename} | {bates_start} - {bates_end} | "
-                    f"{decision.category.value if decision.category else 'other'} | {decision.reason or 'N/A'}"
+                    f"{decision.category.value if decision.category else 'other'} | "
+                    f"{decision.reason or 'N/A'}"
                 )
 
         return self._create_text_pdf("PRIVILEGE LOG", lines)
@@ -220,7 +221,8 @@ class PacketBuilderService:
             doc_bates = [ba for ba in bates_list if ba.document_id == doc.id]
             if len(doc_bates) != doc.page_count:
                 warnings.append(
-                    f"Document {doc.original_filename} has {len(doc_bates)} Bates but {doc.page_count} pages"
+                    f"Document {doc.original_filename} has {len(doc_bates)} Bates "
+                    f"but {doc.page_count} pages"
                 )
 
         prev_end = None

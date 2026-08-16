@@ -209,7 +209,8 @@ class SuperDocsIntegrationService:
         )
 
         logger.info(
-            f"Privilege analysis for document {document.id}: privileged={result.is_privileged}, category={result.category}"
+            f"Privilege analysis for document {document.id}: "
+            f"privileged={result.is_privileged}, category={result.category}"
         )
         return result
 
@@ -220,7 +221,8 @@ class SuperDocsIntegrationService:
         pii_result: PIIDetectionResult,
         categories: list[PIICategory] | None = None,
     ) -> list[RedactionCandidate]:
-        """Create redaction candidates from PII detection results, optionally filtered by category."""
+        """Create redaction candidates from PII detection results,
+        optionally filtered by category."""
         candidates = []
         for entity in pii_result.entities:
             if categories and entity.category not in categories:
