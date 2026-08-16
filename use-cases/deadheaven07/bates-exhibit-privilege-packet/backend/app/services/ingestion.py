@@ -1,16 +1,11 @@
 import hashlib
 import logging
-import magic
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO
-from dataclasses import dataclass
 
-import fitz
-import pdfplumber
-from PIL import Image
-from pdf2image import convert_from_path
-import pytesseract
+import magic
 
 from app.config import get_settings
 from app.domain.document import Document, DocumentType, ProcessingStatus
@@ -36,7 +31,8 @@ class FileValidationError(Exception):
 class IngestionService:
     SUPPORTED_MIME_TYPES = {
         "application/pdf": DocumentType.PDF,
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": DocumentType.DOCX,
+        "application/vnd.openxmlformats-officedocument"
+        ".wordprocessingml.document": DocumentType.DOCX,
         "image/jpeg": DocumentType.IMAGE,
         "image/png": DocumentType.IMAGE,
         "image/tiff": DocumentType.IMAGE,
@@ -85,29 +81,13 @@ class IngestionService:
         return stored_path
 
     def detect_document_type(self, mime_type: str, file_path: Path) -> DocumentType:
-        base_type = self.SUPPORTED_MIME_TYPES.get(mime_type, DocumentType.UNKNOWN)
-
-        if base_type == DocumentType.PDF:
-            return self._check_if_scanned_pdf(file_path)
-
-        return base_type
-
-    def _check_if_scanned_pdf(self, file_path: Path) -> DocumentType:
-        try:
-            doc = fitz.open(file_path)
-            for page in doc:
-                text = page.get_text()
-                if text.strip():
-                    doc.close()
-                    return DocumentType.PDF
-            doc.close()
-            return DocumentType.SCANNED_PDF
-        except Exception:
-            return DocumentType.PDF
+        return self.SUPPORTED_MIME_TYPES.get(mime_type, DocumentType.UNKNOWN)
 
     def count_pages(self, file_path: Path, document_type: DocumentType) -> int:
         try:
             if document_type in (DocumentType.PDF, DocumentType.SCANNED_PDF):
+                import fitz
+
                 doc = fitz.open(file_path)
                 count = doc.page_count
                 doc.close()
@@ -122,18 +102,29 @@ class IngestionService:
         except FileValidationError:
             raise
         except Exception as e:
-            raise FileValidationError(f"Corrupt or unreadable PDF: {e}") from e
+            raise FileValidationError(f"Corrupt or unreadable file: {e}") from e
 
     def _count_docx_pages(self, file_path: Path) -> int:
         try:
             import subprocess
+
             _ = subprocess.run(
-                ["libreoffice", "--headless", "--convert-to", "pdf", "--outdir", "/tmp", str(file_path)],
+                [
+                    "libreoffice",
+                    "--headless",
+                    "--convert-to",
+                    "pdf",
+                    "--outdir",
+                    "/tmp",
+                    str(file_path),
+                ],
                 capture_output=True,
-                timeout=60
+                timeout=60,
             )
             pdf_path = Path("/tmp") / (file_path.stem + ".pdf")
             if pdf_path.exists():
+                import fitz
+
                 doc = fitz.open(pdf_path)
                 count = doc.page_count
                 doc.close()
@@ -149,8 +140,17 @@ class IngestionService:
         try:
             if document_type == DocumentType.DOCX:
                 import subprocess
+
                 subprocess.run(
-                    ["libreoffice", "--headless", "--convert-to", "pdf", "--outdir", str(output_path.parent), str(file_path)],
+                    [
+                        "libreoffice",
+                        "--headless",
+                        "--convert-to",
+                        "pdf",
+                        "--outdir",
+                        str(output_path.parent),
+                        str(file_path),
+                    ],
                     capture_output=True,
                     timeout=120,
                 )
@@ -158,6 +158,8 @@ class IngestionService:
                     return output_path
                 return None
             elif document_type == DocumentType.IMAGE:
+                from PIL import Image
+
                 image = Image.open(file_path)
                 image.convert("RGB").save(output_path, "PDF", resolution=100.0)
                 return output_path
@@ -166,86 +168,11 @@ class IngestionService:
             logger.warning(f"Failed to convert {file_path} to PDF: {e}")
             return None
 
-    def extract_text(self, file_path: Path, document_type: DocumentType) -> tuple[str, bool]:
-        try:
-            if document_type == DocumentType.PDF:
-                return self._extract_pdf_text(file_path)
-            elif document_type == DocumentType.SCANNED_PDF:
-                return self._ocr_pdf(file_path)
-            elif document_type == DocumentType.DOCX:
-                return self._extract_docx_text(file_path)
-            elif document_type == DocumentType.IMAGE:
-                return self._ocr_image(file_path)
-            return "", False
-        except Exception as e:
-            return f"Extraction error: {e}", False
-
-    def _extract_pdf_text(self, file_path: Path) -> tuple[str, bool]:
-        text_parts = []
-        try:
-            with pdfplumber.open(file_path) as pdf:
-                for page in pdf.pages:
-                    text = page.extract_text()
-                    if text:
-                        text_parts.append(text)
-            full_text = "\n\n".join(text_parts)
-            return full_text, len(full_text.strip()) > 0
-        except Exception:
-            return "", False
-
-    def _extract_docx_text(self, file_path: Path) -> tuple[str, bool]:
-        try:
-            from docx import Document as DocxDocument
-            doc = DocxDocument(file_path)
-            text_parts = [para.text for para in doc.paragraphs if para.text.strip()]
-            full_text = "\n\n".join(text_parts)
-            return full_text, len(full_text.strip()) > 0
-        except Exception:
-            return "", False
-
-    def _ocr_pdf(self, file_path: Path) -> tuple[str, bool]:
-        text_parts = []
-        try:
-            images = convert_from_path(file_path, dpi=300)
-            for i, image in enumerate(images):
-                text = pytesseract.image_to_string(image, lang=settings.tesseract_lang)
-                if text.strip():
-                    text_parts.append(f"[Page {i+1}]\n{text}")
-            full_text = "\n\n".join(text_parts)
-            return full_text, len(full_text.strip()) > 0
-        except Exception as e:
-            return f"OCR unavailable: {e.__class__.__name__}. Check /api/health/dependencies for OCR tool availability.", False
-
-    def _ocr_image(self, file_path: Path) -> tuple[str, bool]:
-        try:
-            image = Image.open(file_path)
-            text = pytesseract.image_to_string(image, lang=settings.tesseract_lang)
-            return text, len(text.strip()) > 0
-        except Exception as e:
-            return f"OCR unavailable: {e.__class__.__name__}. Check /api/health/dependencies for OCR tool availability.", False
-
-    def create_searchable_pdf(self, file_path: Path, document_type: DocumentType) -> Path:
-        if document_type != DocumentType.SCANNED_PDF:
-            return file_path
-
-        try:
-            output_path = settings.processed_path / f"{file_path.stem}_searchable.pdf"
-            doc = fitz.open(file_path)
-
-            for page_num in range(len(doc)):
-                page = doc[page_num]
-                pix = page.get_pixmap(dpi=300)
-                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-
-                pdf_bytes = pytesseract.image_to_pdf_or_hocr(img, extension="pdf")
-                pdf_page = fitz.open("pdf", pdf_bytes)
-                page.insert_pdf(pdf_page)
-
-            doc.save(output_path)
-            doc.close()
-            return output_path
-        except Exception:
-            return file_path
+    def extract_text_from_superdocs(self, document) -> tuple[str, bool]:
+        """Extract text from SuperDocs HTML output if available."""
+        # This will be populated after SuperDocs upload and analysis
+        # For now, return empty - text extraction happens via SuperDocs
+        return "", False
 
     async def ingest_file(
         self,
@@ -253,7 +180,7 @@ class IngestionService:
         original_filename: str,
         packet_id: str,
         display_order: int,
-    ) -> IngestionResult:
+    ) -> "IngestionResult":
         mime_type, file_size = self.validate_file(file, original_filename)
         sha256 = self.calculate_sha256(file)
 
@@ -262,44 +189,38 @@ class IngestionService:
         document_type = self.detect_document_type(mime_type, original_path)
         page_count = self.count_pages(original_path, document_type)
 
-        extracted_text, is_searchable = self.extract_text(original_path, document_type)
-
-        processed_path = self.create_searchable_pdf(original_path, document_type)
-        converted_path = None
+        # Convert DOCX/images to PDF for packet building
+        processed_path = None
         if document_type in (DocumentType.DOCX, DocumentType.IMAGE):
-            converted_path = self.convert_to_pdf(original_path, document_type)
-
-        if document_type == DocumentType.DOCX and converted_path is None:
-            document = Document(
-                packet_id=packet_id,
-                display_order=display_order,
-                original_filename=original_filename,
-                mime_type=mime_type,
-                file_size=file_size,
-                sha256=sha256,
-                document_type=document_type,
-                page_count=page_count,
-                processing_status=ProcessingStatus.FAILED,
-                original_sha256=sha256,
-                processed_sha256=None,
-                is_searchable=is_searchable,
-                processing_error="LibreOffice unavailable: cannot convert DOCX to PDF",
-                last_completed_step="conversion_failed",
-            )
-            return IngestionResult(
-                document=document,
-                page_count=page_count,
-                extracted_text=extracted_text,
-                is_searchable=is_searchable,
-                processed_file_path=str(processed_path),
-            )
+            processed_path = self.convert_to_pdf(original_path, document_type)
+            if processed_path is None:
+                document = Document(
+                    packet_id=packet_id,
+                    display_order=display_order,
+                    original_filename=original_filename,
+                    mime_type=mime_type,
+                    file_size=file_size,
+                    sha256=sha256,
+                    document_type=document_type,
+                    page_count=page_count,
+                    processing_status=ProcessingStatus.FAILED,
+                    original_sha256=sha256,
+                    processed_sha256=None,
+                    is_searchable=False,
+                    processing_error="Conversion to PDF failed (LibreOffice unavailable)",
+                    last_completed_step="conversion_failed",
+                )
+                return IngestionResult(
+                    document=document,
+                    page_count=page_count,
+                    extracted_text="",
+                    is_searchable=False,
+                    processed_file_path=str(original_path),
+                )
 
         processed_sha256 = None
-        if processed_path != original_path and processed_path is not None:
+        if processed_path and processed_path != original_path:
             with open(processed_path, "rb") as f:
-                processed_sha256 = self.calculate_sha256(f)
-        elif converted_path is not None:
-            with open(converted_path, "rb") as f:
                 processed_sha256 = self.calculate_sha256(f)
 
         document = Document(
@@ -314,21 +235,16 @@ class IngestionService:
             processing_status=ProcessingStatus.COMPLETED,
             original_sha256=sha256,
             processed_sha256=processed_sha256,
-            is_searchable=is_searchable,
+            is_searchable=True,  # Will be made searchable by SuperDocs
             processed_at=utc_now(),
             completed_at=utc_now(),
-            last_completed_step="ocr_completed",
+            last_completed_step="ingestion_completed",
         )
-
-        if extracted_text and extracted_text.strip() and not extracted_text.startswith("Extraction error"):
-            document.description = extracted_text.strip()[:300]
-            document.description_source = "content_summary"
-            document.description_generated_at = utc_now()
 
         return IngestionResult(
             document=document,
             page_count=page_count,
-            extracted_text=extracted_text,
-            is_searchable=is_searchable,
-            processed_file_path=str(processed_path),
+            extracted_text="",  # Will be populated by SuperDocs
+            is_searchable=True,
+            processed_file_path=str(processed_path or original_path),
         )

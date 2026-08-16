@@ -1,6 +1,30 @@
 from abc import ABC, abstractmethod
-from typing import Optional
 from dataclasses import dataclass
+from enum import Enum
+from typing import Optional
+
+
+class PIICategory(str, Enum):
+    SSN = "ssn"
+    EMAIL = "email"
+    PHONE = "phone"
+    ACCOUNT_NUMBER = "account_number"
+    MEDICAL_TERM = "medical_term"
+    NAME = "name"
+    ADDRESS = "address"
+    DATE_OF_BIRTH = "date_of_birth"
+    CREDIT_CARD = "credit_card"
+    DRIVERS_LICENSE = "drivers_license"
+    PASSPORT = "passport"
+    OTHER = "other"
+
+
+class PrivilegeCategory(str, Enum):
+    ATTORNEY_CLIENT = "attorney_client"
+    WORK_PRODUCT = "work_product"
+    JOINT_DEFENSE = "joint_defense"
+    COMMON_INTEREST = "common_interest"
+    OTHER = "other"
 
 
 @dataclass
@@ -10,7 +34,7 @@ class DocumentUploadResult:
     chunks_count: int
     version_id: str
     page_setup: dict
-    html: Optional[str] = None
+    html: str | None = None
 
 
 @dataclass
@@ -24,21 +48,21 @@ class AttachmentUploadResult:
 class JobStatus:
     job_id: str
     status: str
-    result: Optional[dict] = None
-    error: Optional[str] = None
-    metadata: Optional[dict] = None
+    result: dict | None = None
+    error: str | None = None
+    metadata: dict | None = None
 
 
 @dataclass
 class ProposedChange:
     change_id: str
     operation: str
-    chunk_id: Optional[str]
-    old_html: Optional[str]
-    new_html: Optional[str]
+    chunk_id: str | None
+    old_html: str | None
+    new_html: str | None
     ai_explanation: str
-    insert_after_chunk_id: Optional[str]
-    document_id: Optional[str] = None
+    insert_after_chunk_id: str | None
+    document_id: str | None = None
 
 
 @dataclass
@@ -47,7 +71,7 @@ class ProposedChangeBatch:
     batch_total: int
     changes: list[ProposedChange]
     awaiting_kind: str = "approval"
-    continue_prompt: Optional[dict] = None
+    continue_prompt: dict | None = None
 
 
 @dataclass
@@ -67,13 +91,50 @@ class ExportResult:
     format: str
 
 
+@dataclass
+class PIIEntity:
+    category: "PIICategory"
+    text: str
+    page_number: int
+    start_offset: int
+    end_offset: int
+    confidence: float
+    context_before: str = ""
+    context_after: str = ""
+
+
+@dataclass
+class PIIDetectionResult:
+    entities: list["PIIEntity"]
+    total_count: int
+    session_id: str
+    document_id: str
+
+
+@dataclass
+class PrivilegeAnalysisResult:
+    is_privileged: bool
+    category: Optional["PrivilegeCategory"]
+    reason: str
+    confidence: float
+    key_phrases: list[str]
+
+
+@dataclass
+class RedactionCandidate:
+    entity: "PIIEntity"
+    approved: bool = False
+    approved_by: str | None = None
+    approved_at: str | None = None
+
+
 class SuperDocsPort(ABC):
     @abstractmethod
     async def upload_document(
         self,
         file_bytes: bytes,
         filename: str,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         return_html: bool = True,
     ) -> DocumentUploadResult:
         pass
@@ -96,7 +157,7 @@ class SuperDocsPort(ABC):
         self,
         message: str,
         session_id: str,
-        document_html: Optional[str] = None,
+        document_html: str | None = None,
         approval_mode: str = "approve_all",
         model_tier: str = "core",
     ) -> str:
@@ -109,7 +170,7 @@ class SuperDocsPort(ABC):
         job_id: str,
         approved: bool,
         changes: list[dict],
-        feedback: Optional[str] = None,
+        feedback: str | None = None,
     ) -> JobStatus:
         pass
 
@@ -127,7 +188,7 @@ class SuperDocsPort(ABC):
         self,
         session_id: str,
         format: str = "pdf",
-        options: Optional[dict] = None,
+        options: dict | None = None,
     ) -> ExportResult:
         pass
 
@@ -137,4 +198,39 @@ class SuperDocsPort(ABC):
 
     @abstractmethod
     def parse_proposed_change_batch(self, content: str) -> ProposedChangeBatch:
+        pass
+
+    @abstractmethod
+    async def detect_pii(
+        self,
+        session_id: str,
+        document_id: str,
+        categories: list["PIICategory"] | None = None,
+    ) -> "PIIDetectionResult":
+        pass
+
+    @abstractmethod
+    async def analyze_privilege(
+        self,
+        session_id: str,
+        document_id: str,
+    ) -> "PrivilegeAnalysisResult":
+        pass
+
+    @abstractmethod
+    async def apply_redactions(
+        self,
+        session_id: str,
+        document_id: str,
+        candidates: list["RedactionCandidate"],
+    ) -> JobStatus:
+        pass
+
+    @abstractmethod
+    async def get_redaction_preview(
+        self,
+        session_id: str,
+        document_id: str,
+        candidates: list["RedactionCandidate"],
+    ) -> ExportResult:
         pass

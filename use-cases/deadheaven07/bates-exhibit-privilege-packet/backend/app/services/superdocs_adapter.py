@@ -1,19 +1,25 @@
 import base64
 import json
 import logging
-from typing import Optional
+
 import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from app.config import get_settings
 from app.services.superdocs_port import (
-    SuperDocsPort,
-    DocumentUploadResult,
     AttachmentUploadResult,
+    DocumentUploadResult,
+    ExportResult,
     JobStatus,
+    PIICategory,
+    PIIDetectionResult,
+    PIIEntity,
+    PrivilegeAnalysisResult,
+    PrivilegeCategory,
     ProposedChange,
     ProposedChangeBatch,
-    ExportResult,
+    RedactionCandidate,
+    SuperDocsPort,
 )
 
 logger = logging.getLogger(__name__)
@@ -31,7 +37,7 @@ class SuperDocsRESTAdapter(SuperDocsPort):
     def __init__(self):
         self.base_url = settings.superdocs_base_url.rstrip("/")
         self.api_key = settings.superdocs_api_key
-        self._client: Optional[httpx.AsyncClient] = None
+        self._client: httpx.AsyncClient | None = None
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -58,7 +64,7 @@ class SuperDocsRESTAdapter(SuperDocsPort):
             )
         return response.json()
 
-    async def _ensure_session(self, session_id: Optional[str]) -> str:
+    async def _ensure_session(self, session_id: str | None) -> str:
         client = await self._get_client()
         payload = {"session_id": session_id} if session_id else {}
         response = await client.post("/v1/sessions/init", json=payload)
@@ -74,7 +80,7 @@ class SuperDocsRESTAdapter(SuperDocsPort):
         self,
         file_bytes: bytes,
         filename: str,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         return_html: bool = True,
     ) -> DocumentUploadResult:
         client = await self._get_client()
@@ -95,9 +101,7 @@ class SuperDocsRESTAdapter(SuperDocsPort):
 
         return DocumentUploadResult(
             session_id=data.get("session_id", session_id),
-            document_id=data.get("document_id")
-            or data.get("focused_document_id")
-            or "doc_primary",
+            document_id=data.get("document_id") or data.get("focused_document_id") or "doc_primary",
             chunks_count=data.get("chunks_count", 0),
             version_id=data.get("version_id", ""),
             page_setup=data.get("page_setup", {}),
@@ -161,7 +165,7 @@ class SuperDocsRESTAdapter(SuperDocsPort):
         self,
         message: str,
         session_id: str,
-        document_html: Optional[str] = None,
+        document_html: str | None = None,
         approval_mode: str = "approve_all",
         model_tier: str = "core",
     ) -> str:
@@ -192,7 +196,7 @@ class SuperDocsRESTAdapter(SuperDocsPort):
         job_id: str,
         approved: bool,
         changes: list[dict],
-        feedback: Optional[str] = None,
+        feedback: str | None = None,
     ) -> JobStatus:
         client = await self._get_client()
 
@@ -253,7 +257,7 @@ class SuperDocsRESTAdapter(SuperDocsPort):
         self,
         session_id: str,
         format: str = "pdf",
-        options: Optional[dict] = None,
+        options: dict | None = None,
     ) -> ExportResult:
         client = await self._get_client()
 
@@ -294,20 +298,22 @@ class SuperDocsRESTAdapter(SuperDocsPort):
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse proposed_change_batch: {e}")
             logger.error(f"Content: {content[:500]}")
-            raise ValueError(f"Invalid proposed_change_batch format: {e}")
+            raise ValueError(f"Invalid proposed_change_batch format: {e}") from e
 
         changes = []
         for change_data in batch_data.get("changes", []):
-            changes.append(ProposedChange(
-                change_id=change_data.get("change_id", ""),
-                operation=change_data.get("operation", ""),
-                chunk_id=change_data.get("chunk_id"),
-                old_html=change_data.get("old_html"),
-                new_html=change_data.get("new_html"),
-                ai_explanation=change_data.get("ai_explanation", ""),
-                insert_after_chunk_id=change_data.get("insert_after_chunk_id"),
-                document_id=change_data.get("document_id"),
-            ))
+            changes.append(
+                ProposedChange(
+                    change_id=change_data.get("change_id", ""),
+                    operation=change_data.get("operation", ""),
+                    chunk_id=change_data.get("chunk_id"),
+                    old_html=change_data.get("old_html"),
+                    new_html=change_data.get("new_html"),
+                    ai_explanation=change_data.get("ai_explanation", ""),
+                    insert_after_chunk_id=change_data.get("insert_after_chunk_id"),
+                    document_id=change_data.get("document_id"),
+                )
+            )
 
         return ProposedChangeBatch(
             batch_id=batch_data.get("batch_id", ""),
@@ -315,4 +321,173 @@ class SuperDocsRESTAdapter(SuperDocsPort):
             changes=changes,
             awaiting_kind=batch_data.get("awaiting_kind", "approval"),
             continue_prompt=batch_data.get("continue_prompt"),
+        )
+
+    @retry(
+        wait=wait_exponential(multiplier=1, min=2, max=30),
+        stop=stop_after_attempt(3),
+        retry=retry_if_exception_type((httpx.TimeoutException, httpx.NetworkError)),
+    )
+    async def detect_pii(
+        self,
+        session_id: str,
+        document_id: str,
+        categories: list["PIICategory"] | None = None,
+    ) -> "PIIDetectionResult":
+        client = await self._get_client()
+
+        payload = {
+            "session_id": session_id,
+            "document_id": document_id,
+        }
+        if categories:
+            payload["categories"] = [c.value for c in categories]
+
+        response = await client.post("/v1/analysis/detect-pii", json=payload)
+        data = self._handle_response(response)
+
+        entities = []
+        for entity_data in data.get("entities", []):
+            entities.append(
+                PIIEntity(
+                    category=PIICategory(entity_data.get("category", "other")),
+                    text=entity_data.get("text", ""),
+                    page_number=entity_data.get("page_number", 1),
+                    start_offset=entity_data.get("start_offset", 0),
+                    end_offset=entity_data.get("end_offset", 0),
+                    confidence=entity_data.get("confidence", 1.0),
+                    context_before=entity_data.get("context_before", ""),
+                    context_after=entity_data.get("context_after", ""),
+                )
+            )
+
+        return PIIDetectionResult(
+            entities=entities,
+            total_count=data.get("total_count", len(entities)),
+            session_id=session_id,
+            document_id=document_id,
+        )
+
+    @retry(
+        wait=wait_exponential(multiplier=1, min=2, max=30),
+        stop=stop_after_attempt(3),
+        retry=retry_if_exception_type((httpx.TimeoutException, httpx.NetworkError)),
+    )
+    async def analyze_privilege(
+        self,
+        session_id: str,
+        document_id: str,
+    ) -> "PrivilegeAnalysisResult":
+        client = await self._get_client()
+
+        payload = {
+            "session_id": session_id,
+            "document_id": document_id,
+        }
+
+        response = await client.post("/v1/analysis/privilege", json=payload)
+        data = self._handle_response(response)
+
+        category = data.get("category")
+        if category:
+            category = PrivilegeCategory(category)
+
+        return PrivilegeAnalysisResult(
+            is_privileged=data.get("is_privileged", False),
+            category=category,
+            reason=data.get("reason", ""),
+            confidence=data.get("confidence", 0.0),
+            key_phrases=data.get("key_phrases", []),
+        )
+
+    @retry(
+        wait=wait_exponential(multiplier=1, min=2, max=30),
+        stop=stop_after_attempt(3),
+        retry=retry_if_exception_type((httpx.TimeoutException, httpx.NetworkError)),
+    )
+    async def apply_redactions(
+        self,
+        session_id: str,
+        document_id: str,
+        candidates: list["RedactionCandidate"],
+    ) -> JobStatus:
+        client = await self._get_client()
+
+        payload = {
+            "session_id": session_id,
+            "document_id": document_id,
+            "candidates": [
+                {
+                    "entity": {
+                        "category": c.entity.category.value,
+                        "text": c.entity.text,
+                        "page_number": c.entity.page_number,
+                        "start_offset": c.entity.start_offset,
+                        "end_offset": c.entity.end_offset,
+                        "confidence": c.entity.confidence,
+                        "context_before": c.entity.context_before,
+                        "context_after": c.entity.context_after,
+                    },
+                    "approved": c.approved,
+                    "approved_by": c.approved_by,
+                    "approved_at": c.approved_at,
+                }
+                for c in candidates
+            ],
+        }
+
+        response = await client.post("/v1/redactions/apply", json=payload)
+        data = self._handle_response(response)
+
+        return JobStatus(
+            job_id=data.get("job_id", ""),
+            status=data.get("status", "unknown"),
+            result=data.get("result"),
+            error=data.get("error"),
+            metadata=data.get("metadata"),
+        )
+
+    @retry(
+        wait=wait_exponential(multiplier=1, min=2, max=30),
+        stop=stop_after_attempt(3),
+        retry=retry_if_exception_type((httpx.TimeoutException, httpx.NetworkError)),
+    )
+    async def get_redaction_preview(
+        self,
+        session_id: str,
+        document_id: str,
+        candidates: list["RedactionCandidate"],
+    ) -> ExportResult:
+        client = await self._get_client()
+
+        payload = {
+            "session_id": session_id,
+            "document_id": document_id,
+            "candidates": [
+                {
+                    "entity": {
+                        "category": c.entity.category.value,
+                        "text": c.entity.text,
+                        "page_number": c.entity.page_number,
+                        "start_offset": c.entity.start_offset,
+                        "end_offset": c.entity.end_offset,
+                        "confidence": c.entity.confidence,
+                        "context_before": c.entity.context_before,
+                        "context_after": c.entity.context_after,
+                    },
+                    "approved": c.approved,
+                    "approved_by": c.approved_by,
+                    "approved_at": c.approved_at,
+                }
+                for c in candidates
+            ],
+        }
+
+        response = await client.post("/v1/redactions/preview", json=payload)
+        data = self._handle_response(response)
+
+        return ExportResult(
+            download_url=data.get("download_url", ""),
+            filename=data.get("filename", "redaction_preview.pdf"),
+            format="pdf",
         )

@@ -9,7 +9,6 @@ class CourtRulesConfig:
 
     def __init__(self, config_path: Path | None = None):
         if config_path is None:
-            # Go up from app/services/ to backend/, then to config/
             config_path = Path(__file__).parent.parent.parent / "config" / "court_rules.json"
         self.config_path = config_path
         self._config: dict[str, Any] | None = None

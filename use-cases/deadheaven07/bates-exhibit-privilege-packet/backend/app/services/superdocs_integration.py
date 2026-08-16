@@ -1,23 +1,27 @@
 import logging
-from typing import Optional
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_settings, Settings
+from app.config import Settings, get_settings
 from app.domain.document import Document, ProcessingStatus
-from app.services.superdocs_port import (
-    SuperDocsPort,
-    DocumentUploadResult,
-    JobStatus,
-    ProposedChangeBatch,
-    ExportResult,
-)
 from app.services.superdocs_adapter import SuperDocsRESTAdapter
+from app.services.superdocs_port import (
+    DocumentUploadResult,
+    ExportResult,
+    JobStatus,
+    PIICategory,
+    PIIDetectionResult,
+    PrivilegeAnalysisResult,
+    ProposedChangeBatch,
+    RedactionCandidate,
+    SuperDocsPort,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class SuperDocsIntegrationService:
-    def __init__(self, adapter: Optional[SuperDocsPort] = None, settings: Optional[Settings] = None):
+    def __init__(self, adapter: SuperDocsPort | None = None, settings: Settings | None = None):
         self.adapter = adapter or SuperDocsRESTAdapter()
         self.settings = settings or get_settings()
 
@@ -36,7 +40,11 @@ class SuperDocsIntegrationService:
                 page_setup={},
             )
 
-        ext = document.original_filename.split(".")[-1] if "." in document.original_filename else "pdf"
+        ext = (
+            document.original_filename.split(".")[-1]
+            if "." in document.original_filename
+            else "pdf"
+        )
         original_path = self.settings.originals_path / f"{document.sha256}.{ext}"
 
         if not original_path.exists():
@@ -91,7 +99,9 @@ class SuperDocsIntegrationService:
                 batch_id="",
                 batch_total=0,
                 changes=[],
-                awaiting_kind=job_status.metadata.get("awaiting_kind", "approval") if job_status.metadata else "approval",
+                awaiting_kind=job_status.metadata.get("awaiting_kind", "approval")
+                if job_status.metadata
+                else "approval",
             )
 
         if job_status.metadata and "pending_changes" in job_status.metadata:
@@ -100,6 +110,7 @@ class SuperDocsIntegrationService:
                 return self.adapter.parse_proposed_change_batch(content)
             elif isinstance(content, dict):
                 import json
+
                 return self.adapter.parse_proposed_change_batch(json.dumps(content))
 
         return ProposedChangeBatch(
@@ -115,7 +126,7 @@ class SuperDocsIntegrationService:
         job_id: str,
         approved: bool,
         changes: list[dict],
-        feedback: Optional[str] = None,
+        feedback: str | None = None,
     ) -> JobStatus:
         if not document.superdocs_session_id:
             raise ValueError("Document not uploaded to SuperDocs")
@@ -147,7 +158,7 @@ class SuperDocsIntegrationService:
         self,
         document: Document,
         format: str = "pdf",
-        options: Optional[dict] = None,
+        options: dict | None = None,
     ) -> ExportResult:
         if not document.superdocs_session_id:
             raise ValueError("Document not uploaded to SuperDocs")
@@ -164,9 +175,108 @@ class SuperDocsIntegrationService:
 
         return await self.adapter.get_session_history(document.superdocs_session_id)
 
+    async def detect_pii(
+        self,
+        session: AsyncSession,
+        document: Document,
+        categories: list["PIICategory"] | None = None,
+    ) -> "PIIDetectionResult":
+        if not document.superdocs_session_id:
+            await self.upload_document_to_superdocs(session, document)
+            await session.refresh(document)
+
+        result = await self.adapter.detect_pii(
+            session_id=document.superdocs_session_id,
+            document_id=document.superdocs_document_id,
+            categories=categories,
+        )
+
+        logger.info(f"Detected {result.total_count} PII entities in document {document.id}")
+        return result
+
+    async def analyze_privilege(
+        self,
+        session: AsyncSession,
+        document: Document,
+    ) -> "PrivilegeAnalysisResult":
+        if not document.superdocs_session_id:
+            await self.upload_document_to_superdocs(session, document)
+            await session.refresh(document)
+
+        result = await self.adapter.analyze_privilege(
+            session_id=document.superdocs_session_id,
+            document_id=document.superdocs_document_id,
+        )
+
+        logger.info(
+            f"Privilege analysis for document {document.id}: "
+            f"privileged={result.is_privileged}, category={result.category}"
+        )
+        return result
+
+    async def create_redaction_candidates(
+        self,
+        session: AsyncSession,
+        document: Document,
+        pii_result: "PIIDetectionResult",
+        categories: list["PIICategory"] | None = None,
+    ) -> list["RedactionCandidate"]:
+        """Create redaction candidates from PII detection results, optionally filtered by category."""
+        candidates = []
+        for entity in pii_result.entities:
+            if categories and entity.category not in categories:
+                continue
+            candidates.append(
+                RedactionCandidate(
+                    entity=entity,
+                    approved=False,
+                )
+            )
+
+        logger.info(f"Created {len(candidates)} redaction candidates for document {document.id}")
+        return candidates
+
+    async def apply_redactions(
+        self,
+        session: AsyncSession,
+        document: Document,
+        candidates: list["RedactionCandidate"],
+    ) -> "JobStatus":
+        if not document.superdocs_session_id:
+            await self.upload_document_to_superdocs(session, document)
+            await session.refresh(document)
+
+        result = await self.adapter.apply_redactions(
+            session_id=document.superdocs_session_id,
+            document_id=document.superdocs_document_id,
+            candidates=candidates,
+        )
+
+        logger.info(f"Applied redactions to document {document.id}, job_id={result.job_id}")
+        return result
+
+    async def get_redaction_preview(
+        self,
+        session: AsyncSession,
+        document: Document,
+        candidates: list["RedactionCandidate"],
+    ) -> "ExportResult":
+        if not document.superdocs_session_id:
+            await self.upload_document_to_superdocs(session, document)
+            await session.refresh(document)
+
+        result = await self.adapter.get_redaction_preview(
+            session_id=document.superdocs_session_id,
+            document_id=document.superdocs_document_id,
+            candidates=candidates,
+        )
+
+        logger.info(f"Generated redaction preview for document {document.id}")
+        return result
+
     async def close(self):
         await self.adapter.close()
 
 
-async def get_superdocs_service() -> SuperDocsIntegrationService:
+async def get_superdocs_service() -> "SuperDocsIntegrationService":
     return SuperDocsIntegrationService()
