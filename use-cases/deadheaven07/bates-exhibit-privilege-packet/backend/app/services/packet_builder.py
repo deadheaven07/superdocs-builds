@@ -53,6 +53,36 @@ class PacketBuilderService:
                 sha256.update(chunk)
         return sha256.hexdigest()
 
+    def _calculate_page_hashes(self, pdf_path: Path) -> List[str]:
+        """Compute SHA-256 hash for each individual page in a PDF."""
+        page_hashes = []
+        doc = fitz.open(pdf_path)
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+            page_bytes = page.read_contents()
+            page_hash = hashlib.sha256(page_bytes).hexdigest()
+            page_hashes.append(page_hash)
+        doc.close()
+        return page_hashes
+
+    def _compute_merkle_root(self, page_hashes: List[str]) -> str:
+        """Compute Merkle root from ordered list of page hashes."""
+        if not page_hashes:
+            return ""
+        if len(page_hashes) == 1:
+            return page_hashes[0]
+        
+        current_level = page_hashes[:]
+        while len(current_level) > 1:
+            next_level = []
+            for i in range(0, len(current_level), 2):
+                left = current_level[i]
+                right = current_level[i + 1] if i + 1 < len(current_level) else left
+                combined = hashlib.sha256((left + right).encode()).hexdigest()
+                next_level.append(combined)
+            current_level = next_level
+        return current_level[0]
+
     def _create_text_pdf(self, title: str, lines: List[str], page_size: tuple = (612, 792)) -> bytes:
         doc = fitz.open()
         page = doc.new_page(width=page_size[0], height=page_size[1])
@@ -342,6 +372,9 @@ class PacketBuilderService:
             stamped_exhibit_path = exhibits_dir / f"EX-{exhibit_letter}.pdf"
             stamped_writer.write(stamped_exhibit_path)
 
+            page_hashes = self._calculate_page_hashes(stamped_exhibit_path)
+            merkle_root = self._compute_merkle_root(page_hashes)
+
             applied_redactions = []
             for candidate in document.redaction_candidates:
                 if candidate.status == RedactionStatus.APPLIED and candidate.approval:
@@ -380,6 +413,8 @@ class PacketBuilderService:
                 privilege_reason=privilege_reason,
                 applied_redactions=applied_redactions,
                 final_file_path=str(stamped_exhibit_path.relative_to(settings.final_path)),
+                page_hashes=page_hashes,
+                merkle_root=merkle_root,
             )
             manifest_entries.append(manifest_entry)
 
@@ -462,6 +497,8 @@ class PacketBuilderService:
                         for redaction in (e.applied_redactions or [])
                     ],
                     "final_file_path": e.final_file_path,
+                    "page_hashes": e.page_hashes or [],
+                    "merkle_root": e.merkle_root,
                 }
                 for e in manifest_entries
             ],
@@ -527,6 +564,28 @@ class PacketBuilderService:
                     actual_sha256 = self._calculate_sha256(final_packet_path)
                     if actual_sha256 != manifest.final_packet_sha256:
                         errors.append("Final packet checksum mismatch")
+                        valid = False
+
+            for entry in manifest.entries:
+                if entry.page_hashes and entry.final_file_path:
+                    exhibit_path = settings.final_path / entry.final_file_path
+                    if exhibit_path.exists():
+                        current_page_hashes = self._calculate_page_hashes(exhibit_path)
+                        if current_page_hashes != entry.page_hashes:
+                            errors.append(
+                                f"Page hash mismatch for exhibit {entry.exhibit_identifier}: "
+                                f"expected {len(entry.page_hashes)} pages, got {len(current_page_hashes)} "
+                                f"or content mismatch"
+                            )
+                            valid = False
+                        current_merkle = self._compute_merkle_root(current_page_hashes)
+                        if entry.merkle_root and current_merkle != entry.merkle_root:
+                            errors.append(
+                                f"Merkle root mismatch for exhibit {entry.exhibit_identifier}"
+                            )
+                            valid = False
+                    else:
+                        errors.append(f"Exhibit file missing: {entry.exhibit_identifier}")
                         valid = False
 
         total_pages = sum(doc.page_count for doc in documents) + len(documents)

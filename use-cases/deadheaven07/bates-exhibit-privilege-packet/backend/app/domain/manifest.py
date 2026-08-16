@@ -57,6 +57,8 @@ class ManifestEntry(Base):
     privilege_reason: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     applied_redactions: Mapped[list[dict]] = mapped_column(JSON, nullable=True, default=list)
     final_file_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    page_hashes: Mapped[list[str]] = mapped_column(JSON, nullable=True, default=list)
+    merkle_root: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     manifest: Mapped["Manifest"] = relationship("Manifest", back_populates="entries")
     document: Mapped["Document"] = relationship("Document")
