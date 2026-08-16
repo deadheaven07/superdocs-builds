@@ -12,9 +12,7 @@ import { useSuperDocs, SurgicalEditInstruction } from '../hooks/useSuperDocs';
 import { useFileHashes } from '../hooks/useFileHashes';
 import { useFileWatcher, FileChangeEvent } from '../hooks/useFileWatcher';
 import { useStatePersistence } from '../hooks/useStatePersistence';
-import { createGenerationContext, buildSuperDocsInstruction, buildRevisionInstruction } from '../services/context';
-import { buildProjectContext } from '../services/replit';
-import { FileConflict } from '../types/superdocs';
+import { createGenerationContext, buildSuperDocsInstruction } from '../services/context';
 
 type Tab = 'files' | 'draft' | 'review' | 'export' | 'live';
 
@@ -31,7 +29,6 @@ export function DocumentPanel() {
   const [showApiKeyInput, setShowApiKeyInput] = useState(false);
   const [lastContext, setLastContext] = useState<{ files: Map<string, string>; documentType: string; instruction: string; originalInstruction: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [noChangesDetected, setNoChangesDetected] = useState(false);
   const [fileLoading, setFileLoading] = useState(false);
 
   const [superDocsState, superDocsActions] = useSuperDocs(apiKey);
@@ -44,7 +41,6 @@ export function DocumentPanel() {
       documentId: superDocsState.documentId,
       documentType: superDocsState.lastDocumentType as 'readme' | 'spec' | 'user-guide',
       jobId: superDocsState.jobId,
-      jobStatus: superDocsState.uploadResult ? undefined : superDocsState.jobStatus,
       proposedChanges: superDocsState.proposedChanges,
       exportResult: superDocsState.exportResult,
     });
@@ -58,7 +54,7 @@ export function DocumentPanel() {
   // Live file watching
   const [liveChanges, setLiveChanges] = useState<FileChangeEvent[]>([]);
   const [autoUpdateEnabled, setAutoUpdateEnabled] = useState(false);
-  const { recentChanges, lastDelta, isWatching } = useFileWatcher({
+  const { lastDelta, isWatching } = useFileWatcher({
     selectedPaths,
     enabled: true,
     pollInterval: 3000,
@@ -145,8 +141,8 @@ export function DocumentPanel() {
       await superDocsActions.requestSurgicalEdits(surgicalInstruction, baselineHashes, readFile);
       setActiveTab('review');
     } else {
-      setNoChangesDetected(true);
-      setTimeout(() => setNoChangesDetected(false), 3000);
+      // No changes detected - could show a toast here if needed
+      console.log('[SurgicalEdit] No changes detected');
     }
   }, [lastContext, readFile, updateCurrentHashes, getChanges, superDocsActions, getBaselineHashes]);
 

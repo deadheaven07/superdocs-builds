@@ -91,3 +91,33 @@ export interface UploadDocumentRequest {
 export interface SessionInitRequest {
   session_id?: string;
 }
+
+export interface FileConflict {
+  path: string;
+  baselineHash: string;
+  currentHash: string;
+  baselineContent: string;
+  currentContent: string;
+  diff: string;
+  resolved?: boolean;
+  resolution?: 'overwrite_ai' | 'keep_local' | 'abort';
+}
+
+export interface ConflictCheckResult {
+  hasConflicts: boolean;
+  conflicts: FileConflict[];
+  checkedFiles: string[];
+}
+
+export interface ConflictResolutionAction {
+  type: 'overwrite_ai' | 'keep_local' | 'abort';
+  conflictPath: string;
+}
+
+export interface SurgicalEditInstruction {
+  changedFiles: Array<{ path: string; oldContent?: string; newContent: string }>;
+  addedFiles: Array<{ path: string; content: string }>;
+  removedFiles: string[];
+  documentType: 'readme' | 'spec' | 'user-guide';
+  originalInstruction: string;
+}

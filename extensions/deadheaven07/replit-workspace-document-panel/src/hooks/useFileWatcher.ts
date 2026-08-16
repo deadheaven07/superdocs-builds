@@ -39,7 +39,7 @@ export function useFileWatcher({
   const [recentChanges, setRecentChanges] = useState<FileChangeEvent[]>([]);
   
   const previousHashesRef = useRef<FileHashMap>({});
-  const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mountedRef = useRef(true);
 
   const computeDeltaHash = useCallback(async (files: Map<string, string>): Promise<CodeDeltaHash> => {
@@ -108,7 +108,10 @@ export function useFileWatcher({
           }
         }
       }
-    }, [replit, enabled, selectedPaths, computeDeltaHash, onDeltaComputed, onFileChange]);
+    } catch (error) {
+      console.warn('[FileWatcher] Scan error:', error);
+    }
+  }, [replit, enabled, selectedPaths, computeDeltaHash, onDeltaComputed, onFileChange]);
 
   const startWatching = useCallback(() => {
     if (!enabled || isWatching) return;

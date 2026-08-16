@@ -3,6 +3,8 @@ import { createSuperDocsClient } from '../services/superdocs';
 import { parseProposedChangeBatch } from '../utils/parser';
 import { DocumentUploadResult, ProposedChange, ExportResult, ProposedChangeBatch, JobStatus, SurgicalEditInstruction, FileConflict, ConflictCheckResult } from '../types/superdocs';
 
+export type { SurgicalEditInstruction };
+
 export type GenerationStep = 
   | 'idle'
   | 'uploading'
@@ -299,11 +301,11 @@ export function useSuperDocs(apiKey: string): [SuperDocsState, SuperDocsActions]
       return;
     }
 
-    const updatedConflicts = conflictResolution.conflicts.map(c => 
+    const updatedConflicts = conflictResolution.conflicts.map((c: FileConflict) => 
       c.path === action.conflictPath ? { ...c, resolved: true, resolution: action.type } : c
     );
 
-    const allResolved = updatedConflicts.every(c => c.resolved);
+    const allResolved = updatedConflicts.every((c: FileConflict) => c.resolved);
     
     setState(prev => ({
       ...prev,
@@ -318,17 +320,17 @@ export function useSuperDocs(apiKey: string): [SuperDocsState, SuperDocsActions]
       if (instruction && readFileFn) {
         const filteredInstruction: SurgicalEditInstruction = {
           ...instruction,
-          changedFiles: instruction.changedFiles.map(f => {
-            const conflict = conflictCheckResult.conflicts.find(c => c.path === f.path);
+          changedFiles: instruction.changedFiles.map((f: { path: string; oldContent?: string; newContent: string }) => {
+            const conflict = conflictCheckResult.conflicts.find((c: FileConflict) => c.path === f.path);
             if (conflict?.resolution === 'keep_local') return { ...f, newContent: conflict.currentContent };
             return f;
           }),
-          addedFiles: instruction.addedFiles.filter(f => {
-            const conflict = conflictCheckResult.conflicts.find(c => c.path === f.path);
+          addedFiles: instruction.addedFiles.filter((f: { path: string; content: string }) => {
+            const conflict = conflictCheckResult.conflicts.find((c: FileConflict) => c.path === f.path);
             return conflict?.resolution !== 'keep_local';
           }),
-          removedFiles: instruction.removedFiles.filter(f => {
-            const conflict = conflictCheckResult.conflicts.find(c => c.path === f);
+          removedFiles: instruction.removedFiles.filter((f: string) => {
+            const conflict = conflictCheckResult.conflicts.find((c: FileConflict) => c.path === f);
             return conflict?.resolution !== 'keep_local';
           }),
         };

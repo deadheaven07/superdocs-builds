@@ -1,5 +1,4 @@
 /// <reference lib="dom" />
-import { readFile } from '@replit/extensions';
 
 export interface GitIgnoreRule {
   pattern: string;

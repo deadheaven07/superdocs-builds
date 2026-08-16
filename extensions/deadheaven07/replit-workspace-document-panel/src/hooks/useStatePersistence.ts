@@ -13,6 +13,13 @@ export interface PersistedState {
   selectedPaths: string[];
   fileHashes: FileHashMap;
   originalInstruction?: string;
+  lastInstruction?: string;
+  jobId?: string;
+  jobStatus?: string;
+  proposedChanges?: any;
+  exportResult?: any;
+  codeDeltaHash?: string;
+  lastDeltaComputed?: number;
   lastUpdated: number;
   version: number;
 }
@@ -76,13 +83,21 @@ function saveToLocalStorage(state: PersistedState): void {
   }
 }
 
-export function useStatePersistence(): [
+export function useStatePersistence(): readonly [
   PersistedState,
   (partial: Partial<PersistedState>) => Promise<void>,
-  () => Promise<void>
+  () => Promise<void>,
+  {
+    updateSession: (session: { sessionId?: string; documentId?: string; documentType?: 'readme' | 'spec' | 'user-guide' }) => Promise<void>;
+    updateJobState: (job: { jobId?: string; jobStatus?: string; proposedChanges?: any }) => Promise<void>;
+    updateExportState: (exportState: { exportResult?: any }) => Promise<void>;
+    updateCodeDelta: (delta: { codeDeltaHash?: string; lastDeltaComputed?: number }) => Promise<void>;
+    updateFileSelection: (paths: string[]) => Promise<void>;
+    updateFileHashes: (hashes: FileHashMap) => Promise<void>;
+    updateInstruction: (instruction: { originalInstruction?: string; lastInstruction?: string }) => Promise<void>;
+  }
 ] {
   const [state, setState] = useState<PersistedState>(DEFAULT_STATE);
-  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -103,7 +118,6 @@ export function useStatePersistence(): [
 
       if (mounted) {
         setState(mergedState);
-        setLoaded(true);
       }
     }
 
@@ -134,57 +148,84 @@ export function useStatePersistence(): [
     await saveToWorkspace(cleared);
   }, []);
 
-  return [state, updateState, clearState];
+  const helpers = {
+    updateSession: async (session: { sessionId?: string; documentId?: string; documentType?: 'readme' | 'spec' | 'user-guide' }) => 
+      updateState({ sessionId: session.sessionId, documentId: session.documentId, documentType: session.documentType }),
+    updateJobState: async (job: { jobId?: string; jobStatus?: string; proposedChanges?: any }) =>
+      updateState({ jobId: job.jobId, jobStatus: job.jobStatus, proposedChanges: job.proposedChanges }),
+    updateExportState: async (exportState: { exportResult?: any }) =>
+      updateState({ exportResult: exportState.exportResult }),
+    updateCodeDelta: async (delta: { codeDeltaHash?: string; lastDeltaComputed?: number }) =>
+      updateState({ codeDeltaHash: delta.codeDeltaHash, lastDeltaComputed: delta.lastDeltaComputed }),
+    updateFileSelection: async (paths: string[]) =>
+      updateState({ selectedPaths: paths }),
+    updateFileHashes: async (hashes: FileHashMap) =>
+      updateState({ fileHashes: hashes }),
+    updateInstruction: async (instruction: { originalInstruction?: string; lastInstruction?: string }) =>
+      updateState({ originalInstruction: instruction.originalInstruction, lastInstruction: instruction.lastInstruction }),
+  };
+
+  return [state, updateState, clearState, helpers] as const;
 }
 
-export function usePersistedSelection(): [
-  string[],
-  (paths: string[]) => Promise<void>
-] {
-  const [state, updateState] = useStatePersistence();
-
-  const setSelectedPaths = useCallback(async (paths: string[]): Promise<void> => {
-    await updateState({ selectedPaths: paths });
-  }, [updateState]);
-
-  return [state.selectedPaths, setSelectedPaths];
+export function usePersistedSession() {
+  const [state, , , helpers] = useStatePersistence();
+  return {
+    sessionId: state.sessionId,
+    documentId: state.documentId,
+    documentType: state.documentType,
+    setSession: helpers.updateSession,
+  };
 }
 
-export function usePersistedHashes(): [
-  FileHashMap,
-  (hashes: FileHashMap) => Promise<void>
-] {
-  const [state, updateState] = useStatePersistence();
-
-  const setFileHashes = useCallback(async (hashes: FileHashMap): Promise<void> => {
-    await updateState({ fileHashes: hashes });
-  }, [updateState]);
-
-  return [state.fileHashes, setFileHashes];
+export function usePersistedJobState() {
+  const [state, , , helpers] = useStatePersistence();
+  return {
+    jobId: state.jobId,
+    jobStatus: state.jobStatus,
+    proposedChanges: state.proposedChanges,
+    setJobState: helpers.updateJobState,
+  };
 }
 
-export function usePersistedSession(): [
-  { sessionId?: string; documentId?: string; documentType?: 'readme' | 'spec' | 'user-guide'; originalInstruction?: string },
-  (partial: { sessionId?: string; documentId?: string; documentType?: 'readme' | 'spec' | 'user-guide'; originalInstruction?: string }) => Promise<void>
-] {
-  const [state, updateState] = useStatePersistence();
+export function usePersistedExportState() {
+  const [state, , , helpers] = useStatePersistence();
+  return {
+    exportResult: state.exportResult,
+    setExportState: helpers.updateExportState,
+  };
+}
 
-  const setSession = useCallback(async (partial: {
-    sessionId?: string;
-    documentId?: string;
-    documentType?: 'readme' | 'spec' | 'user-guide';
-    originalInstruction?: string;
-  }): Promise<void> => {
-    await updateState(partial);
-  }, [updateState]);
+export function usePersistedCodeDelta() {
+  const [state, , , helpers] = useStatePersistence();
+  return {
+    codeDeltaHash: state.codeDeltaHash,
+    lastDeltaComputed: state.lastDeltaComputed,
+    setCodeDelta: helpers.updateCodeDelta,
+  };
+}
 
-  return [
-    {
-      sessionId: state.sessionId,
-      documentId: state.documentId,
-      documentType: state.documentType,
-      originalInstruction: state.originalInstruction,
-    },
-    setSession,
-  ];
+export function usePersistedFileSelection() {
+  const [state, , , helpers] = useStatePersistence();
+  return {
+    selectedPaths: state.selectedPaths,
+    setSelectedPaths: helpers.updateFileSelection,
+  };
+}
+
+export function usePersistedFileHashes() {
+  const [state, , , helpers] = useStatePersistence();
+  return {
+    fileHashes: state.fileHashes,
+    setFileHashes: helpers.updateFileHashes,
+  };
+}
+
+export function usePersistedInstruction() {
+  const [state, , , helpers] = useStatePersistence();
+  return {
+    originalInstruction: state.originalInstruction,
+    lastInstruction: state.lastInstruction,
+    setInstruction: helpers.updateInstruction,
+  };
 }

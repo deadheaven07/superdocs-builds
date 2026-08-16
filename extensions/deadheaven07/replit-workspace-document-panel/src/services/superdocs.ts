@@ -8,6 +8,7 @@ import {
   ContinueJobRequest,
   ExportDocumentRequest,
   SessionInitRequest,
+  SurgicalEditInstruction,
 } from '../types/superdocs';
 
 const DEFAULT_BASE_URL = 'https://api.superdocs.app';
@@ -252,6 +253,66 @@ export class SuperDocsClient {
     }
 
     return response.blob();
+  }
+
+  async requestSurgicalEdits(
+    sessionId: string,
+    instruction: SurgicalEditInstruction,
+    signal?: AbortSignal
+  ): Promise<string> {
+    const changeSummary = this.buildChangeSummary(instruction);
+    
+    const message = `${instruction.originalInstruction}
+
+---
+
+## Code Changes Detected (Surgical Update)
+
+The following files have been modified since the last document generation. Please apply surgical edits to the existing ${instruction.documentType} document to reflect these changes. DO NOT regenerate the entire document - only modify the affected sections.
+
+${changeSummary}
+
+---
+
+## Current Project Context (Updated)
+See the change summary above for details on what changed.`;
+
+    return this.chatAsync({
+      message,
+      session_id: sessionId,
+      approval_mode: 'ask_every_time',
+      model_tier: 'core',
+    }, signal);
+  }
+
+  private buildChangeSummary(instruction: SurgicalEditInstruction): string {
+    const lines: string[] = [];
+    
+    if (instruction.changedFiles.length > 0) {
+      lines.push('### Modified Files:');
+      for (const f of instruction.changedFiles) {
+        lines.push(`- \`${f.path}\` - content changed`);
+      }
+      lines.push('');
+    }
+    
+    if (instruction.addedFiles.length > 0) {
+      lines.push('### Added Files:');
+      for (const f of instruction.addedFiles) {
+        lines.push(`- \`${f.path}\` - new file`);
+      }
+      lines.push('');
+    }
+    
+    if (instruction.removedFiles.length > 0) {
+      lines.push('### Removed Files:');
+      for (const f of instruction.removedFiles) {
+        lines.push(`- \`${f}\` - deleted`);
+      }
+      lines.push('');
+    }
+    
+    return lines.join('\n');
   }
 }
 
