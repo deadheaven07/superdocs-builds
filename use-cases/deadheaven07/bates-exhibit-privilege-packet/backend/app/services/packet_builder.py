@@ -10,6 +10,7 @@ from pathlib import Path
 import fitz
 from pypdf import PdfReader, PdfWriter
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
@@ -106,7 +107,7 @@ class PacketBuilderService:
             page.insert_text((margin, y), line, fontsize=9, fontname="helv", color=(0.2, 0.2, 0.25))
             y += 14
 
-        data = doc.tobytes()
+        data = bytes(doc.tobytes())
         doc.close()
         return data
 
@@ -324,7 +325,9 @@ class PacketBuilderService:
 
         return len(errors) == 0, errors, warnings
 
-    def _verify_applied_redactions(self, documents: list[Document]) -> None:
+    async def _verify_applied_redactions(
+        self, session: AsyncSession, documents: list[Document]
+    ) -> None:
         """Refuse to build if any APPLIED redaction is not verified against its output file."""
         errors = []
         verifier = RedactionApplicationService()
@@ -334,7 +337,9 @@ class PacketBuilderService:
                     continue
                 redacted_path = redacted_pdf_path_for(document)
                 if redacted_path.exists():
-                    verification = verifier.verify_redactions(redacted_path, [candidate])
+                    verification = await verifier.verify_redactions(
+                        session, document, [candidate]
+                    )
                     verified = verification.get(str(candidate.id), {}).get("verified", False)
                     if not verified:
                         errors.append(
@@ -408,7 +413,7 @@ class PacketBuilderService:
         if not bates_list:
             raise ValueError("Bates numbers not assigned. Run Bates assignment first.")
 
-        self._verify_applied_redactions(documents)
+        await self._verify_applied_redactions(session, documents)
 
         valid, errors, warnings = self._run_validation(packet, documents, bates_list)
         if not valid:

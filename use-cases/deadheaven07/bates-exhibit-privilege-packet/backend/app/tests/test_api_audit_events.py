@@ -5,11 +5,10 @@ processing/bates/validation events fire through the real routers.
 """
 
 import pytest
-
+from qa_helpers import make_pdf
 from sqlalchemy import select
 
 from app.domain.audit import AuditEvent, AuditEventType
-from qa_helpers import make_pdf
 
 
 async def _make_packet(client, name="Audit QA Packet", start=1):

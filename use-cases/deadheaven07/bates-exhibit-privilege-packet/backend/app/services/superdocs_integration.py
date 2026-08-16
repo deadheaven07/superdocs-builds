@@ -78,6 +78,8 @@ class SuperDocsIntegrationService:
         if not document.superdocs_session_id:
             await self.upload_document_to_superdocs(session, document)
             await session.refresh(document)
+        if not document.superdocs_session_id:
+            raise ValueError("Failed to upload document to SuperDocs")
 
         job_id = await self.adapter.chat_async(
             message=instruction,
@@ -184,6 +186,8 @@ class SuperDocsIntegrationService:
         if not document.superdocs_session_id:
             await self.upload_document_to_superdocs(session, document)
             await session.refresh(document)
+        if not document.superdocs_session_id or not document.superdocs_document_id:
+            raise ValueError("Failed to upload document to SuperDocs")
 
         result = await self.adapter.detect_pii(
             session_id=document.superdocs_session_id,
@@ -202,6 +206,8 @@ class SuperDocsIntegrationService:
         if not document.superdocs_session_id:
             await self.upload_document_to_superdocs(session, document)
             await session.refresh(document)
+        if not document.superdocs_session_id or not document.superdocs_document_id:
+            raise ValueError("Failed to upload document to SuperDocs")
 
         result = await self.adapter.analyze_privilege(
             session_id=document.superdocs_session_id,
@@ -221,7 +227,8 @@ class SuperDocsIntegrationService:
         pii_result: "PIIDetectionResult",
         categories: list["PIICategory"] | None = None,
     ) -> list["RedactionCandidate"]:
-        """Create redaction candidates from PII detection results, optionally filtered by category."""
+        """Create redaction candidates from PII detection results,
+        optionally filtered by category."""
         candidates = []
         for entity in pii_result.entities:
             if categories and entity.category not in categories:
@@ -245,6 +252,8 @@ class SuperDocsIntegrationService:
         if not document.superdocs_session_id:
             await self.upload_document_to_superdocs(session, document)
             await session.refresh(document)
+        if not document.superdocs_session_id or not document.superdocs_document_id:
+            raise ValueError("Failed to upload document to SuperDocs")
 
         result = await self.adapter.apply_redactions(
             session_id=document.superdocs_session_id,
@@ -264,6 +273,8 @@ class SuperDocsIntegrationService:
         if not document.superdocs_session_id:
             await self.upload_document_to_superdocs(session, document)
             await session.refresh(document)
+        if not document.superdocs_session_id or not document.superdocs_document_id:
+            raise ValueError("Failed to upload document to SuperDocs")
 
         result = await self.adapter.get_redaction_preview(
             session_id=document.superdocs_session_id,

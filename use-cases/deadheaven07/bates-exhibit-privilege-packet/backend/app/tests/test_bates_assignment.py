@@ -2,8 +2,8 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain.packet import Packet
 from app.domain.document import Document, DocumentType, ProcessingStatus
+from app.domain.packet import Packet
 from app.domain.page import Page
 from app.services.bates_assignment import BatesAssignmentService
 

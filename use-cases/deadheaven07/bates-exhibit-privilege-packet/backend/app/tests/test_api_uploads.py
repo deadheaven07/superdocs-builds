@@ -5,9 +5,9 @@
 import os
 
 import pytest
+from qa_helpers import make_pdf, sha256_of
 
 from app.config import get_settings
-from qa_helpers import make_pdf, sha256_of
 
 
 async def _make_packet(client, name="Upload QA Packet", start=1):

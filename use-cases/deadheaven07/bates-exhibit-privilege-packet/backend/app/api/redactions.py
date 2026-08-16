@@ -11,6 +11,7 @@ from app.domain.audit import AuditEvent, AuditEventType
 from app.domain.document import Document, ProcessingStatus
 from app.domain.packet import Packet
 from app.domain.redaction import RedactionApproval, RedactionCandidate, RedactionStatus
+from app.services.redaction import RedactionDetectionService, db_candidates_to_superdocs
 from app.services.superdocs_integration import SuperDocsIntegrationService, get_superdocs_service
 from app.services.superdocs_port import PIICategory
 from app.time import utc_now as _now
@@ -119,11 +120,16 @@ async def detect_document_redactions(
         if not document:
             return
 
-        pii_result = await superdocs.detect_pii(bg_session, document, categories)
-        candidates = await superdocs.create_redaction_candidates(
-            bg_session, document, pii_result, categories
+        detector = RedactionDetectionService(superdocs=superdocs)
+        pii_result = await detector.detect_pii_in_document(
+            bg_session, str(document_id), categories
         )
-        created, skipped = await superdocs.reconcile_candidates(bg_session, document, candidates)
+        candidates = await detector.create_redaction_candidates(
+            bg_session, str(document_id), pii_result
+        )
+        created, skipped = await detector.reconcile_candidates(
+            bg_session, str(document_id), candidates
+        )
         for candidate in created:
             bg_session.add(candidate)
 
@@ -273,7 +279,11 @@ async def apply_redaction(
     # Apply redaction via SuperDocs
     batch = await _appliable_candidates(session, candidate.document_id)
 
-    result = await superdocs.apply_redactions(session, candidate.document, batch)
+    superdocs_candidates = db_candidates_to_superdocs(batch)
+    if not superdocs_candidates:
+        raise HTTPException(status_code=400, detail="No appliable redaction candidates")
+
+    result = await superdocs.apply_redactions(session, candidate.document, superdocs_candidates)
 
     if not result or result.status != "completed":
         error = result.error if result else "Unknown error"
@@ -339,7 +349,11 @@ async def apply_all_approved_redactions(
         if not batch:
             continue
 
-        result = await superdocs.apply_redactions(session, document, batch)
+        superdocs_candidates = db_candidates_to_superdocs(batch)
+        if not superdocs_candidates:
+            continue
+
+        result = await superdocs.apply_redactions(session, document, superdocs_candidates)
 
         failed = []
         for candidate in batch:

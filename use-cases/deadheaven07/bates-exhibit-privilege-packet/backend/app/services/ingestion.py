@@ -89,7 +89,7 @@ class IngestionService:
                 import fitz
 
                 doc = fitz.open(file_path)
-                count = doc.page_count
+                count = int(doc.page_count)
                 doc.close()
                 if count == 0:
                     raise FileValidationError("PDF contains no pages")
@@ -126,7 +126,7 @@ class IngestionService:
                 import fitz
 
                 doc = fitz.open(pdf_path)
-                count = doc.page_count
+                count = int(doc.page_count)
                 doc.close()
                 pdf_path.unlink(missing_ok=True)
                 return count

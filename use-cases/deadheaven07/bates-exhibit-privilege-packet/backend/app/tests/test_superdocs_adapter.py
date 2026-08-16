@@ -1,7 +1,9 @@
-import pytest
 import json
+
+import pytest
+
 from app.services.superdocs_adapter import SuperDocsRESTAdapter
-from app.services.superdocs_port import ProposedChangeBatch, ProposedChange
+from app.services.superdocs_port import ProposedChange, ProposedChangeBatch
 
 
 class TestSuperDocsProposedChangeParsing:

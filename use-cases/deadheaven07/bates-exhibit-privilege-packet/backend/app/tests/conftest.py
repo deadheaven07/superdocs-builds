@@ -1,10 +1,10 @@
 import pytest
 import pytest_asyncio
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
-from app.database import Base
 from app.config import Settings
+from app.database import Base
 
 # Ensure every model is registered on Base.metadata before create_all runs.
 from app.domain import (  # noqa: F401,E402
@@ -17,7 +17,6 @@ from app.domain import (  # noqa: F401,E402
     privilege,
     redaction,
 )
-
 
 TEST_DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/bates_packet"
 
@@ -58,12 +57,13 @@ async def test_session(test_engine):
 @pytest.fixture(scope="function")
 def mock_superdocs_adapter():
     from unittest.mock import AsyncMock, MagicMock
+
     from app.services.superdocs_port import (
-        SuperDocsPort,
-        DocumentUploadResult,
         AttachmentUploadResult,
+        DocumentUploadResult,
         JobStatus,
         ProposedChangeBatch,
+        SuperDocsPort,
     )
 
     adapter = MagicMock(spec=SuperDocsPort)
@@ -108,19 +108,38 @@ def mock_superdocs_adapter():
     return adapter
 
 
+@pytest.fixture(scope="function")
+def superdocs_override(api_client):
+    """Override the SuperDocs dependency with the in-memory fake engine.
+
+    Yields (client, fake_service). The fake mirrors the SuperDocs API contract
+    (detect_pii/apply_redactions/upload) against locally stored files, so the
+    SuperDocs-native redaction paths run without a network.
+    """
+    from qa_helpers import FakeSuperDocsService
+
+    from app.main import app
+    from app.services.superdocs_integration import get_superdocs_service
+
+    fake = FakeSuperDocsService()
+    app.dependency_overrides[get_superdocs_service] = lambda: fake
+    yield api_client, fake
+    app.dependency_overrides.pop(get_superdocs_service, None)
+
+
 @pytest_asyncio.fixture(scope="function")
 async def api_client(test_engine, monkeypatch, tmp_path):
     """HTTP client exercising the real FastAPI routers with an isolated DB and
     storage root. Background tasks (detect/processing) are redirected to the
     test database."""
     from httpx import ASGITransport, AsyncClient
-    from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-    from app.database import get_session
-    from app.config import get_settings
-    from app.main import app
     import app.api.redactions as redactions_module
     import app.workers.processor as processor_module
+    from app.config import get_settings
+    from app.database import get_session
+    from app.main import app
 
     session_factory = async_sessionmaker(
         test_engine, class_=AsyncSession, expire_on_commit=False

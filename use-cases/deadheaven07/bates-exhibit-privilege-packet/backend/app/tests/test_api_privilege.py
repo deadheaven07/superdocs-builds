@@ -5,7 +5,6 @@ POST/PATCH /api/privilege/{packet_id}/{document_id} plus list/log endpoints.
 """
 
 import pytest
-
 from qa_helpers import make_pdf
 
 

@@ -1,10 +1,9 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from enum import Enum
-from typing import Optional
+from enum import StrEnum
 
 
-class PIICategory(str, Enum):
+class PIICategory(StrEnum):
     SSN = "ssn"
     EMAIL = "email"
     PHONE = "phone"
@@ -19,7 +18,7 @@ class PIICategory(str, Enum):
     OTHER = "other"
 
 
-class PrivilegeCategory(str, Enum):
+class PrivilegeCategory(StrEnum):
     ATTORNEY_CLIENT = "attorney_client"
     WORK_PRODUCT = "work_product"
     JOINT_DEFENSE = "joint_defense"
@@ -114,7 +113,7 @@ class PIIDetectionResult:
 @dataclass
 class PrivilegeAnalysisResult:
     is_privileged: bool
-    category: Optional["PrivilegeCategory"]
+    category: "PrivilegeCategory | None"
     reason: str
     confidence: float
     key_phrases: list[str]

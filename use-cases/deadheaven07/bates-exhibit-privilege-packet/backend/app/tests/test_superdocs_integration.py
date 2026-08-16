@@ -1,14 +1,15 @@
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
+from app.domain.document import Document, ProcessingStatus
 from app.services.superdocs_integration import SuperDocsIntegrationService
 from app.services.superdocs_port import (
     DocumentUploadResult,
+    ExportResult,
     JobStatus,
     ProposedChangeBatch,
-    ExportResult,
 )
-from app.domain.document import Document, ProcessingStatus
 
 
 class TestSuperDocsIntegrationService:

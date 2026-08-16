@@ -1,9 +1,10 @@
-import pytest
-from unittest.mock import patch
 from io import BytesIO
+from unittest.mock import patch
 
-from app.services.ingestion import IngestionService, FileValidationError
+import pytest
+
 from app.domain.document import DocumentType
+from app.services.ingestion import FileValidationError, IngestionService
 
 
 class TestIngestionService:
@@ -21,8 +22,9 @@ class TestIngestionService:
 
     @pytest.fixture
     def sample_image_bytes(self):
-        from PIL import Image
         import io
+
+        from PIL import Image
         img = Image.new('RGB', (100, 100), color='white')
         img_bytes = io.BytesIO()
         img.save(img_bytes, format='PNG')

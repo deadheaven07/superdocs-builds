@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import re
 from pathlib import Path
 
 import fitz
@@ -18,7 +19,7 @@ PII_FIXTURES = {
 
 def make_pdf(lines, page_count=1, page_size=(612, 792)):
     doc = fitz.open()
-    for i in range(page_count):
+    for _ in range(page_count):
         page = doc.new_page(width=page_size[0], height=page_size[1])
         for j, line in enumerate(lines):
             page.insert_text((72, 100 + j * 20), line, fontsize=12, fontname="helv")
@@ -82,3 +83,164 @@ def assert_artifacts_pii_free(final_dir, forbidden_values) -> None:
                 assert value.lower() not in lowered, (
                     f"Forbidden value {value!r} found in manifest.json"
                 )
+
+
+_PII_PATTERNS = [
+    ("ssn", re.compile(r"\b\d{3}-\d{2}-\d{4}\b")),
+    ("email", re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.]+\b")),
+    ("phone", re.compile(r"\(?\d{3}\)?[.\s-]?\d{3}[.\s-]?\d{4}(?![\d-])")),
+    ("account_number", re.compile(r"\b[A-Z]{2,10}[- ]?\d{4}[- ]?\d{4}\b", re.IGNORECASE)),
+    ("account_number", re.compile(r"\b\d{4}-\d{4}-\d{4}-\d{4}\b")),
+    ("name", re.compile(r"(?i)(?:employee|name)\s*[:]\s*([A-Z][a-z]+ [A-Z][a-z]+)")),
+]
+
+_FALSE_POSITIVE_PATTERNS = [
+    re.compile(r"\bFQ-\d{4}\b"),
+    re.compile(r"\bINV-\d{3,}\b"),
+    re.compile(r"\b\d{4}-\d{2}-\d{2}\b"),
+    re.compile(r"\bPage\b", re.IGNORECASE),
+]
+
+
+class FakeSuperDocsService:
+    """In-memory stand-in for the SuperDocs intelligence engine.
+
+    Mirrors the SuperDocs API contract at the integration-service level so API
+    and service tests exercise the SuperDocs-native code paths without a
+    network dependency. Detection is performed on the locally stored original
+    PDF with the same pattern families the real engine is expected to return.
+    """
+
+    def __init__(self):
+        from app.config import get_settings
+        from app.services.superdocs_port import JobStatus
+
+        self._settings = get_settings()
+        self.JobStatus = JobStatus
+        self.detect_calls = 0
+        self.apply_calls = 0
+
+    async def upload_document_to_superdocs(self, session, document):
+        from app.services.superdocs_port import DocumentUploadResult
+
+        document.superdocs_session_id = "fake-session"
+        document.superdocs_document_id = "fake-doc"
+        await session.commit()
+        return DocumentUploadResult(
+            session_id="fake-session",
+            document_id="fake-doc",
+            chunks_count=0,
+            version_id="v1",
+            page_setup={},
+            html=None,
+        )
+
+    async def detect_pii(self, session, document, categories=None):
+        from app.domain.document import DocumentType
+        from app.services.superdocs_port import PIICategory, PIIDetectionResult, PIIEntity
+
+        self.detect_calls += 1
+        if not document.superdocs_session_id:
+            await self.upload_document_to_superdocs(session, document)
+            await session.refresh(document)
+
+        entities = []
+        if document.document_type not in (DocumentType.PDF, DocumentType.SCANNED_PDF):
+            return PIIDetectionResult(
+                entities=[], total_count=0,
+                session_id=document.superdocs_session_id or "fake-session",
+                document_id=document.superdocs_document_id or "fake-doc",
+            )
+
+        from app.services.storage import original_path_for
+
+        path = original_path_for(document)
+        if not path.exists():
+            return PIIDetectionResult(
+                entities=[], total_count=0,
+                session_id=document.superdocs_session_id or "fake-session",
+                document_id=document.superdocs_document_id or "fake-doc",
+            )
+
+        doc = fitz.open(path)
+        try:
+            for page_index, page in enumerate(doc):
+                page_text = page.get_text()
+                if not page_text:
+                    continue
+                for category_value, pattern in _PII_PATTERNS:
+                    for match in pattern.finditer(page_text):
+                        if any(fp.search(match.group(0)) for fp in _FALSE_POSITIVE_PATTERNS):
+                            continue
+                        category = PIICategory(category_value)
+                        if categories and category not in categories:
+                            continue
+                        text = match.group(0).strip()
+                        if category_value == "name":
+                            text = match.group(1).strip()
+                        start = match.start()
+                        before = page_text[max(0, start - 40):start]
+                        after = page_text[match.end():match.end() + 40]
+                        entities.append(PIIEntity(
+                            category=category,
+                            text=text,
+                            page_number=page_index + 1,
+                            start_offset=start,
+                            end_offset=match.end(),
+                            confidence=0.95,
+                            context_before=before,
+                            context_after=after,
+                        ))
+        finally:
+            doc.close()
+
+        seen = set()
+        unique = []
+        for entity in entities:
+            key = (entity.category, entity.text, entity.page_number)
+            if key not in seen:
+                seen.add(key)
+                unique.append(entity)
+
+        return PIIDetectionResult(
+            entities=unique,
+            total_count=len(unique),
+            session_id=document.superdocs_session_id or "fake-session",
+            document_id=document.superdocs_document_id or "fake-doc",
+        )
+
+    async def apply_redactions(self, session, document, candidates):
+        from app.services.storage import original_path_for, redacted_pdf_path_for
+
+        self.apply_calls += 1
+        if not document.superdocs_session_id:
+            await self.upload_document_to_superdocs(session, document)
+            await session.refresh(document)
+
+        source = original_path_for(document)
+        if not source.exists():
+            return self.JobStatus(
+                job_id="fake-job", status="failed", error="Original file not found"
+            )
+
+        doc = fitz.open(source)
+        try:
+            for candidate in candidates:
+                if not candidate.approved:
+                    continue
+                for page in doc:
+                    rects = page.search_for(candidate.entity.text)
+                    for rect in rects:
+                        page.add_redact_annot(rect, fill=(0, 0, 0))
+            for page in doc:
+                page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
+            output = redacted_pdf_path_for(document)
+            output.parent.mkdir(parents=True, exist_ok=True)
+            doc.save(output, garbage=4, deflate=True)
+        finally:
+            doc.close()
+
+        return self.JobStatus(
+            job_id="fake-job", status="completed",
+            result={"applied": len(candidates)},
+        )

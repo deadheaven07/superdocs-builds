@@ -2,17 +2,21 @@ import hashlib
 
 import fitz
 import pytest
+from qa_helpers import FakeSuperDocsService
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.domain.packet import Packet
 from app.domain.document import Document, DocumentType, ProcessingStatus
+from app.domain.packet import Packet
 from app.domain.redaction import (
     RedactionApproval,
     RedactionStatus,
-    RedactionCategory,
 )
-from app.services.redaction import RedactionDetectionService, RedactionApplicationService
+from app.services.redaction import (
+    RedactionApplicationService,
+    RedactionDetectionService,
+    db_candidates_to_superdocs,
+)
 
 settings = get_settings()
 
@@ -82,15 +86,16 @@ class TestRedactionFlow:
         self, test_session: AsyncSession, document_with_pii
     ):
         packet, doc, original_path = document_with_pii
-        detection = RedactionDetectionService()
+        fake = FakeSuperDocsService()
+        detection = RedactionDetectionService(superdocs=fake)
 
-        matches = detection.detect_in_pdf(original_path)
-        categories = {m.category for m in matches}
-        assert RedactionCategory.SSN in categories
-        assert RedactionCategory.EMAIL in categories
-        assert any(m.matched_text == "123-45-6789" for m in matches)
+        pii_result = await detection.detect_pii_in_document(test_session, str(doc.id))
+        assert pii_result.total_count >= 2
+        assert any(e.text == "123-45-6789" for e in pii_result.entities)
 
-        candidates = await detection.create_redaction_candidates(test_session, doc)
+        candidates = await detection.create_redaction_candidates(
+            test_session, str(doc.id), pii_result
+        )
         for c in candidates:
             test_session.add(c)
         await test_session.commit()
@@ -98,19 +103,51 @@ class TestRedactionFlow:
         assert all(c.status == RedactionStatus.PROPOSED for c in candidates), (
             f"unexpected statuses: {[c.status for c in candidates]}"
         )
-        assert all(c.x0 > 0 or c.y0 > 0 for c in candidates), "coordinates should be populated"
+
+    @pytest.mark.asyncio
+    async def test_repeated_detect_is_idempotent(
+        self, test_session: AsyncSession, document_with_pii
+    ):
+        packet, doc, original_path = document_with_pii
+        fake = FakeSuperDocsService()
+        detection = RedactionDetectionService(superdocs=fake)
+
+        first = await detection.detect_pii_in_document(test_session, str(doc.id))
+        created, skipped = await detection.reconcile_candidates(
+            test_session, str(doc.id), (
+                await detection.create_redaction_candidates(test_session, str(doc.id), first)
+            )
+        )
+        for c in created:
+            test_session.add(c)
+        await test_session.commit()
+        assert skipped == 0
+        assert len(created) >= 2
+
+        second = await detection.detect_pii_in_document(test_session, str(doc.id))
+        created_again, skipped_again = await detection.reconcile_candidates(
+            test_session, str(doc.id), (
+                await detection.create_redaction_candidates(test_session, str(doc.id), second)
+            )
+        )
+        assert created_again == []
+        assert skipped_again == len(created), "re-detect must not duplicate candidates"
 
     @pytest.mark.asyncio
     async def test_approve_apply_verify_flow(
         self, test_session: AsyncSession, document_with_pii
     ):
         packet, doc, original_path = document_with_pii
-        detection = RedactionDetectionService()
-        application = RedactionApplicationService()
+        fake = FakeSuperDocsService()
+        detection = RedactionDetectionService(superdocs=fake)
+        application = RedactionApplicationService(superdocs=fake)
 
-        candidates = await detection.create_redaction_candidates(test_session, doc)
-        ssn_candidate = next(c for c in candidates if c.category == RedactionCategory.SSN)
-        email_candidate = next(c for c in candidates if c.category == RedactionCategory.EMAIL)
+        pii_result = await detection.detect_pii_in_document(test_session, str(doc.id))
+        candidates = await detection.create_redaction_candidates(
+            test_session, str(doc.id), pii_result
+        )
+        ssn_candidate = next(c for c in candidates if c.matched_text == "123-45-6789")
+        email_candidate = next(c for c in candidates if "jane.public" in c.matched_text)
 
         test_session.add_all(candidates)
         await test_session.flush()
@@ -124,24 +161,27 @@ class TestRedactionFlow:
         test_session.add(approval)
         await test_session.commit()
 
-        output_path = settings.working_path / f"{doc.sha256}_redacted.pdf"
-        results = application.apply_redactions(
-            input_path=original_path,
-            output_path=output_path,
-            candidates=[ssn_candidate, email_candidate],
+        results = await application.apply_redactions(
+            test_session, doc, [ssn_candidate, email_candidate]
         )
 
         assert results[str(ssn_candidate.id)]["applied"] is True
-        assert output_path.exists()
-
-        verification = application.verify_redactions(output_path, [ssn_candidate, email_candidate])
-        assert verification[str(ssn_candidate.id)]["verified"] is True
-        assert verification[str(ssn_candidate.id)]["text_still_present"] is False
-        assert verification[str(email_candidate.id)]["verified"] is False, (
-            "unapproved candidate must not be redacted"
+        assert str(email_candidate.id) not in results, (
+            "unapproved candidate must be skipped"
         )
 
-        redacted_doc = fitz.open(output_path)
+        redacted_path = settings.working_path / f"{doc.sha256}_redacted.pdf"
+        assert redacted_path.exists()
+
+        verification = await application.verify_redactions(
+            test_session, doc, [ssn_candidate, email_candidate]
+        )
+        assert verification[str(ssn_candidate.id)]["verified"] is True
+        assert verification[str(email_candidate.id)]["verified"] is False, (
+            "unapproved candidate must not be verified"
+        )
+
+        redacted_doc = fitz.open(redacted_path)
         try:
             redacted_text = redacted_doc[0].get_text()
         finally:
@@ -154,11 +194,15 @@ class TestRedactionFlow:
         self, test_session: AsyncSession, document_with_pii
     ):
         packet, doc, original_path = document_with_pii
-        detection = RedactionDetectionService()
-        application = RedactionApplicationService()
+        fake = FakeSuperDocsService()
+        detection = RedactionDetectionService(superdocs=fake)
+        application = RedactionApplicationService(superdocs=fake)
 
-        candidates = await detection.create_redaction_candidates(test_session, doc)
-        ssn_candidate = next(c for c in candidates if c.category == RedactionCategory.SSN)
+        pii_result = await detection.detect_pii_in_document(test_session, str(doc.id))
+        candidates = await detection.create_redaction_candidates(
+            test_session, str(doc.id), pii_result
+        )
+        ssn_candidate = next(c for c in candidates if c.matched_text == "123-45-6789")
 
         test_session.add(ssn_candidate)
         await test_session.flush()
@@ -171,17 +215,31 @@ class TestRedactionFlow:
         ))
         await test_session.commit()
 
-        output_path = settings.working_path / f"{doc.sha256}_redacted.pdf"
-        results = application.apply_redactions(original_path, output_path, [ssn_candidate])
+        results = await application.apply_redactions(
+            test_session, doc, [ssn_candidate]
+        )
 
         assert str(ssn_candidate.id) not in results, (
             "rejected candidates must be skipped by apply_redactions"
         )
-        assert output_path.exists()
 
-        redacted_doc = fitz.open(output_path)
-        try:
-            redacted_text = redacted_doc[0].get_text()
-        finally:
-            redacted_doc.close()
-        assert "123-45-6789" in redacted_text
+    @pytest.mark.asyncio
+    async def test_db_candidates_convert_to_superdocs(
+        self, test_session: AsyncSession, document_with_pii
+    ):
+        packet, doc, original_path = document_with_pii
+        fake = FakeSuperDocsService()
+        detection = RedactionDetectionService(superdocs=fake)
+
+        pii_result = await detection.detect_pii_in_document(test_session, str(doc.id))
+        candidates = await detection.create_redaction_candidates(
+            test_session, str(doc.id), pii_result
+        )
+        approved = list(candidates)
+        for c in approved:
+            c.status = RedactionStatus.APPROVED
+
+        converted = db_candidates_to_superdocs(approved)
+        assert len(converted) == len(approved)
+        assert all(c.approved for c in converted)
+        assert all(c.entity.text for c in converted)

@@ -62,14 +62,14 @@ class SuperDocsRESTAdapter(SuperDocsPort):
                 response.status_code,
                 response.text,
             )
-        return response.json()
+        return dict(response.json())
 
     async def _ensure_session(self, session_id: str | None) -> str:
         client = await self._get_client()
         payload = {"session_id": session_id} if session_id else {}
         response = await client.post("/v1/sessions/init", json=payload)
         data = self._handle_response(response)
-        return data.get("session_id", session_id or "")
+        return str(data.get("session_id", session_id or ""))
 
     @retry(
         wait=wait_exponential(multiplier=1, min=2, max=30),
@@ -183,7 +183,7 @@ class SuperDocsRESTAdapter(SuperDocsPort):
         response = await client.post("/v1/chat/async", json=payload)
         data = self._handle_response(response)
 
-        return data.get("job_id", "")
+        return str(data.get("job_id", ""))
 
     @retry(
         wait=wait_exponential(multiplier=1, min=2, max=30),
@@ -261,7 +261,7 @@ class SuperDocsRESTAdapter(SuperDocsPort):
     ) -> ExportResult:
         client = await self._get_client()
 
-        payload = {
+        payload: dict[str, object] = {
             "session_id": session_id,
             "format": format,
         }
@@ -336,7 +336,7 @@ class SuperDocsRESTAdapter(SuperDocsPort):
     ) -> "PIIDetectionResult":
         client = await self._get_client()
 
-        payload = {
+        payload: dict[str, object] = {
             "session_id": session_id,
             "document_id": document_id,
         }

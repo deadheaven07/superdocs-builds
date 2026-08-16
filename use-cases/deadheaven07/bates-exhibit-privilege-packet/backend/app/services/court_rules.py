@@ -23,11 +23,11 @@ class CourtRulesConfig:
     def get_profile(self, profile_name: str) -> dict[str, Any]:
         """Get a specific court rule profile by name."""
         config = self.load()
-        profiles = config.get("profiles", {})
+        profiles: dict[str, Any] = config.get("profiles", {})
         if profile_name not in profiles:
             available = list(profiles.keys())
             raise ValueError(f"Profile '{profile_name}' not found. Available profiles: {available}")
-        return profiles[profile_name]
+        return dict(profiles[profile_name])
 
     def get_default_profile(self) -> dict[str, Any]:
         """Get the default court rule profile."""

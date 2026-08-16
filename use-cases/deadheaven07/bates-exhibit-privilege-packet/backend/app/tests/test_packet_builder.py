@@ -9,12 +9,17 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.domain.packet import Packet
-from app.domain.document import Document, DocumentType, ProcessingStatus
-from app.domain.page import Page
 from app.domain.bates import BatesAssignment
+from app.domain.document import Document, DocumentType, ProcessingStatus
 from app.domain.manifest import Manifest, ManifestEntry
-from app.domain.redaction import RedactionCandidate, RedactionApproval, RedactionStatus, RedactionCategory
+from app.domain.packet import Packet
+from app.domain.page import Page
+from app.domain.redaction import (
+    RedactionApproval,
+    RedactionCandidate,
+    RedactionCategory,
+    RedactionStatus,
+)
 from app.services.packet_builder import PacketBuilderService
 
 settings = get_settings()

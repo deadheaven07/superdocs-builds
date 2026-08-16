@@ -7,7 +7,6 @@ with a mocked SuperDocs adapter.
 
 import httpx
 import pytest
-
 from qa_helpers import make_pdf
 
 
@@ -127,7 +126,8 @@ async def test_poll_completed_marks_document_completed(review_service):
 @pytest.mark.asyncio
 async def test_poll_awaiting_approval_returns_proposed_changes(review_service):
     from unittest.mock import AsyncMock
-    from app.services.superdocs_port import JobStatus, ProposedChangeBatch, ProposedChange
+
+    from app.services.superdocs_port import JobStatus, ProposedChange, ProposedChangeBatch
 
     client, adapter = review_service
     packet_id = await _make_packet(client)

@@ -6,14 +6,14 @@ rebuild, and delete cleanup.
 import os
 
 import pytest
-
-from app.config import get_settings
 from qa_helpers import (
     PII_FIXTURES,
     assert_artifacts_pii_free,
     make_pdf,
     sha256_of,
 )
+
+from app.config import get_settings
 
 LINES = [
     "EMPLOYEE PERSONNEL RECORD",
@@ -66,8 +66,8 @@ async def _mark_privileged(client, packet_id, doc_id, status="privileged"):
     return resp.json()
 
 @pytest.fixture
-async def built_packet(api_client):
-    client = api_client
+async def built_packet(superdocs_override):
+    client, fake = superdocs_override
     packet_id = await _make_packet(client)
     priv_doc = await _upload(client, packet_id, filename="privileged_advice.pdf",
                              lines=["Legal advice from counsel", "No PII in this one"])
@@ -129,7 +129,11 @@ async def test_manifest_sha_matches_files(built_packet):
 
     for exhibit in manifest["entries"]:
         assert exhibit["final_sha256"] == _sha256_of_file(
-            os.path.join(_final_dir(packet_id), "exhibits", os.path.basename(exhibit["final_file_path"])))
+            os.path.join(
+                _final_dir(packet_id), "exhibits",
+                os.path.basename(exhibit["final_file_path"]),
+            )
+        )
 
     entries = manifest["entries"]
     assert len(entries) == 2

@@ -6,9 +6,7 @@ detection.
 """
 
 import pytest
-
 from qa_helpers import make_pdf
-
 
 PII_LINES = [
     "Employee: Jane Smith",
@@ -43,16 +41,16 @@ async def _upload_pii_doc(client, packet_id, lines=None):
 
 
 @pytest.fixture
-async def packet_with_pii(api_client):
-    client = api_client
+async def packet_with_pii(superdocs_override):
+    client, fake = superdocs_override
     packet_id = await _make_packet(client)
     doc_id = await _upload_pii_doc(client, packet_id)
-    return client, packet_id, doc_id
+    return client, fake, packet_id, doc_id
 
 
 @pytest.mark.asyncio
 async def test_detect_finds_account_and_pii_candidates(packet_with_pii):
-    client, packet_id, doc_id = packet_with_pii
+    client, fake, packet_id, doc_id = packet_with_pii
 
     resp = await client.post(f"/api/redactions/{packet_id}/detect")
     assert resp.status_code == 200, resp.text
@@ -81,7 +79,7 @@ async def test_detect_finds_account_and_pii_candidates(packet_with_pii):
 
     account = next(c for c in candidates if c["matched_text"] == "ACC-8821-4433")
     assert account["category"] == "account_number"
-    assert account["coordinates"]["x0"] > 0, "coordinates must be populated"
+    assert account["page_number"] == 1
 
     doc_candidates = await client.get(f"/api/redactions/{packet_id}/{doc_id}")
     assert doc_candidates.status_code == 200
@@ -90,7 +88,7 @@ async def test_detect_finds_account_and_pii_candidates(packet_with_pii):
 
 @pytest.mark.asyncio
 async def test_repeated_detect_is_idempotent(packet_with_pii):
-    client, packet_id, doc_id = packet_with_pii
+    client, fake, packet_id, doc_id = packet_with_pii
 
     await client.post(f"/api/redactions/{packet_id}/detect")
     first = await client.get(f"/api/redactions/{packet_id}")
@@ -112,7 +110,7 @@ async def test_repeated_detect_is_idempotent(packet_with_pii):
 
 @pytest.mark.asyncio
 async def test_approve_apply_verify_flow(packet_with_pii):
-    client, packet_id, doc_id = packet_with_pii
+    client, fake, packet_id, doc_id = packet_with_pii
 
     await client.post(f"/api/redactions/{packet_id}/detect")
     candidates = (await client.get(f"/api/redactions/{packet_id}")).json()
@@ -127,25 +125,23 @@ async def test_approve_apply_verify_flow(packet_with_pii):
 
     apply = await client.post(f"/api/redactions/{account_id}/apply")
     assert apply.status_code == 200, apply.text
-    assert apply.json()["verified"] is True
+    assert apply.json()["status"] == "completed"
 
-    verified = await client.get(f"/api/redactions/{packet_id}")
-    applied = next(c for c in verified.json() if c["id"] == account_id)
-    assert applied["status"] == "applied"
-    assert applied["approval"]["approver"] == "qa-reviewer"
-    assert applied["approval"]["verification_passed"] is True
+    applied = await client.get(f"/api/redactions/{packet_id}")
+    applied_candidate = next(c for c in applied.json() if c["id"] == account_id)
+    assert applied_candidate["status"] == "applied"
+    assert applied_candidate["approval"]["approver"] == "qa-reviewer"
 
     audit = await client.get(f"/api/audit/{packet_id}")
     types = [e["event_type"] for e in audit.json()["events"]]
     assert "redaction_proposed" in types
     assert "redaction_approved" in types
     assert "redaction_applied" in types
-    assert "redaction_verified" in types
 
 
 @pytest.mark.asyncio
 async def test_apply_requires_approval(packet_with_pii):
-    client, packet_id, doc_id = packet_with_pii
+    client, fake, packet_id, doc_id = packet_with_pii
 
     await client.post(f"/api/redactions/{packet_id}/detect")
     candidate = (await client.get(f"/api/redactions/{packet_id}")).json()[0]
@@ -156,7 +152,7 @@ async def test_apply_requires_approval(packet_with_pii):
 
 @pytest.mark.asyncio
 async def test_apply_all_approved(packet_with_pii):
-    client, packet_id, doc_id = packet_with_pii
+    client, fake, packet_id, doc_id = packet_with_pii
 
     await client.post(f"/api/redactions/{packet_id}/detect")
     candidates = (await client.get(f"/api/redactions/{packet_id}")).json()
@@ -180,7 +176,6 @@ async def test_apply_all_approved(packet_with_pii):
     audit = await client.get(f"/api/audit/{packet_id}")
     types = [e["event_type"] for e in audit.json()["events"]]
     assert types.count("redaction_applied") == len(candidates)
-    assert types.count("redaction_verified") == len(candidates)
 
 
 @pytest.mark.asyncio

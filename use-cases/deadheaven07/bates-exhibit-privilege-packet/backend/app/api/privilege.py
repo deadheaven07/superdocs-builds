@@ -1,17 +1,18 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from pydantic import BaseModel
-from typing import Optional
-from uuid import UUID
 from datetime import datetime
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_session
-from app.domain.packet import Packet
-from app.domain.document import Document
-from app.domain.privilege import PrivilegeDecision, PrivilegeStatus, PrivilegeCategory
-from app.domain.bates import BatesAssignment
 from app.domain.audit import AuditEvent, AuditEventType
+from app.domain.bates import BatesAssignment
+from app.domain.document import Document
+from app.domain.packet import Packet
+from app.domain.privilege import PrivilegeCategory, PrivilegeDecision, PrivilegeStatus
+from app.services.superdocs_integration import SuperDocsIntegrationService, get_superdocs_service
 from app.time import utc_now
 
 router = APIRouter()
@@ -19,8 +20,8 @@ router = APIRouter()
 
 class PrivilegeDecisionRequest(BaseModel):
     status: PrivilegeStatus
-    category: Optional[PrivilegeCategory] = None
-    reason: Optional[str] = None
+    category: PrivilegeCategory | None = None
+    reason: str | None = None
     reviewer: str
 
 
@@ -28,12 +29,16 @@ class PrivilegeDecisionResponse(BaseModel):
     id: str
     document_id: str
     status: str
-    category: Optional[str]
-    reason: Optional[str]
-    bates_start: Optional[str]
-    bates_end: Optional[str]
+    category: str | None
+    reason: str | None
+    bates_start: str | None
+    bates_end: str | None
     reviewer: str
-    decided_at: Optional[datetime]
+    decided_at: datetime | None
+
+
+class PrivilegeAnalysisRequest(BaseModel):
+    force_reanalyze: bool = False
 
 
 @router.get("/{packet_id}")
@@ -56,11 +61,46 @@ async def get_privilege_decisions(packet_id: UUID, session: AsyncSession = Depen
             reason=d.reason,
             bates_start=d.bates_start,
             bates_end=d.bates_end,
-            reviewer=d.reviewer,
+            reviewer=d.reviewer or "unknown",
             decided_at=d.decided_at,
         )
         for d in decisions
     ]
+
+
+@router.post("/{packet_id}/{document_id}/analyze-privilege")
+async def analyze_privilege(
+    packet_id: UUID,
+    document_id: UUID,
+    request: PrivilegeAnalysisRequest,
+    session: AsyncSession = Depends(get_session),
+    superdocs: "SuperDocsIntegrationService" = Depends(get_superdocs_service),
+):
+    """Analyze document for privilege using SuperDocs."""
+    packet = await session.get(Packet, packet_id)
+    if not packet:
+        raise HTTPException(status_code=404, detail="Packet not found")
+
+    document = await session.get(Document, document_id)
+    if not document or document.packet_id != packet_id:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if document.processing_status != "completed":
+        raise HTTPException(
+            status_code=400,
+            detail="Document must be fully processed before privilege analysis"
+        )
+
+    result = await superdocs.analyze_privilege(session, document)
+
+    return {
+        "document_id": str(document.id),
+        "is_privileged": result.is_privileged,
+        "category": result.category.value if result.category else None,
+        "reason": result.reason,
+        "confidence": result.confidence,
+        "key_phrases": result.key_phrases,
+    }
 
 
 @router.post("/{packet_id}/{document_id}")
@@ -79,7 +119,10 @@ async def mark_privilege(
         raise HTTPException(status_code=404, detail="Document not found")
 
     if request.status == PrivilegeStatus.PRIVILEGED and not request.reason:
-        raise HTTPException(status_code=400, detail="Privilege reason is required for privileged documents")
+        raise HTTPException(
+            status_code=400,
+            detail="Privilege reason is required for privileged documents"
+        )
 
     result = await session.execute(
         select(PrivilegeDecision).where(
@@ -148,7 +191,7 @@ async def mark_privilege(
         reason=decision.reason,
         bates_start=decision.bates_start,
         bates_end=decision.bates_end,
-        reviewer=decision.reviewer,
+        reviewer=decision.reviewer or "unknown",
         decided_at=decision.decided_at,
     )
 

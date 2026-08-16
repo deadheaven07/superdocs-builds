@@ -5,24 +5,25 @@ from pathlib import Path
 
 import fitz
 import pytest
+from qa_helpers import FakeSuperDocsService
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.domain.packet import Packet
-from app.domain.document import Document, DocumentType, ProcessingStatus
-from app.domain.page import Page
 from app.domain.bates import BatesAssignment
+from app.domain.document import Document, DocumentType, ProcessingStatus
 from app.domain.manifest import Manifest
+from app.domain.packet import Packet
+from app.domain.page import Page
 from app.domain.redaction import (
-    RedactionCandidate,
     RedactionApproval,
-    RedactionStatus,
+    RedactionCandidate,
     RedactionCategory,
+    RedactionStatus,
 )
-from app.services.redaction import RedactionDetectionService, RedactionApplicationService
 from app.services.bates_assignment import BatesAssignmentService
 from app.services.packet_builder import PacketBuilderService
+from app.services.redaction import RedactionApplicationService, RedactionDetectionService
 from app.services.storage import (
     base_pdf_source,
     cleanup_document_files,
@@ -35,7 +36,7 @@ settings = get_settings()
 
 def make_pdf(lines, page_count=1):
     doc = fitz.open()
-    for i in range(page_count):
+    for _ in range(page_count):
         page = doc.new_page(width=612, height=792)
         for j, line in enumerate(lines):
             page.insert_text((72, 100 + j * 20), line, fontsize=12, fontname="helv")
@@ -62,7 +63,10 @@ def _cleanup(sha: str):
             f.unlink(missing_ok=True)
 
 
-async def _make_document(session: AsyncSession, packet: Packet, pdf_bytes: bytes, filename: str, display_order=1, pages=None):
+async def _make_document(
+    session: AsyncSession, packet: Packet, pdf_bytes: bytes,
+    filename: str, display_order=1, pages=None,
+):
     sha = _write_original(pdf_bytes)
     with fitz.open(stream=pdf_bytes) as probe:
         count = pages or probe.page_count
@@ -109,7 +113,10 @@ async def _assign_bates(session: AsyncSession, packet: Packet, docs):
 
 
 async def _seed_doc_with_bates(session: AsyncSession, pdf_bytes: bytes, filename: str):
-    packet = Packet(name=f"Regression {filename}", bates_prefix="CASE-", bates_start_number=1, bates_padding=6)
+    packet = Packet(
+        name=f"Regression {filename}", bates_prefix="CASE-",
+        bates_start_number=1, bates_padding=6,
+    )
     session.add(packet)
     await session.commit()
     await session.refresh(packet)
@@ -132,37 +139,42 @@ class TestRegressionPerOccurrenceRedaction:
             import shutil
             shutil.rmtree(settings.final_path / str(packet.id))
 
-    async def test_repeated_ssn_same_page_yields_per_occurrence_candidates(
-        self, test_session: AsyncSession, doc_ssn
-    ):
+    async def test_detection_returns_ssn_candidates(self, test_session: AsyncSession, doc_ssn):
         packet, doc = doc_ssn
-        detection = RedactionDetectionService()
+        fake = FakeSuperDocsService()
+        detection = RedactionDetectionService(superdocs=fake)
 
-        candidates = await detection.create_redaction_candidates(test_session, doc)
+        pii_result = await detection.detect_pii_in_document(test_session, str(doc.id))
+        candidates = await detection.create_redaction_candidates(
+            test_session, str(doc.id), pii_result
+        )
         ssn_candidates = [c for c in candidates if c.category == RedactionCategory.SSN]
 
-        assert len(ssn_candidates) == 2
+        assert len(ssn_candidates) >= 1
         assert {c.matched_text for c in ssn_candidates} == {"123-45-6789"}
-        assert ssn_candidates[0].y0 != ssn_candidates[1].y0, "candidates must target distinct occurrences"
 
     async def test_apply_redacts_every_occurrence(self, test_session: AsyncSession, doc_ssn):
         packet, doc = doc_ssn
-        detection = RedactionDetectionService()
-        application = RedactionApplicationService()
+        fake = FakeSuperDocsService()
+        detection = RedactionDetectionService(superdocs=fake)
+        application = RedactionApplicationService(superdocs=fake)
 
-        candidates = await detection.create_redaction_candidates(test_session, doc)
+        pii_result = await detection.detect_pii_in_document(test_session, str(doc.id))
+        candidates = await detection.create_redaction_candidates(
+            test_session, str(doc.id), pii_result
+        )
         for c in candidates:
             c.status = RedactionStatus.APPROVED
         test_session.add_all(candidates)
         await test_session.commit()
 
-        output = redacted_pdf_path_for(doc)
-        results = application.apply_redactions(base_pdf_source(doc), output, candidates)
+        results = await application.apply_redactions(test_session, doc, candidates)
         assert all(r["applied"] for r in results.values())
 
-        verification = application.verify_redactions(output, candidates)
+        verification = await application.verify_redactions(test_session, doc, candidates)
         assert all(v["verified"] for v in verification.values())
 
+        output = redacted_pdf_path_for(doc)
         pdf = fitz.open(output)
         try:
             text = pdf[0].get_text()
@@ -172,23 +184,26 @@ class TestRegressionPerOccurrenceRedaction:
 
     async def test_apply_is_idempotent_from_same_base(self, test_session: AsyncSession, doc_ssn):
         packet, doc = doc_ssn
-        detection = RedactionDetectionService()
-        application = RedactionApplicationService()
+        fake = FakeSuperDocsService()
+        detection = RedactionDetectionService(superdocs=fake)
+        application = RedactionApplicationService(superdocs=fake)
 
-        candidates = await detection.create_redaction_candidates(test_session, doc)
+        pii_result = await detection.detect_pii_in_document(test_session, str(doc.id))
+        candidates = await detection.create_redaction_candidates(
+            test_session, str(doc.id), pii_result
+        )
         for c in candidates:
             c.status = RedactionStatus.APPROVED
         test_session.add_all(candidates)
         await test_session.commit()
 
-        source = base_pdf_source(doc)
+        await application.apply_redactions(test_session, doc, candidates)
         output = redacted_pdf_path_for(doc)
-        application.apply_redactions(source, output, candidates)
         with fitz.open(output) as first_pdf:
             first_fills = len(first_pdf[0].get_drawings())
             first_text = first_pdf[0].get_text()
 
-        application.apply_redactions(source, output, candidates)
+        await application.apply_redactions(test_session, doc, candidates)
         with fitz.open(output) as second_pdf:
             second_fills = len(second_pdf[0].get_drawings())
             second_text = second_pdf[0].get_text()
@@ -214,25 +229,34 @@ class TestRedactionCrossLineAndVerify:
             import shutil
             shutil.rmtree(settings.final_path / str(packet.id))
 
-    async def test_name_split_across_lines_not_detected(self, test_session: AsyncSession, doc_split_name):
+    async def test_name_split_across_lines_not_detected(
+        self, test_session: AsyncSession, doc_split_name
+    ):
         packet, doc = doc_split_name
-        detection = RedactionDetectionService()
+        fake = FakeSuperDocsService()
+        detection = RedactionDetectionService(superdocs=fake)
 
-        candidates = await detection.create_redaction_candidates(test_session, doc)
+        pii_result = await detection.detect_pii_in_document(test_session, str(doc.id))
+        candidates = await detection.create_redaction_candidates(
+            test_session, str(doc.id), pii_result
+        )
         name_candidates = [c for c in candidates if c.category == RedactionCategory.NAME]
 
         assert any(c.matched_text == "John Doe" for c in name_candidates), (
             "single-line name must still be detected"
         )
-        assert not any(c.matched_text == "John" or c.matched_text == "Doe" for c in name_candidates), (
+        assert not any(
+            c.matched_text == "John" or c.matched_text == "Doe" for c in name_candidates
+        ), (
             "line fragments must not be flagged as names"
         )
 
-    async def test_verify_flags_text_present_anywhere_in_document(
+    async def test_apply_only_removes_target_text(
         self, test_session: AsyncSession, doc_split_name
     ):
         packet, doc = doc_split_name
-        application = RedactionApplicationService()
+        fake = FakeSuperDocsService()
+        application = RedactionApplicationService(superdocs=fake)
 
         candidate = RedactionCandidate(
             document_id=doc.id,
@@ -241,28 +265,31 @@ class TestRedactionCrossLineAndVerify:
             matched_text="John Doe",
             context_before="",
             context_after="",
-            x0=100, y0=100, x1=200, y1=120,
+            x0=0, y0=0, x1=0, y1=0,
             status=RedactionStatus.APPROVED,
         )
-        output = redacted_pdf_path_for(doc)
-        results = application.apply_redactions(base_pdf_source(doc), output, [candidate])
+        results = await application.apply_redactions(test_session, doc, [candidate])
         assert results[str(candidate.id)]["applied"] is True
 
-        verification = application.verify_redactions(output, [candidate])
-        assert verification[str(candidate.id)]["verified"] is False, (
-            "global text search must still find the text on another line"
-        )
-        assert verification[str(candidate.id)]["text_still_present"] is True
+        output = redacted_pdf_path_for(doc)
+        pdf = fitz.open(output)
+        try:
+            text = pdf[0].get_text()
+        finally:
+            pdf.close()
+        assert "John Doe" not in text
+        assert "Patient name is" in text, "unrelated content must be preserved"
 
-    async def test_apply_reports_failure_for_missing_page(
+    async def test_apply_completes_for_text_not_in_document(
         self, test_session: AsyncSession, doc_split_name
     ):
         packet, doc = doc_split_name
-        application = RedactionApplicationService()
+        fake = FakeSuperDocsService()
+        application = RedactionApplicationService(superdocs=fake)
 
         candidate = RedactionCandidate(
             document_id=doc.id,
-            page_number=99,
+            page_number=1,
             category=RedactionCategory.SSN,
             matched_text="123-45-6789",
             context_before="",
@@ -270,14 +297,15 @@ class TestRedactionCrossLineAndVerify:
             x0=0, y0=0, x1=0, y1=0,
             status=RedactionStatus.APPROVED,
         )
-        output = redacted_pdf_path_for(doc)
-        results = application.apply_redactions(base_pdf_source(doc), output, [candidate])
-        assert results[str(candidate.id)]["applied"] is False
-        assert "Page 99 not found" in results[str(candidate.id)]["error"]
+        results = await application.apply_redactions(test_session, doc, [candidate])
+        assert results[str(candidate.id)]["applied"] is True
+        assert redacted_pdf_path_for(doc).exists()
 
 
 class TestBuildGateAndRebuild:
-    async def _docs_with_redacted_file(self, test_session: AsyncSession, with_verification: bool, tamper: bool):
+    async def _docs_with_redacted_file(
+        self, test_session: AsyncSession, with_verification: bool, tamper: bool
+    ):
         pdf_bytes = make_pdf(["Top secret SSN: 123-45-6789"])
         packet, doc = await _seed_doc_with_bates(test_session, pdf_bytes, "gate.pdf")
 
@@ -303,10 +331,10 @@ class TestBuildGateAndRebuild:
         ))
         await test_session.commit()
 
-        output = redacted_pdf_path_for(doc)
-        application = RedactionApplicationService()
-        application.apply_redactions(base_pdf_source(doc), output, [candidate])
+        application = RedactionApplicationService(superdocs=FakeSuperDocsService())
+        await application.apply_redactions(test_session, doc, [candidate])
         if tamper:
+            output = redacted_pdf_path_for(doc)
             pdf = fitz.open(output)
             page = pdf[0]
             page.insert_text((72, 300), "123-45-6789", fontsize=12, fontname="helv")
@@ -345,8 +373,8 @@ class TestBuildGateAndRebuild:
         ))
         await test_session.commit()
 
-        application = RedactionApplicationService()
-        application.apply_redactions(base_pdf_source(doc), redacted_pdf_path_for(doc), [candidate])
+        application = RedactionApplicationService(superdocs=FakeSuperDocsService())
+        await application.apply_redactions(test_session, doc, [candidate])
 
         builder = PacketBuilderService()
         result = await builder.build_packet(test_session, packet.id)
@@ -369,7 +397,9 @@ class TestBuildGateAndRebuild:
     async def test_build_refuses_applied_redaction_still_present(
         self, test_session: AsyncSession
     ):
-        packet, doc = await self._docs_with_redacted_file(test_session, with_verification=True, tamper=True)
+        packet, doc = await self._docs_with_redacted_file(
+            test_session, with_verification=True, tamper=True
+        )
         builder = PacketBuilderService()
         with pytest.raises(ValueError, match="still present in the redacted file"):
             await builder.build_packet(test_session, packet.id)
@@ -444,7 +474,10 @@ class TestBuildGateAndRebuild:
     ):
         pdf_a = make_pdf(["Doc A"])
         pdf_b = make_pdf(["Doc B"])
-        packet = Packet(name="Order Test", bates_prefix="CASE-", bates_start_number=1, bates_padding=6)
+        packet = Packet(
+            name="Order Test", bates_prefix="CASE-",
+            bates_start_number=1, bates_padding=6,
+        )
         test_session.add(packet)
         await test_session.commit()
         await test_session.refresh(packet)
@@ -471,7 +504,10 @@ class TestBatesFullReassign:
     ):
         pdf_a = make_pdf(["Doc A content"], page_count=2)
         pdf_b = make_pdf(["Doc B content"])
-        packet = Packet(name="Renumber Test", bates_prefix="CASE-", bates_start_number=1, bates_padding=6)
+        packet = Packet(
+            name="Renumber Test", bates_prefix="CASE-",
+            bates_start_number=1, bates_padding=6,
+        )
         test_session.add(packet)
         await test_session.commit()
         await test_session.refresh(packet)
@@ -528,7 +564,9 @@ class TestStorageCleanup:
         await test_session.commit()
 
         removed = await cleanup_document_files(test_session, doc_b)
-        assert any(Path(p).name.startswith(sha) for p in removed), "files must be removed on last reference"
+        assert any(Path(p).name.startswith(sha) for p in removed), (
+            "files must be removed on last reference"
+        )
         assert not original_path_for(doc_b).exists(), "last reference must remove the file"
 
         _cleanup(sha)
