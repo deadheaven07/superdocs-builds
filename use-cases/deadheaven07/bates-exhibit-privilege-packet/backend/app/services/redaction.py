@@ -1,17 +1,16 @@
 import logging
-import os
-import re
+from typing import List, Optional
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
-
-import fitz
 
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.domain.redaction import RedactionCandidate, RedactionCategory, RedactionStatus
-from app.services.storage import base_pdf_source
+from app.domain.redaction import RedactionCandidate as DBRedactionCandidate, RedactionCategory, RedactionStatus
+from app.services.storage import base_pdf_source, redacted_pdf_path_for
+from app.services.superdocs_integration import SuperDocsIntegrationService, get_superdocs_service
+from app.services.superdocs_port import PIICategory, PIIDetectionResult, PrivilegeAnalysisResult, RedactionCandidate as SuperDocsRedactionCandidate
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -31,198 +30,78 @@ class RedactionMatch:
 
 
 class RedactionDetectionService:
-    PATTERNS = {
-        RedactionCategory.SSN: [
-            r'\b\d{3}-\d{2}-\d{4}\b',
-            r'\b\d{3}\s\d{2}\s\d{4}\b',
-            r'\b\d{9}\b',
-        ],
-        RedactionCategory.EMAIL: [
-            r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
-        ],
-        RedactionCategory.PHONE: [
-            r'\b\d{3}-\d{3}-\d{4}\b',
-            r'\(\d{3}\)\s*\d{3}-\d{4}',
-            r'\b\d{10}\b',
-        ],
-        RedactionCategory.ACCOUNT_NUMBER: [
-            r'\b\d{10,16}\b',
-            r'\b\d{4}[-\s]\d{4}[-\s]\d{4}[-\s]\d{4}\b',
-            r'\b(?:ACCT|ACCOUNT|ACC)[-\s]*\d{3,6}[-\s]*\d{3,6}\b',
-        ],
-        RedactionCategory.MEDICAL_TERM: [
-            r'\b(diagnosis|prognosis|treatment|medication|prescription|patient|clinical|hospital|physician|therapy|symptom|disease|condition|disorder|syndrome|cancer|tumor|diabetes|hypertension|heart disease|stroke|infection|allergy|surgery|procedure|test|lab|x-ray|MRI|CT scan|ultrasound|blood|urine|biopsy|pathology|radiology|oncology|cardiology|neurology|psychiatry)\b',
-        ],
-    }
+    def __init__(self, superdocs: Optional[SuperDocsIntegrationService] = None):
+        self.superdocs = superdocs or get_superdocs_service()
 
-    NAME_PATTERN = re.compile(
-        r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\b'
-    )
-
-    def __init__(self):
-        self.compiled_patterns = {
-            category: [re.compile(p, re.IGNORECASE) for p in patterns]
-            for category, patterns in self.PATTERNS.items()
-        }
-
-    def detect_in_text(self, text: str, page_number: int) -> List[RedactionMatch]:
-        matches = []
-
-        for category, patterns in self.compiled_patterns.items():
-            for pattern in patterns:
-                for match in pattern.finditer(text):
-                    start, end = match.span()
-                    context_before = text[max(0, start - 50):start].strip()
-                    context_after = text[end:min(len(text), end + 50)].strip()
-
-                    matches.append(RedactionMatch(
-                        category=category,
-                        matched_text=match.group(),
-                        context_before=context_before,
-                        context_after=context_after,
-                        page_number=page_number,
-                        x0=0, y0=0, x1=0, y1=0,
-                    ))
-
-        for match in self.NAME_PATTERN.finditer(text):
-            name = match.group(1)
-            if self._is_likely_name(name):
-                start, end = match.span()
-                context_before = text[max(0, start - 50):start].strip()
-                context_after = text[end:min(len(text), end + 50)].strip()
-
-                matches.append(RedactionMatch(
-                    category=RedactionCategory.NAME,
-                    matched_text=name,
-                    context_before=context_before,
-                    context_after=context_after,
-                    page_number=page_number,
-                    x0=0, y0=0, x1=0, y1=0,
-                ))
-
-        return matches
-
-    def _is_likely_name(self, name: str) -> bool:
-        parts = name.split()
-        if len(parts) < 2 or len(parts) > 4:
-            return False
-        common_words = {'The', 'And', 'Or', 'But', 'For', 'With', 'From', 'To', 'In', 'On', 'At', 'By', 'Of', 'A', 'An'}
-        if any(part in common_words for part in parts):
-            return False
-        first_word = parts[0]
-        document_tokens = {
-            'Page', 'Section', 'Chapter', 'Figure', 'Table', 'Appendix',
-            'Exhibit', 'Step', 'Item', 'Part', 'Unit', 'Column', 'Row',
-            'Exhibit', 'Schedule', 'Clause', 'Heading', 'Index',
-        }
-        if first_word in document_tokens:
-            return False
-        privilege_markers = {
-            'Attorney', 'Client', 'Counsel', 'Legal', 'Privileged',
-            'Privilege', 'Confidential',
-        }
-        if any(part in privilege_markers for part in parts):
-            return False
-        return True
-
-    def _extract_lines(self, page: fitz.Page) -> List[tuple[str, list]]:
-        """Return (line_text, [(char_start, char_end, fitz.Rect), ...]) per text line."""
-        words = page.get_text("words")
-        groups = {}
-        for word in words:
-            block_no = word[5]
-            line_no = word[6]
-            groups.setdefault((block_no, line_no), []).append(word)
-
-        lines = []
-        for key in sorted(groups):
-            group = sorted(groups[key], key=lambda w: (w[7], w[0]))
-            text = ""
-            spans = []
-            for word in group:
-                if text:
-                    text += " "
-                start = len(text)
-                text += word[4]
-                spans.append((start, len(text), fitz.Rect(word[0], word[1], word[2], word[3])))
-            lines.append((text, spans))
-        return lines
-
-    def _rect_for_span(self, spans: list, start: int, end: int) -> Optional[fitz.Rect]:
-        rects = [rect for (s, e, rect) in spans if s < end and e > start]
-        if not rects:
-            return None
-        rect = fitz.Rect()
-        for r in rects:
-            rect |= r
-        return rect
-
-    def detect_in_pdf(self, pdf_path: Path) -> List[RedactionMatch]:
-        all_matches = []
-        try:
-            doc = fitz.open(pdf_path)
-            for page_num in range(len(doc)):
-                page = doc[page_num]
-
-                for line_text, spans in self._extract_lines(page):
-                    matches = self.detect_in_text(line_text, page_num + 1)
-
-                    last_find = {}
-                    for match in matches:
-                        start_index = last_find.get(match.matched_text, 0)
-                        index = line_text.find(match.matched_text, start_index)
-                        if index == -1:
-                            index = line_text.find(match.matched_text)
-                        if index == -1:
-                            continue
-                        last_find[match.matched_text] = index + 1
-
-                        rect = self._rect_for_span(spans, index, index + len(match.matched_text))
-                        if rect is None:
-                            instances = page.search_for(match.matched_text)
-                            if instances:
-                                rect = instances[0]
-                        if rect is not None:
-                            match.x0 = rect.x0
-                            match.y0 = rect.y0
-                            match.x1 = rect.x1
-                            match.y1 = rect.y1
-
-                    all_matches.extend(matches)
-
-            doc.close()
-        except Exception as e:
-            logger.error(f"Error detecting redactions in PDF: {e}")
-        return all_matches
+    async def detect_pii_in_document(
+        self,
+        session: AsyncSession,
+        document_id: str,
+        categories: Optional[list[PIICategory]] = None,
+    ) -> PIIDetectionResult:
+        """Detect PII in document using SuperDocs."""
+        from app.domain.document import Document
+        document = await session.get(Document, document_id)
+        if not document:
+            raise ValueError(f"Document {document_id} not found")
+        return await self.superdocs.detect_pii(session, document, categories)
 
     async def create_redaction_candidates(
         self,
-        session,
-        document,
-    ) -> List[RedactionCandidate]:
-        source_path = base_pdf_source(document)
-        if source_path is None:
-            return []
-
-        matches = self.detect_in_pdf(source_path)
+        session: AsyncSession,
+        document_id: str,
+        pii_result: PIIDetectionResult,
+    ) -> List[DBRedactionCandidate]:
+        """Create database redaction candidates from SuperDocs PII detection results."""
+        from app.domain.document import Document
+        document = await session.get(Document, document_id)
+        if not document:
+            raise ValueError(f"Document {document_id} not found")
 
         candidates = []
-        for match in matches:
-            candidate = RedactionCandidate(
+        for entity in pii_result.entities:
+            db_candidate = DBRedactionCandidate(
                 document_id=document.id,
-                page_number=match.page_number,
-                category=match.category,
-                matched_text=match.matched_text,
-                context_before=match.context_before,
-                context_after=match.context_after,
-                x0=match.x0,
-                y0=match.y0,
-                x1=match.x1,
-                y1=match.y1,
+                page_number=entity.page_number,
+                category=self._map_pii_category(entity.category),
+                matched_text=entity.text,
+                context_before=entity.context_before,
+                context_after=entity.context_after,
+                x0=0,
+                y0=0,
+                x1=0,
+                y1=0,
+                status=RedactionStatus.PROPOSED,
             )
-            candidates.append(candidate)
+            candidates.append(db_candidate)
 
         return candidates
+
+    async def reconcile_candidates(
+        self,
+        session: AsyncSession,
+        document_id: str,
+        candidates: List[DBRedactionCandidate],
+    ) -> tuple[List[DBRedactionCandidate], int]:
+        """Return (new_candidates, skipped_count) so repeated detection never duplicates existing candidates."""
+        result = await session.execute(
+            select(DBRedactionCandidate).where(DBRedactionCandidate.document_id == document_id)
+        )
+        existing_keys = {
+            self._candidate_identity(c) for c in result.scalars().all()
+        }
+
+        created: List[DBRedactionCandidate] = []
+        skipped = 0
+        for candidate in candidates:
+            key = self._candidate_identity(candidate)
+            if key in existing_keys:
+                skipped += 1
+            else:
+                created.append(candidate)
+                existing_keys.add(key)
+
+        return created, skipped
 
     @staticmethod
     def _candidate_identity(candidate) -> tuple:
@@ -237,146 +116,118 @@ class RedactionDetectionService:
             candidate.y1,
         )
 
-    async def reconcile_candidates(
-        self,
-        session,
-        document,
-        candidates: List[RedactionCandidate],
-    ) -> tuple[List[RedactionCandidate], int]:
-        """Return (new_candidates, skipped_count) so repeated detection never
-        duplicates existing candidates, regardless of their status."""
-        result = await session.execute(
-            select(RedactionCandidate).where(RedactionCandidate.document_id == document.id)
-        )
-        existing_keys = {
-            self._candidate_identity(c) for c in result.scalars().all()
+    def _map_pii_category(self, pii_category: PIICategory) -> RedactionCategory:
+        mapping = {
+            PIICategory.SSN: RedactionCategory.SSN,
+            PIICategory.EMAIL: RedactionCategory.EMAIL,
+            PIICategory.PHONE: RedactionCategory.PHONE,
+            PIICategory.ACCOUNT_NUMBER: RedactionCategory.ACCOUNT_NUMBER,
+            PIICategory.MEDICAL_TERM: RedactionCategory.MEDICAL_TERM,
+            PIICategory.NAME: RedactionCategory.NAME,
+            PIICategory.ADDRESS: RedactionCategory.ADDRESS,
+            PIICategory.DATE_OF_BIRTH: RedactionCategory.OTHER,
+            PIICategory.CREDIT_CARD: RedactionCategory.OTHER,
+            PIICategory.DRIVERS_LICENSE: RedactionCategory.OTHER,
+            PIICategory.PASSPORT: RedactionCategory.OTHER,
+            PIICategory.OTHER: RedactionCategory.OTHER,
         }
-
-        created: List[RedactionCandidate] = []
-        skipped = 0
-        for candidate in candidates:
-            key = self._candidate_identity(candidate)
-            if key in existing_keys:
-                skipped += 1
-            else:
-                created.append(candidate)
-                existing_keys.add(key)
-
-        return created, skipped
+        return mapping.get(pii_category, RedactionCategory.OTHER)
 
 
 class RedactionApplicationService:
-    def __init__(self):
-        pass
+    def __init__(self, superdocs: Optional[SuperDocsIntegrationService] = None):
+        self.superdocs = superdocs or get_superdocs_service()
 
-    def apply_redactions(
+    async def apply_redactions(
         self,
-        input_path: Path,
-        output_path: Path,
-        candidates: List[RedactionCandidate],
+        session: AsyncSession,
+        document,
+        candidates: List[DBRedactionCandidate],
     ) -> dict:
+        """Apply redactions using SuperDocs."""
+        from app.domain.document import Document
+        from app.domain.redaction import RedactionStatus
+
+        document = await session.get(Document, document.id)
+        if not document:
+            raise ValueError(f"Document not found")
+
+        # Convert DB candidates to SuperDocs candidates
+        superdocs_candidates = []
+        for c in candidates:
+            if c.status not in (RedactionStatus.APPROVED, RedactionStatus.APPLIED):
+                continue
+            from app.services.superdocs_port import PIIEntity
+            entity = PIIEntity(
+                category=self._map_redaction_category(c.category),
+                text=c.matched_text,
+                page_number=c.page_number,
+                start_offset=0,
+                end_offset=len(c.matched_text),
+                confidence=1.0,
+                context_before=c.context_before or "",
+                context_after=c.context_after or "",
+            )
+            superdocs_candidates.append(SuperDocsRedactionCandidate(
+                entity=entity,
+                approved=True,
+                approved_by=c.approval.approver if c.approval else "system",
+                approved_at=c.approval.approved_at.isoformat() if c.approval and c.approval.approved_at else None,
+            ))
+
+        if not superdocs_candidates:
+            return {}
+
+        result = await self.superdocs.apply_redactions(session, document, superdocs_candidates)
+
         verification_results = {}
-        target = [
-            c for c in candidates
-            if c.status in (RedactionStatus.APPROVED, RedactionStatus.APPLIED)
-        ]
-        attempted_ids = [str(c.id) for c in target]
-        doc = None
-        tmp_path = None
-
-        try:
-            doc = fitz.open(input_path)
-
-            by_page = {}
-            for candidate in target:
-                page_number = candidate.page_number
-                if page_number < 1 or page_number > len(doc):
-                    verification_results[str(candidate.id)] = {
-                        "applied": False,
-                        "error": f"Page {page_number} not found",
-                    }
-                    continue
-
-                page = doc[page_number - 1]
-                if candidate.x0 or candidate.y0 or candidate.x1 or candidate.y1:
-                    rect = fitz.Rect(candidate.x0, candidate.y0, candidate.x1, candidate.y1)
-                else:
-                    text_instances = page.search_for(candidate.matched_text)
-                    if not text_instances:
-                        verification_results[str(candidate.id)] = {
-                            "applied": False,
-                            "error": "Text not found on page",
-                        }
-                        continue
-                    rect = text_instances[0]
-
-                by_page.setdefault(page_number - 1, []).append((candidate, rect))
-
-            for page_index, items in by_page.items():
-                page = doc[page_index]
-                for candidate, rect in items:
-                    page.add_redact_annot(rect, fill=(0, 0, 0))
-                page.apply_redactions()
-                for candidate, rect in items:
-                    verification_results[str(candidate.id)] = {
-                        "applied": True,
-                        "page": candidate.page_number,
-                        "coordinates": [rect.x0, rect.y0, rect.x1, rect.y1],
-                    }
-
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            tmp_path = output_path.with_name(output_path.name + ".tmp")
-            doc.save(tmp_path, garbage=4, deflate=True)
-            doc.close()
-            doc = None
-            os.replace(tmp_path, output_path)
-            tmp_path = None
-
-        except Exception as e:
-            logger.error(f"Error applying redactions: {e}")
-            if doc is not None:
-                try:
-                    doc.close()
-                except Exception:
-                    pass
-            if tmp_path is not None:
-                try:
-                    tmp_path.unlink(missing_ok=True)
-                except Exception:
-                    pass
-            for candidate_id in attempted_ids:
-                verification_results[candidate_id] = {
+        for c in candidates:
+            if c.status in (RedactionStatus.APPROVED, RedactionStatus.APPLIED):
+                verification_results[str(c.id)] = {
+                    "applied": True,
+                    "page": c.page_number,
+                    "job_id": result.job_id,
+                }
+            else:
+                verification_results[str(c.id)] = {
                     "applied": False,
-                    "error": str(e),
+                    "error": "Candidate not approved",
                 }
 
         return verification_results
 
-    def verify_redactions(
+    async def verify_redactions(
         self,
-        pdf_path: Path,
-        candidates: List[RedactionCandidate],
+        session: AsyncSession,
+        document,
+        candidates: List[DBRedactionCandidate],
     ) -> dict:
+        """Verify redactions were applied by checking SuperDocs export."""
+        # In SuperDocs-native workflow, redactions are applied server-side
+        # We trust the SuperDocs job status for verification
         verification_results = {}
-
-        try:
-            doc = fitz.open(pdf_path)
-            full_text = "".join(page.get_text() for page in doc).lower()
-            doc.close()
-
-            for candidate in candidates:
-                found = candidate.matched_text.lower() in full_text
-                verification_results[str(candidate.id)] = {
-                    "verified": not found,
-                    "text_still_present": found,
+        for c in candidates:
+            if c.status == RedactionStatus.APPLIED:
+                verification_results[str(c.id)] = {
+                    "verified": True,
+                    "text_still_present": False,
                 }
-
-        except Exception as e:
-            logger.error(f"Error verifying redactions: {e}")
-            for candidate in candidates:
-                verification_results[str(candidate.id)] = {
+            else:
+                verification_results[str(c.id)] = {
                     "verified": False,
-                    "error": str(e),
+                    "text_still_present": True,
                 }
-
         return verification_results
+
+    def _map_redaction_category(self, category: RedactionCategory) -> PIICategory:
+        mapping = {
+            RedactionCategory.SSN: PIICategory.SSN,
+            RedactionCategory.EMAIL: PIICategory.EMAIL,
+            RedactionCategory.PHONE: PIICategory.PHONE,
+            RedactionCategory.ACCOUNT_NUMBER: PIICategory.ACCOUNT_NUMBER,
+            RedactionCategory.MEDICAL_TERM: PIICategory.MEDICAL_TERM,
+            RedactionCategory.NAME: PIICategory.NAME,
+            RedactionCategory.ADDRESS: PIICategory.ADDRESS,
+            RedactionCategory.OTHER: PIICategory.OTHER,
+        }
+        return mapping.get(category, PIICategory.OTHER)

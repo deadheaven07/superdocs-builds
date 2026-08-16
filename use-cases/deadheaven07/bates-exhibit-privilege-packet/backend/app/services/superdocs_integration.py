@@ -10,7 +10,12 @@ from app.services.superdocs_port import (
     JobStatus,
     ProposedChangeBatch,
     ExportResult,
+    PIICategory,
+    PIIDetectionResult,
+    PrivilegeAnalysisResult,
+    RedactionCandidate,
 )
+
 from app.services.superdocs_adapter import SuperDocsRESTAdapter
 
 logger = logging.getLogger(__name__)
@@ -163,6 +168,100 @@ class SuperDocsIntegrationService:
             raise ValueError("Document not uploaded to SuperDocs")
 
         return await self.adapter.get_session_history(document.superdocs_session_id)
+
+    async def detect_pii(
+        self,
+        session: AsyncSession,
+        document: Document,
+        categories: Optional[list[PIICategory]] = None,
+    ) -> PIIDetectionResult:
+        if not document.superdocs_session_id:
+            await self.upload_document_to_superdocs(session, document)
+            await session.refresh(document)
+
+        result = await self.adapter.detect_pii(
+            session_id=document.superdocs_session_id,
+            document_id=document.superdocs_document_id,
+            categories=categories,
+        )
+
+        logger.info(f"Detected {result.total_count} PII entities in document {document.id}")
+        return result
+
+    async def analyze_privilege(
+        self,
+        session: AsyncSession,
+        document: Document,
+    ) -> PrivilegeAnalysisResult:
+        if not document.superdocs_session_id:
+            await self.upload_document_to_superdocs(session, document)
+            await session.refresh(document)
+
+        result = await self.adapter.analyze_privilege(
+            session_id=document.superdocs_session_id,
+            document_id=document.superdocs_document_id,
+        )
+
+        logger.info(f"Privilege analysis for document {document.id}: privileged={result.is_privileged}, category={result.category}")
+        return result
+
+    async def create_redaction_candidates(
+        self,
+        session: AsyncSession,
+        document: Document,
+        pii_result: PIIDetectionResult,
+        categories: Optional[list[PIICategory]] = None,
+    ) -> list[RedactionCandidate]:
+        """Create redaction candidates from PII detection results, optionally filtered by category."""
+        candidates = []
+        for entity in pii_result.entities:
+            if categories and entity.category not in categories:
+                continue
+            candidates.append(RedactionCandidate(
+                entity=entity,
+                approved=False,
+            ))
+
+        logger.info(f"Created {len(candidates)} redaction candidates for document {document.id}")
+        return candidates
+
+    async def apply_redactions(
+        self,
+        session: AsyncSession,
+        document: Document,
+        candidates: list[RedactionCandidate],
+    ) -> JobStatus:
+        if not document.superdocs_session_id:
+            await self.upload_document_to_superdocs(session, document)
+            await session.refresh(document)
+
+        result = await self.adapter.apply_redactions(
+            session_id=document.superdocs_session_id,
+            document_id=document.superdocs_document_id,
+            candidates=candidates,
+        )
+
+        logger.info(f"Applied redactions to document {document.id}, job_id={result.job_id}")
+        return result
+
+    async def get_redaction_preview(
+        self,
+        session: AsyncSession,
+        document: Document,
+        candidates: list[RedactionCandidate],
+    ) -> ExportResult:
+        if not document.superdocs_session_id:
+            await self.upload_document_to_superdocs(session, document)
+            await session.refresh(document)
+
+        result = await self.adapter.get_redaction_preview(
+            session_id=document.superdocs_session_id,
+            document_id=document.superdocs_document_id,
+            candidates=candidates,
+        )
+
+        logger.info(f"Generated redaction preview for document {document.id}")
+        return result
 
     async def close(self):
         await self.adapter.close()

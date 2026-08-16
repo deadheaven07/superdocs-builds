@@ -13,7 +13,7 @@ A Replit extension that adds a document panel to the workspace, allowing users t
 - **Proposed Changes Review**: View and approve/reject AI-proposed changes with diff visualization
 - **Export**: Export finished documents as styled PDF or DOCX
 - **Workspace Integration**: Save exported artifacts directly into the Replit project
-- **Revision Detection**: Detect code changes and regenerate documents reflecting those changes
+- **Regeneration**: Re-read project files and regenerate documents from scratch using the same SuperDocs session
 - **Cancellation**: Cancel in-flight operations at any time
 - **Retry & Error Recovery**: Automatic retry for transient failures with user-facing retry/dismiss actions
 - **File Loading Indicator**: Visual feedback during project file reads
@@ -22,35 +22,10 @@ A Replit extension that adds a document panel to the workspace, allowing users t
 
 | Capability | Implementation |
 |------------|----------------|
-| **Surgical Edits** | Chunk-based diffs via `approval_mode: 'ask_every_time'`. SuperDocs returns granular `ProposedChange` operations (insert/replace/delete/move) with `chunk_id` targeting. The extension uses `requestSurgicalEdits()` to send only code deltas (changed/added/removed files) to the same SuperDocs session, avoiding full document regeneration and preserving manual user edits. |
+| **Document Generation** | SuperDocs REST API with `approval_mode: 'ask_every_time'`. SuperDocs returns granular `ProposedChange` operations (insert/replace/delete/move). The extension uses a single session for the entire workflow, preserving document context across revisions. |
 | **Dual-Layer State Persistence** | State survives browser tab refresh via two synchronized stores: **localStorage** (instant, per-browser) + **`.superdocs-state.json`** in the Replit workspace (survives browser clear, portable across machines). Persisted fields: `sessionId`, `documentId`, `documentType`, `selectedPaths`, `fileHashes` (SHA-256 baselines), `originalInstruction`, `lastUpdated`, `version`. On load, the extension merges both sources preferring the most recent `lastUpdated`. |
-| **Dynamic `.gitignore` Parsing** | Replaces hardcoded exclusion lists with a runtime `.gitignore` parser (`src/utils/gitignore.ts`). On startup, reads `.gitignore` from the Replit workspace via `replit.fs.readFile`, parses patterns (negation `!`, directory-only `/`, absolute paths, globs `**`, `*`, `?`), and combines with sensible defaults (`.env*`, lock files, binary extensions). File tree filtering uses `shouldIgnore(path, isDirectory)` for both UI display and context inclusion. |
-
-## Resilience & Architecture
-
-### State Survival Across Tab Refresh
-
-The extension's dual-layer persistence ensures no work is lost on browser tab refresh, navigation away, or even switching machines:
-
-1. **On every state change** (file selection, hash capture, session creation, document export), `useStatePersistence` writes to both `localStorage` and `.superdocs-state.json` atomically.
-2. **On load**, the hook reads both sources. If both exist, it picks the one with the newer `lastUpdated` timestamp. This handles the case where `.superdocs-state.json` was edited on another machine and is fresher than local browser storage.
-3. **Restored state** includes the active SuperDocs `sessionId` and `documentId`, so the "Check for Code Changes" button works immediately without re-generating the document. File selections and SHA-256 baselines are also restored, enabling instant revision detection.
-
-### Delta-Based Code Change Handling (No Overwrites)
-
-The surgical edit workflow prevents manual document edits from being overwritten:
-
-1. **Change Detection**: On "Check for Code Changes", the extension re-reads selected files and computes SHA-256 hashes. It compares against the persisted `fileHashes` baseline to produce a precise diff: `{ changed: [], added: [], removed: [] }`.
-2. **Delta Instruction**: Instead of re-sending all project files, `handleSurgicalEdit()` constructs a `SurgicalEditInstruction` containing only the changed files (with old/new content), added files, and removed file paths.
-3. **SuperDocs API Call**: The instruction is sent via `/v1/chat/async` with `approval_mode: 'ask_every_time'` to the **existing session** (`sessionId` reused). SuperDocs returns a `ProposedChangeBatch` of granular operations targeting specific `chunk_id`s.
-4. **User Review**: The Review tab shows each operation (Insert/Replace/Delete/Move) with before/after HTML snippets and AI explanations. The user approves or rejects individually or in bulk.
-5. **Apply**: On approval, `/v1/chat/{session_id}/approve` applies only the approved operations to the document. The document is patched in place — no full replacement occurs.
-6. **Export & Baseline Update**: After successful export, `captureHashes()` updates the persisted baseline to the current file state, ready for the next revision cycle.
-
-This architecture ensures:
-- **Manual edits preserved**: User's direct edits to the document between generations are never lost because SuperDocs patches specific chunks, not the whole document.
-- **Minimal API traffic**: Only deltas are sent, reducing token usage and latency.
-- **Audit trail**: Each revision is a set of approved operations on the same document version, not a new document.
+| **Regeneration from Source** | "Regenerate Document" re-reads all selected files, rebuilds context with current file contents, and regenerates using the same SuperDocs session — preserving conversation history while reflecting latest code changes. |
+| **Hardcoded Exclusion Lists** | File tree filtering and context inclusion use sensible hardcoded defaults (`.git`, `node_modules`, `dist`, `.env*`, lock files, binary extensions). |
 
 ## Architecture
 
@@ -73,7 +48,6 @@ flowchart TD
         ReplitAccess["Replit File Access"]
         ContextGen["Project Context Generation"]
         SHA256["SHA-256 File Hashing"]
-        RevisionDetect["Revision / Change Detection"]
     end
 
     subgraph UseSuperDocs_Hook["useSuperDocs Hook"]
@@ -81,7 +55,6 @@ flowchart TD
         Cancellation["Cancellation"]
         Retry["Retry"]
         ErrorRecovery["Error Recovery"]
-        RevisionState["Revision State"]
     end
 
     subgraph SuperDocs_Client["SuperDocs Client"]
@@ -108,7 +81,7 @@ flowchart TD
 | Layer | Responsibilities |
 |-------|------------------|
 | **React Components** | Presentation, user interaction, tab navigation, form handling |
-| **`useSuperDocs` Hook** | Operation lifecycle, state machine, cancellation, retry, error recovery, revision state |
+| **`useSuperDocs` Hook** | Operation lifecycle, state machine, cancellation, retry, error recovery |
 | **`superdocs.ts` Client** | API requests, retry policy, AbortSignal propagation, response parsing |
 | **Replit Services** | Workspace file access (`readDir`, `readFile`, `writeFile`, `createDir`) |
 | **Context Utilities** | Project context and SuperDocs instruction construction |
@@ -172,11 +145,10 @@ The `AbortSignal` reaches the actual HTTP request, so cancelling genuinely abort
 | **Dismiss** | Clears error and returns to idle state |
 | **Cancel Button** | Visible during any processing state; aborts current operation |
 | **File Loading Indicator** | Spinner + "Reading project files..." during batch file reads |
-| **No-Changes Toast** | Blue toast notification when revision scan detects no changes (replaces `alert()`) |
 
 ## Revision Handling
 
-The revision workflow uses **surgical edits** (granular chunk operations) instead of full document regeneration. This preserves any manual edits users make to the document between generations.
+The revision workflow uses **regeneration from source** instead of surgical edits. This preserves manual user edits to the document between generations by always regenerating from current project state.
 
 ### Workflow
 
@@ -186,26 +158,21 @@ The revision workflow uses **surgical edits** (granular chunk operations) instea
    - Original user instruction stored separately
    - Document generated via SuperDocs (new session)
 
-2. **Revision Trigger**
+2. **Regeneration**
    - User modifies project code
-   - Clicks "Check for Code Changes & Apply Surgical Edits"
+   - Clicks "Regenerate Document"
    - Selected files re-read, current hashes computed
-   - Changed/added/removed files identified by hash comparison
-
-3. **Surgical Edit Instruction Construction**
-   - Uses **original user instruction** (not previous revision output)
-   - Includes current project context (all selected files at current state)
-   - Lists only the newly changed/added/removed files with content deltas
+   - Context rebuilt with **current file contents**
    - Sent through the **same SuperDocs session** (`sessionId` reused)
 
-4. **SuperDocs Returns Granular Operations**
+3. **SuperDocs Returns Granular Operations**
    - `approval_mode: 'ask_every_time'` returns `ProposedChangeBatch`
    - Each change has: `operation` (insert/replace/delete/move), `chunk_id`, `old_html`, `new_html`, `ai_explanation`
    - User reviews and approves/rejects in Review tab
 
-5. **Apply & Export**
+4. **Apply & Export**
    - Approved operations applied via `/v1/chat/{session_id}/approve`
-   - Document patched in place (no full replacement)
+   - Document regenerated in place (no full replacement)
    - On successful export, baseline hashes updated to current state
 
 ### Bug Prevented
@@ -217,50 +184,11 @@ Must NOT become the next revision's base instruction
 
 ✅ Original user instruction (stable)
     + Current project context
-    + New code changes list
       ↓
-New surgical edit instruction
+New generation instruction
 ```
 
-This ensures revision prompts remain focused and don't grow exponentially with each iteration. Combined with surgical edits, **manual user edits to the document are never overwritten** — only the affected chunks are modified.
-
-## Live Code-to-Document Diff Tracking (S2 Spec)
-
-The **Live** tab provides real-time synchronization between code changes and document revisions:
-
-### Live Status Header
-- **Watching indicator**: Green pulse animation when actively polling selected files
-- **Code Delta Hash**: Combined SHA-256 of all tracked files (truncated display)
-- **Changed file count**: Number of files modified since last baseline capture
-- **Timestamp**: Last poll completion time
-- **Auto-update toggle**: When enabled, automatically triggers surgical edit on detected file changes
-
-### Live Changes Log
-- Real-time list of file events (`created`/`modified`/`deleted`) with timestamps
-- Color-coded by change type (green=created, yellow=modified, red=deleted)
-- Shows hash delta indicator when file content actually changed
-- Clear button to reset the log
-
-### Live Document Diff
-- Displays SuperDocs proposed changes as they arrive (insert/replace/delete/move)
-- Side-by-side before/after HTML snippets with AI explanations
-- Bulk **Accept All** / **Reject All** actions
-- Updates in real-time as file changes trigger new SuperDocs chat jobs
-
-### Manual Sync
-- "Check for Code Changes & Apply Surgical Edits" button for on-demand sync
-- Respects current auto-update setting
-
-### How It Works
-1. **File Watcher** polls selected files every 3 seconds via Replit API
-2. **Code Delta Hash** computed from combined SHA-256 of all tracked files
-3. On hash change → **Conflict Check** re-reads files, compares against baseline
-4. If clean → sends **SurgicalEditInstruction** to SuperDocs via `/v1/chat/async`
-5. SuperDocs returns **ProposedChangeBatch** → displayed in Live Diff
-6. User approves → `/v1/chat/{session_id}/approve` applies patches
-7. On export → `captureHashes()` updates baseline for next cycle
-
-This creates a tight feedback loop: **code change → live diff → surgical patch → updated document**.
+This ensures revision prompts remain focused and don't grow exponentially with each iteration.
 
 ## User Workflow
 
@@ -289,9 +217,7 @@ Export PDF / DOCX
       ↓
 Modify project code
       ↓
-Detect file changes (SHA-256)
-      ↓
-Generate revised document (stable original instruction)
+Click "Regenerate Document" → Re-reads files → Regenerates with latest code
 ```
 
 ## Quick Start
@@ -344,20 +270,18 @@ Generate revised document (stable original instruction)
 8. **Export**: Choose PDF or DOCX, set destination path (e.g., `docs/README.pdf`)
 9. **Save**: Click "Export & Save" to write the artifact to your Replit workspace
 
-### Revision After Code Changes
+### Regeneration After Code Changes
 
 1. **Modify Project Code**: Edit source files in your Repl
-2. **Return to Panel**: The "Check for Code Changes & Update Document" button appears after successful generation
-3. **Click Update**: The extension re-scans selected files and detects changes
-4. **Review Diff**: See which files changed since last generation
-5. **Generate Revision**: SuperDocs uses the existing session to update the document
-6. **Approve & Export**: Same workflow as initial generation
+2. **Return to Panel**: The "Regenerate Document" button appears after successful generation
+3. **Click Regenerate**: The extension re-scans selected files and regenerates the document
+4. **Review Diff**: See new proposed changes
+5. **Approve & Export**: Same workflow as initial generation
 
 ### Error Handling
 
 - **Transient Failure**: If a network error or 503 occurs during polling, the client retries automatically (up to 3×). If all retries fail, the error banner appears with "Retry" and "Dismiss".
 - **Cancel**: Click "Cancel" at any time during generation, polling, approval, or export to abort the in-flight request.
-- **No Changes**: If a revision scan finds no modified files, a blue toast notification appears for 3 seconds.
 
 ## File Selection Strategy
 
@@ -389,6 +313,7 @@ extensions/deadheaven07/replit-workspace-document-panel/
 ├── .env.example               # API key placeholder
 ├── .gitignore                 # Git ignores
 ├── README.md                  # This file
+├── BUGS_AND_QUIRKS.md         # SuperDocs API behavioral quirks
 ├── src/
 │   ├── main.tsx               # React entry point
 │   ├── App.tsx                # Root component
@@ -508,20 +433,17 @@ All reliability changes (retry policy, cancellation, revision stability) are cov
 3. **No Background Polling**: Polling runs in the panel; closing the panel stops long-running jobs
 4. **Single User**: Extension runs in the context of the current Replit user
 
-> **Note**: Session persistence is now implemented via dual-layer storage (localStorage + `.superdocs-state.json`). Page refresh restores `sessionId`, `documentId`, file selections, and hash baselines.
+> **Note**: Session persistence is implemented via dual-layer storage (localStorage + `.superdocs-state.json`). Page refresh restores `sessionId`, `documentId`, file selections, and hash baselines.
 
 ## Acceptance Criteria
 
 - ✅ **First-Session UX**: Fresh Repl → select files → generate → edit → approve → export → save
-- ✅ **Code Change Detection**: Modify code → click update → detect changes → surgical edit → doc reflects changes
+- ✅ **Regeneration**: Modify code → click regenerate → re-reads files → regenerates from current state
 - ✅ **Security**: No API keys in localStorage, git, or logs
 - ✅ **Double-JSON Parse**: Handles SuperDocs `pending_changes` nested JSON correctly
 - ✅ **Retry Policy**: Safe operations retry, mutations don't
 - ✅ **Cancellation**: AbortSignal reaches HTTP layer
 - ✅ **Error Recovery**: Retry/Dismiss UI for recoverable failures
 - ✅ **Revision Stability**: Original instruction preserved across revisions
-- ✅ **Surgical Edits**: Granular chunk operations (insert/replace/delete/move) preserve manual document edits
 - ✅ **State Persistence**: Survives browser tab refresh via localStorage + workspace `.superdocs-state.json`
-- ✅ **Dynamic `.gitignore`**: Runtime parsing replaces hardcoded exclusions
-- ✅ **Live Diff Tracking**: Real-time file watching with Code Delta Hash, auto-update on changes
-- ✅ **Conflict Resolution**: Optimistic UI interception with Overwrite/Keep Local/Abort options
+- ✅ **Regeneration from Source**: Re-reads files and regenerates with current code
