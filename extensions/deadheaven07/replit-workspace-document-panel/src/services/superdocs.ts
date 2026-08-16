@@ -8,6 +8,13 @@ import {
   ContinueJobRequest,
   ExportDocumentRequest,
   SessionInitRequest,
+  SyncHtmlRequest,
+  SyncHtmlResponse,
+  DocumentVersion,
+  GetVersionsResponse,
+  GetTemplatesResponse,
+  Prompt,
+  GetPromptsResponse,
 } from '../types/superdocs';
 
 const DEFAULT_BASE_URL = 'https://api.superdocs.app';
@@ -252,6 +259,54 @@ export class SuperDocsClient {
     }
 
     return response.blob();
+  }
+
+  async syncHtml(request: SyncHtmlRequest, signal?: AbortSignal): Promise<SyncHtmlResponse> {
+    return this.request<SyncHtmlResponse>(
+      '/v1/documents/sync-html',
+      { method: 'POST', body: JSON.stringify(request) },
+      false,
+      signal
+    );
+  }
+
+  async getVersions(documentId: string, signal?: AbortSignal): Promise<GetVersionsResponse> {
+    return this.request<GetVersionsResponse>(
+      `/v1/documents/${documentId}/versions`,
+      {},
+      true,
+      signal
+    );
+  }
+
+  async getDocumentVersion(documentId: string, versionId: string, signal?: AbortSignal): Promise<DocumentVersion> {
+    return this.request<DocumentVersion>(
+      `/v1/documents/${documentId}/versions/${versionId}`,
+      {},
+      true,
+      signal
+    );
+  }
+
+  async revertToVersion(documentId: string, versionId: string, signal?: AbortSignal): Promise<JobStatus> {
+    return this.request<JobStatus>(
+      `/v1/documents/${documentId}/versions/${versionId}/revert`,
+      { method: 'POST' },
+      false,
+      signal
+    );
+  }
+
+  async getTemplates(signal?: AbortSignal): Promise<GetTemplatesResponse> {
+    return this.request<GetTemplatesResponse>('/v1/templates', {}, true, signal);
+  }
+
+  async getPrompts(signal?: AbortSignal): Promise<GetPromptsResponse> {
+    return this.request<GetPromptsResponse>('/v1/prompts', {}, true, signal);
+  }
+
+  async getPrompt(promptId: string, signal?: AbortSignal): Promise<Prompt> {
+    return this.request<Prompt>(`/v1/prompts/${promptId}`, {}, true, signal);
   }
 }
 

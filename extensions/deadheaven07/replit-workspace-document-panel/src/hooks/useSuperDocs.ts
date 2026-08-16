@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useRef } from 'react';
 import { createSuperDocsClient } from '../services/superdocs';
 import { parseProposedChangeBatch } from '../utils/parser';
-import { DocumentUploadResult, ProposedChange, ExportResult, ProposedChangeBatch } from '../types/superdocs';
+import { DocumentUploadResult, ProposedChange, ExportResult, ProposedChangeBatch, SyncHtmlResponse, DocumentVersion, Template, Prompt } from '../types/superdocs';
 
 export type GenerationStep = 
   | 'idle'
@@ -28,6 +28,16 @@ export interface SuperDocsState {
   canRetry?: boolean;
   lastInstruction?: string;
   lastDocumentType?: string;
+  // --- v2 platform capability state ---
+  versions?: DocumentVersion[];
+  versionsLoading?: boolean;
+  selectedVersion?: DocumentVersion;
+  templates?: Template[];
+  prompts?: Prompt[];
+  templatesLoading?: boolean;
+  lastSyncAt?: string;
+  syncError?: string;
+  syncSuccess?: boolean;
 }
 
 export interface SuperDocsActions {
@@ -39,6 +49,13 @@ export interface SuperDocsActions {
   retry: () => void;
   dismissError: () => void;
   reset: () => void;
+  // --- v2 platform capability actions ---
+  syncHtml: (html: string, documentId?: string) => Promise<SyncHtmlResponse | undefined>;
+  loadVersions: () => Promise<void>;
+  loadVersion: (versionId: string) => Promise<DocumentVersion | undefined>;
+  revertToVersion: (versionId: string) => Promise<void>;
+  loadTemplates: () => Promise<void>;
+  loadPrompts: () => Promise<void>;
 }
 
 export function useSuperDocs(apiKey: string): [SuperDocsState, SuperDocsActions] {
@@ -224,5 +241,133 @@ const generateDocument = useCallback(async (instruction: string, documentType: s
     }
   }, [state, client, updateStep, setError]);
 
-  return [state, { generateDocument, approveChanges, continueJob, exportDocument, cancel, retry, dismissError, reset }];
+  const syncHtml = useCallback(async (html: string, documentId?: string): Promise<SyncHtmlResponse | undefined> => {
+    const { sessionId, documentId: stateDocId } = state;
+    const targetDocId = documentId || stateDocId;
+    if (!sessionId || !targetDocId) { setError('No active SuperDocs session or document to sync', true); return undefined; }
+    if (!apiKey) { setError('SuperDocs API key is required', true); return undefined; }
+
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    const signal = abortController.signal;
+
+    try {
+      setState(prev => ({ ...prev, syncError: undefined, syncSuccess: false }));
+      const response = await client.syncHtml({ session_id: sessionId, document_id: targetDocId, html }, signal);
+      if (signal.aborted) return undefined;
+      setState(prev => ({ ...prev, lastSyncAt: new Date().toISOString(), syncSuccess: true, syncError: undefined }));
+      return response;
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') return undefined;
+      const message = error instanceof Error ? error.message : 'Sync failed';
+      setState(prev => ({ ...prev, syncError: message, syncSuccess: false }));
+      return undefined;
+    }
+  }, [state, apiKey, client, setError]);
+
+  const loadVersions = useCallback(async () => {
+    const { documentId } = state;
+    if (!documentId) { setError('No active SuperDocs document to load versions', true); return; }
+    if (!apiKey) { setError('SuperDocs API key is required', true); return; }
+
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    const signal = abortController.signal;
+
+    try {
+      setState(prev => ({ ...prev, versionsLoading: true, error: undefined }));
+      const response = await client.getVersions(documentId, signal);
+      if (signal.aborted) return;
+      setState(prev => ({ ...prev, versions: response.versions, versionsLoading: false }));
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') return;
+      const message = error instanceof Error ? error.message : 'Failed to load versions';
+      setState(prev => ({ ...prev, versionsLoading: false, error: message }));
+    }
+  }, [state.documentId, apiKey, client, setError]);
+
+  const loadVersion = useCallback(async (versionId: string): Promise<DocumentVersion | undefined> => {
+    const { documentId } = state;
+    if (!documentId || !apiKey) return undefined;
+
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    const signal = abortController.signal;
+
+    try {
+      const version = await client.getDocumentVersion(documentId, versionId, signal);
+      if (signal.aborted) return undefined;
+      setState(prev => ({ ...prev, selectedVersion: version }));
+      return version;
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') return undefined;
+      const message = error instanceof Error ? error.message : 'Failed to load version';
+      setState(prev => ({ ...prev, error: message }));
+      return undefined;
+    }
+  }, [state.documentId, apiKey, client]);
+
+  const revertToVersion = useCallback(async (versionId: string) => {
+    const { documentId } = state;
+    if (!documentId || !apiKey) { setError('No active SuperDocs document to revert', true); return; }
+
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    const signal = abortController.signal;
+
+    try {
+      updateStep('generating', 'Reverting to selected version...');
+      const jobStatus = await client.revertToVersion(documentId, versionId, signal);
+      if (signal.aborted) return;
+
+      if (jobStatus.status === 'failed') throw new Error(jobStatus.error || 'Revert failed');
+      if (jobStatus.status === 'completed') {
+        updateStep('completed', 'Reverted to selected version');
+        await loadVersions();
+      }
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') return;
+      setError(error instanceof Error ? error.message : 'Failed to revert version', true);
+    }
+  }, [state.documentId, apiKey, client, updateStep, setError, loadVersions]);
+
+  const loadTemplates = useCallback(async () => {
+    if (!apiKey) { setError('SuperDocs API key is required', true); return; }
+
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    const signal = abortController.signal;
+
+    try {
+      setState(prev => ({ ...prev, templatesLoading: true, error: undefined }));
+      const response = await client.getTemplates(signal);
+      if (signal.aborted) return;
+      setState(prev => ({ ...prev, templates: response.templates, templatesLoading: false }));
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') return;
+      const message = error instanceof Error ? error.message : 'Failed to load templates';
+      setState(prev => ({ ...prev, templatesLoading: false, error: message }));
+    }
+  }, [apiKey, client, setError]);
+
+  const loadPrompts = useCallback(async () => {
+    if (!apiKey) { setError('SuperDocs API key is required', true); return; }
+
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    const signal = abortController.signal;
+
+    try {
+      setState(prev => ({ ...prev, templatesLoading: true, error: undefined }));
+      const response = await client.getPrompts(signal);
+      if (signal.aborted) return;
+      setState(prev => ({ ...prev, prompts: response.prompts, templatesLoading: false }));
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') return;
+      const message = error instanceof Error ? error.message : 'Failed to load prompts';
+      setState(prev => ({ ...prev, templatesLoading: false, error: message }));
+    }
+  }, [apiKey, client, setError]);
+
+  return [state, { generateDocument, approveChanges, continueJob, exportDocument, cancel, retry, dismissError, reset, syncHtml, loadVersions, loadVersion, revertToVersion, loadTemplates, loadPrompts }];
 }

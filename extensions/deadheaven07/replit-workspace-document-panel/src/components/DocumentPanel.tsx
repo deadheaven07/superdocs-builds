@@ -5,13 +5,16 @@ import { DraftTab } from './DraftTab';
 import { ReviewTab } from './ReviewTab';
 import { ExportTab } from './ExportTab';
 import { StatusBadge } from './StatusBadge';
+import { HistoryTab } from './HistoryTab';
+import { TemplateGallery, injectVariables } from './TemplateGallery';
 import { useWorkspaceFiles } from '../hooks/useWorkspaceFiles';
 import { useSuperDocs } from '../hooks/useSuperDocs';
 import { useFileHashes } from '../hooks/useFileHashes';
 import { useStatePersistence } from '../hooks/useStatePersistence';
 import { createGenerationContext, buildSuperDocsInstruction } from '../services/context';
+import { Template, Prompt } from '../types/superdocs';
 
-type Tab = 'files' | 'draft' | 'review' | 'export';
+type Tab = 'files' | 'draft' | 'review' | 'export' | 'history' | 'templates';
 
 export function DocumentPanel() {
   const { status } = useReplit();
@@ -29,7 +32,7 @@ export function DocumentPanel() {
   const [fileLoading, setFileLoading] = useState(false);
 
   const [superDocsState, superDocsActions] = useSuperDocs(apiKey);
-  const { captureHashes } = useFileHashes();
+  const { captureHashes, updateCurrentHashes, getChanges } = useFileHashes();
   
   // Persist SuperDocs state changes
   useEffect(() => {
@@ -123,6 +126,48 @@ export function DocumentPanel() {
     if (lastContext) await captureHashes(lastContext.files);
   }, [superDocsActions, writeFile, lastContext, captureHashes]);
 
+  const handleSync = useCallback(async () => {
+    const html = superDocsState.uploadResult?.html;
+    if (!html) {
+      superDocsActions.dismissError();
+      return;
+    }
+
+    if (lastContext) {
+      const files = new Map<string, string>();
+      const pathsToRead = Array.from(lastContext.files.keys());
+      setFileLoading(true);
+      try {
+        for (const path of pathsToRead) {
+          const content = await readFile(path);
+          if (content !== null) files.set(path, content);
+        }
+      } finally {
+        setFileLoading(false);
+      }
+      await updateCurrentHashes(files);
+      const changes = getChanges();
+      if (changes.changed.length === 0 && changes.added.length === 0 && changes.removed.length === 0 && superDocsState.lastSyncAt) {
+        return;
+      }
+    }
+
+    await superDocsActions.syncHtml(html);
+  }, [superDocsActions, superDocsState.uploadResult, superDocsState.lastSyncAt, lastContext, readFile, updateCurrentHashes, getChanges]);
+
+  const handleApplyTemplate = useCallback(async (template: Template, variables: Record<string, string>) => {
+    const injected = injectVariables(template.default_content, variables);
+    setActiveTab('review');
+    await superDocsActions.generateDocument(injected, template.document_type);
+  }, [superDocsActions]);
+
+  const handleApplyPrompt = useCallback(async (prompt: Prompt, variables: Record<string, string>) => {
+    const injected = injectVariables(prompt.template, variables);
+    setActiveTab('review');
+    const docType = (lastContext?.documentType as 'readme' | 'spec' | 'user-guide') || 'readme';
+    await superDocsActions.generateDocument(injected, docType);
+  }, [superDocsActions, lastContext]);
+
   if (status === 'loading') {
     return (
       <div className="flex items-center justify-center h-full p-8">
@@ -175,15 +220,34 @@ export function DocumentPanel() {
               </button>
             )}
             {apiKey && <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded">API Key Set</span>}
+            {superDocsState.documentId && (
+              <button
+                onClick={handleSync}
+                disabled={!superDocsState.uploadResult?.html || isProcessing}
+                className="px-3 py-1.5 text-xs font-medium bg-primary-600 text-white rounded hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 flex items-center gap-1.5"
+                title="Push current document HTML to SuperDocs"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0-12l-4 4m4-4l4 4" />
+                </svg>
+                Sync to SuperDocs
+              </button>
+            )}
+            {superDocsState.syncSuccess && (
+              <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded">Synced</span>
+            )}
+            {superDocsState.syncError && (
+              <span className="px-2 py-1 text-xs font-medium bg-red-100 text-red-700 rounded" title={superDocsState.syncError}>Sync failed</span>
+            )}
           </div>
         </div>
       </div>
 
       {/* Tabs */}
       <div className="flex gap-1 mt-3 border-b border-gray-200" role="tablist" aria-label="Main navigation">
-        {(['files', 'draft', 'review', 'export'] as Tab[]).map((tab) => (
+        {(['files', 'draft', 'review', 'export', 'history', 'templates'] as Tab[]).map((tab) => (
           <button key={tab} role="tab" aria-selected={activeTab === tab} aria-controls={`${tab}-panel`} id={`${tab}-tab`} onClick={() => setActiveTab(tab)} className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === tab ? 'border-primary-500 text-primary-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`} disabled={tab !== 'files' && !apiKey}>
-            {tab === 'files' ? 'Files' : tab === 'draft' ? 'Draft' : tab === 'review' ? 'Review' : 'Export'}
+            {tab === 'files' ? 'Files' : tab === 'draft' ? 'Draft' : tab === 'review' ? 'Review' : tab === 'export' ? 'Export' : tab === 'history' ? 'History' : 'Templates'}
           </button>
         ))}
       </div>
@@ -252,6 +316,36 @@ export function DocumentPanel() {
         {activeTab === 'export' && (
           <div id="export-panel" role="tabpanel" aria-labelledby="export-tab" className="max-w-xl mx-auto">
             <ExportTab onExport={handleExport} checkFileExists={checkFileExists} disabled={isProcessing || !apiKey} step={superDocsState.step} defaultDestination={`docs/${lastContext?.documentType?.toUpperCase() || 'README'}.${superDocsState.exportResult?.format || 'pdf'}`} />
+          </div>
+        )}
+
+        {activeTab === 'history' && (
+          <div id="history-panel" role="tabpanel" aria-labelledby="history-tab" className="max-w-5xl mx-auto">
+            <HistoryTab
+              documentId={superDocsState.documentId}
+              versions={superDocsState.versions}
+              versionsLoading={superDocsState.versionsLoading}
+              selectedVersion={superDocsState.selectedVersion}
+              onLoadVersions={superDocsActions.loadVersions}
+              onLoadVersion={superDocsActions.loadVersion}
+              onRevert={superDocsActions.revertToVersion}
+              disabled={isProcessing || !apiKey}
+            />
+          </div>
+        )}
+
+        {activeTab === 'templates' && (
+          <div id="templates-panel" role="tabpanel" aria-labelledby="templates-tab" className="max-w-5xl mx-auto">
+            <TemplateGallery
+              templates={superDocsState.templates}
+              prompts={superDocsState.prompts}
+              templatesLoading={superDocsState.templatesLoading}
+              onLoadTemplates={superDocsActions.loadTemplates}
+              onLoadPrompts={superDocsActions.loadPrompts}
+              onApplyTemplate={handleApplyTemplate}
+              onApplyPrompt={handleApplyPrompt}
+              disabled={isProcessing || !apiKey}
+            />
           </div>
         )}
 
