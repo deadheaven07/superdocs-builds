@@ -1,12 +1,11 @@
 import hashlib
-import logging
 import json
+import logging
 import re
 import shutil
+from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
-from typing import List
-from dataclasses import dataclass
 
 import fitz
 from pypdf import PdfReader, PdfWriter
@@ -14,17 +13,17 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
-from app.domain.packet import Packet
-from app.domain.document import Document, ProcessingStatus
-from app.domain.bates import BatesAssignment
-from app.domain.privilege import PrivilegeStatus
-from app.domain.redaction import RedactionStatus, RedactionCandidate
-from app.domain.manifest import Manifest, ManifestEntry
 from app.domain.audit import AuditEvent, AuditEventType
-from app.services.redaction import RedactionApplicationService
-from app.services.storage import resolve_pdf_source, redacted_pdf_path_for
+from app.domain.bates import BatesAssignment
+from app.domain.document import Document, ProcessingStatus
+from app.domain.manifest import Manifest, ManifestEntry
+from app.domain.packet import Packet
+from app.domain.privilege import PrivilegeStatus
+from app.domain.redaction import RedactionCandidate, RedactionStatus
 from app.services.court_rules import get_profile
-from app.services.reconciliation import verify_reconciliation, generate_reconciliation_readme
+from app.services.reconciliation import generate_reconciliation_readme, verify_reconciliation
+from app.services.redaction import RedactionApplicationService
+from app.services.storage import redacted_pdf_path_for, resolve_pdf_source
 from app.time import utc_now
 
 settings = get_settings()
@@ -60,7 +59,7 @@ class PacketBuilderService:
                 sha256.update(chunk)
         return sha256.hexdigest()
 
-    def _calculate_page_hashes(self, pdf_path: Path) -> List[str]:
+    def _calculate_page_hashes(self, pdf_path: Path) -> list[str]:
         """Compute SHA-256 hash for each individual page in a PDF."""
         page_hashes = []
         doc = fitz.open(pdf_path)
@@ -72,13 +71,13 @@ class PacketBuilderService:
         doc.close()
         return page_hashes
 
-    def _compute_merkle_root(self, page_hashes: List[str]) -> str:
+    def _compute_merkle_root(self, page_hashes: list[str]) -> str:
         """Compute Merkle root from ordered list of page hashes."""
         if not page_hashes:
             return ""
         if len(page_hashes) == 1:
             return page_hashes[0]
-        
+
         current_level = page_hashes[:]
         while len(current_level) > 1:
             next_level = []
@@ -90,7 +89,9 @@ class PacketBuilderService:
             current_level = next_level
         return current_level[0]
 
-    def _create_text_pdf(self, title: str, lines: List[str], page_size: tuple = (612, 792)) -> bytes:
+    def _create_text_pdf(
+        self, title: str, lines: list[str], page_size: tuple = (612, 792)
+    ) -> bytes:
         doc = fitz.open()
         page = doc.new_page(width=page_size[0], height=page_size[1])
         margin = 54
@@ -109,7 +110,9 @@ class PacketBuilderService:
         doc.close()
         return data
 
-    def _sanitize_description(self, description: str | None, redacted_texts: list[str]) -> str | None:
+    def _sanitize_description(
+        self, description: str | None, redacted_texts: list[str]
+    ) -> str | None:
         """Remove redacted terms from a description so the final deliverable
         never exposes content that was redacted (covers, index, manifest)."""
         if not description:
@@ -138,15 +141,20 @@ class PacketBuilderService:
             f"Description: {description or document.description or 'No description available'}",
             f"Document: {document.original_filename}",
             f"Pages: {document.page_count}",
-            f"Privilege Status: {document.privilege_decisions[0].status.value if document.privilege_decisions else 'pending'}",
         ]
+        privilege_status = (
+            document.privilege_decisions[0].status.value
+            if document.privilege_decisions
+            else "pending"
+        )
+        lines.append(f"Privilege Status: {privilege_status}")
         return self._create_text_pdf(f"EXHIBIT {exhibit_letter}", lines)
 
     def _create_exhibit_index(
         self,
         packet: Packet,
-        documents: List[Document],
-        manifest_entries: List[ManifestEntry],
+        documents: list[Document],
+        manifest_entries: list[ManifestEntry],
     ) -> bytes:
         lines = [
             f"Packet: {packet.name}",
@@ -158,7 +166,7 @@ class PacketBuilderService:
             "-" * 80,
         ]
 
-        for i, (doc, entry) in enumerate(zip(documents, manifest_entries)):
+        for i, (doc, entry) in enumerate(zip(documents, manifest_entries, strict=True)):
             exhibit_letter = chr(65 + i)
             lines.append(
                 f"{exhibit_letter} | {entry.bates_start} - {entry.bates_end} | "
@@ -167,7 +175,7 @@ class PacketBuilderService:
 
         return self._create_text_pdf("EXHIBIT INDEX", lines)
 
-    def _create_privilege_log(self, packet: Packet, documents: List[Document]) -> bytes:
+    def _create_privilege_log(self, packet: Packet, documents: list[Document]) -> bytes:
         lines = [
             f"Packet: {packet.name}",
             f"Generated: {utc_now().strftime('%Y-%m-%d %H:%M:%S')}",
@@ -177,14 +185,18 @@ class PacketBuilderService:
         ]
 
         for doc in documents:
-            if doc.privilege_decisions and doc.privilege_decisions[0].status == PrivilegeStatus.PRIVILEGED:
+            if (
+                doc.privilege_decisions
+                and doc.privilege_decisions[0].status == PrivilegeStatus.PRIVILEGED
+            ):
                 decision = doc.privilege_decisions[0]
-                bates_assignments = [ba for ba in doc.bates_assignments]
+                bates_assignments = list(doc.bates_assignments)
                 bates_start = bates_assignments[0].bates_label if bates_assignments else "N/A"
                 bates_end = bates_assignments[-1].bates_label if bates_assignments else "N/A"
                 lines.append(
                     f"{doc.original_filename} | {bates_start} - {bates_end} | "
-                    f"{decision.category.value if decision.category else 'other'} | {decision.reason or 'N/A'}"
+                    f"{decision.category.value if decision.category else 'other'} | "
+                    f"{decision.reason or 'N/A'}"
                 )
 
         return self._create_text_pdf("PRIVILEGE LOG", lines)
@@ -193,12 +205,12 @@ class PacketBuilderService:
         self,
         input_path: Path,
         output_path: Path,
-        bates_labels: List[str],
+        bates_labels: list[str],
         profile: dict | None = None,
     ) -> None:
         """Stamp Bates labels on PDF pages using court profile configuration."""
         doc = fitz.open(input_path)
-        
+
         # Get stamp position from profile or use defaults
         if profile:
             stamp_pos = profile.get("stamp_position", {})
@@ -224,23 +236,20 @@ class PacketBuilderService:
                 break
             page = doc[i]
             rect = page.rect
-            
+
             # Calculate x position based on horizontal alignment
             if horizontal == "left":
                 x = margin_x
             elif horizontal == "center":
-                # Center the text approximately (text width varies, so use margin as offset from center)
+                # Center the text approximately
                 text_width_estimate = len(label) * font_size * 0.5
                 x = (rect.width - text_width_estimate) / 2
             else:  # right (default)
                 x = rect.width - margin_x
-            
+
             # Calculate y position based on vertical alignment
-            if vertical == "top":
-                y = margin_y
-            else:  # bottom (default)
-                y = rect.height - margin_y
-            
+            y = margin_y if vertical == "top" else rect.height - margin_y
+
             page.insert_text(
                 fitz.Point(x, y),
                 label,
@@ -257,9 +266,9 @@ class PacketBuilderService:
     def _run_validation(
         self,
         packet: Packet,
-        documents: List[Document],
-        bates_list: List[BatesAssignment],
-    ) -> tuple[bool, List[str], List[str]]:
+        documents: list[Document],
+        bates_list: list[BatesAssignment],
+    ) -> tuple[bool, list[str], list[str]]:
         errors = []
         warnings = []
 
@@ -272,13 +281,19 @@ class PacketBuilderService:
         if len(bates_numbers) != len(set(bates_numbers)):
             errors.append("Duplicate Bates numbers found")
 
-        expected_numbers = list(range(packet.bates_start_number, packet.bates_start_number + len(bates_numbers)))
+        expected_numbers = list(
+            range(packet.bates_start_number, packet.bates_start_number + len(bates_numbers))
+        )
         if bates_numbers != expected_numbers:
-            errors.append(f"Bates numbers have gaps. Expected {expected_numbers}, got {bates_numbers}")
+            errors.append(
+                f"Bates numbers have gaps. Expected {expected_numbers}, got {bates_numbers}"
+            )
 
         source_page_count = sum(doc.page_count for doc in documents)
         if len(bates_list) != source_page_count:
-            errors.append(f"Bates count ({len(bates_list)}) does not match page count ({source_page_count})")
+            errors.append(
+                f"Bates count ({len(bates_list)}) does not match page count ({source_page_count})"
+            )
 
         for doc in documents:
             if doc.processing_status != ProcessingStatus.COMPLETED:
@@ -286,7 +301,10 @@ class PacketBuilderService:
 
             doc_bates = [ba for ba in bates_list if ba.document_id == doc.id]
             if len(doc_bates) != doc.page_count:
-                warnings.append(f"Document {doc.original_filename} has {len(doc_bates)} Bates but {doc.page_count} pages")
+                warnings.append(
+                    f"Document {doc.original_filename} has {len(doc_bates)} Bates "
+                    f"but {doc.page_count} pages"
+                )
 
         prev_end = None
         for doc in documents:
@@ -306,7 +324,7 @@ class PacketBuilderService:
 
         return len(errors) == 0, errors, warnings
 
-    def _verify_applied_redactions(self, documents: List[Document]) -> None:
+    def _verify_applied_redactions(self, documents: list[Document]) -> None:
         """Refuse to build if any APPLIED redaction is not verified against its output file."""
         errors = []
         verifier = RedactionApplicationService()
@@ -333,7 +351,7 @@ class PacketBuilderService:
 
     def _verify_pdf_page_count(self, pdf_path: Path, expected_count: int, context: str) -> int:
         """Open a PDF and verify its actual page count matches expected.
-        
+
         Returns the actual page count. Raises ValueError if mismatch.
         """
         try:
@@ -341,7 +359,7 @@ class PacketBuilderService:
             actual_count = len(doc)
             doc.close()
         except Exception as e:
-            raise ValueError(f"Failed to read {context} PDF at {pdf_path}: {e}")
+            raise ValueError(f"Failed to read {context} PDF at {pdf_path}: {e}") from e
 
         if actual_count != expected_count:
             raise ValueError(
@@ -367,7 +385,9 @@ class PacketBuilderService:
             .where(Document.packet_id == packet_id)
             .order_by(Document.display_order)
             .options(
-                selectinload(Document.redaction_candidates).selectinload(RedactionCandidate.approval),
+                selectinload(Document.redaction_candidates).selectinload(
+                    RedactionCandidate.approval
+                ),
                 selectinload(Document.privilege_decisions),
                 selectinload(Document.bates_assignments),
             )
@@ -422,10 +442,12 @@ class PacketBuilderService:
             exhibit_letter = chr(65 + i)
 
             bates_assignments_doc = await session.execute(
-                select(BatesAssignment).where(
+                select(BatesAssignment)
+                .where(
                     BatesAssignment.packet_id == packet_id,
                     BatesAssignment.document_id == document.id,
-                ).order_by(BatesAssignment.page_number)
+                )
+                .order_by(BatesAssignment.page_number)
             )
             doc_bates = bates_assignments_doc.scalars().all()
             bates_start = doc_bates[0].bates_label if doc_bates else "N/A"
@@ -468,7 +490,9 @@ class PacketBuilderService:
             stamped_writer.write(stamped_exhibit_path)
 
             exhibit_page_count = document.page_count + 1
-            self._verify_pdf_page_count(stamped_exhibit_path, exhibit_page_count, f"exhibit {exhibit_letter}")
+            self._verify_pdf_page_count(
+                stamped_exhibit_path, exhibit_page_count, f"exhibit {exhibit_letter}"
+            )
             exhibit_page_counts.append(exhibit_page_count)
 
             page_hashes = self._calculate_page_hashes(stamped_exhibit_path)
@@ -477,15 +501,19 @@ class PacketBuilderService:
             applied_redactions = []
             for candidate in document.redaction_candidates:
                 if candidate.status == RedactionStatus.APPLIED and candidate.approval:
-                    applied_redactions.append({
-                        "candidate_id": str(candidate.id),
-                        "page": candidate.page_number,
-                        "category": candidate.category.value,
-                        "matched_text": candidate.matched_text,
-                        "approver": candidate.approval.approver,
-                        "approved_at": candidate.approval.approved_at.isoformat() if candidate.approval.approved_at else None,
-                        "verified": candidate.approval.verification_passed,
-                    })
+                    applied_redactions.append(
+                        {
+                            "candidate_id": str(candidate.id),
+                            "page": candidate.page_number,
+                            "category": candidate.category.value,
+                            "matched_text": candidate.matched_text,
+                            "approver": candidate.approval.approver,
+                            "approved_at": candidate.approval.approved_at.isoformat()
+                            if candidate.approval.approved_at
+                            else None,
+                            "verified": candidate.approval.verification_passed,
+                        }
+                    )
 
             privilege_status = None
             privilege_category = None
@@ -564,7 +592,9 @@ class PacketBuilderService:
         manifest_data = {
             "packet_id": str(packet.id),
             "packet_name": packet.name,
-            "generated_at": manifest.generated_at.isoformat() if manifest.generated_at else utc_now().isoformat(),
+            "generated_at": manifest.generated_at.isoformat()
+            if manifest.generated_at
+            else utc_now().isoformat(),
             "total_pages": manifest.total_pages,
             "total_documents": manifest.total_documents,
             "bates_start": manifest.bates_start,
@@ -672,9 +702,7 @@ class PacketBuilderService:
 
         valid, errors, warnings = self._run_validation(packet, documents, bates_list)
 
-        manifest = await session.execute(
-            select(Manifest).where(Manifest.packet_id == packet_id)
-        )
+        manifest = await session.execute(select(Manifest).where(Manifest.packet_id == packet_id))
         manifest = manifest.scalars().first()
 
         if manifest:
@@ -694,8 +722,8 @@ class PacketBuilderService:
                         if current_page_hashes != entry.page_hashes:
                             errors.append(
                                 f"Page hash mismatch for exhibit {entry.exhibit_identifier}: "
-                                f"expected {len(entry.page_hashes)} pages, got {len(current_page_hashes)} "
-                                f"or content mismatch"
+                                f"expected {len(entry.page_hashes)} pages, "
+                                f"got {len(current_page_hashes)} or content mismatch"
                             )
                             valid = False
                         current_merkle = self._compute_merkle_root(current_page_hashes)
@@ -735,7 +763,9 @@ class PacketBuilderService:
             "warnings": warnings,
             "total_documents": len(documents),
             "total_pages": total_pages,
-            "bates_range": f"{bates_list[0].bates_label} - {bates_list[-1].bates_label}" if bates_list else None,
+            "bates_range": f"{bates_list[0].bates_label} - {bates_list[-1].bates_label}"
+            if bates_list
+            else None,
         }
 
 
