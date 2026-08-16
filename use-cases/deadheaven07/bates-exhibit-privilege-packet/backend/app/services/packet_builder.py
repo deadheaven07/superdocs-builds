@@ -23,6 +23,8 @@ from app.domain.manifest import Manifest, ManifestEntry
 from app.domain.audit import AuditEvent, AuditEventType
 from app.services.redaction import RedactionApplicationService
 from app.services.storage import resolve_pdf_source, redacted_pdf_path_for
+from app.services.court_rules import get_profile
+from app.services.reconciliation import verify_reconciliation, generate_reconciliation_readme
 from app.time import utc_now
 
 settings = get_settings()
@@ -45,6 +47,11 @@ class PacketBuilderService:
 
     def _format_bates(self, prefix: str, number: int, padding: int) -> str:
         return f"{prefix}{str(number).zfill(padding)}"
+
+    def _get_court_profile(self, packet: Packet) -> dict:
+        """Get court rule profile for a packet. Falls back to default if not specified."""
+        profile_name = getattr(packet, "court_profile", None)
+        return get_profile(profile_name)
 
     def _calculate_sha256(self, file_path: Path) -> str:
         sha256 = hashlib.sha256()
@@ -182,16 +189,65 @@ class PacketBuilderService:
 
         return self._create_text_pdf("PRIVILEGE LOG", lines)
 
-    def _stamp_pdf_file(self, input_path: Path, output_path: Path, bates_labels: List[str]) -> None:
+    def _stamp_pdf_file(
+        self,
+        input_path: Path,
+        output_path: Path,
+        bates_labels: List[str],
+        profile: dict | None = None,
+    ) -> None:
+        """Stamp Bates labels on PDF pages using court profile configuration."""
         doc = fitz.open(input_path)
+        
+        # Get stamp position from profile or use defaults
+        if profile:
+            stamp_pos = profile.get("stamp_position", {})
+            horizontal = stamp_pos.get("horizontal", "right")
+            vertical = stamp_pos.get("vertical", "bottom")
+            margin_x = stamp_pos.get("margin_x", 160)
+            margin_y = stamp_pos.get("margin_y", 30)
+            font_config = profile.get("font", {})
+            font_name = font_config.get("name", "helv")
+            font_size = font_config.get("size", 10)
+            font_color = font_config.get("color", [0, 0, 0])
+        else:
+            horizontal = "right"
+            vertical = "bottom"
+            margin_x = 160
+            margin_y = 30
+            font_name = "helv"
+            font_size = 10
+            font_color = [0, 0, 0]
+
         for i, label in enumerate(bates_labels):
             if i >= len(doc):
                 break
             page = doc[i]
             rect = page.rect
-            x = rect.width - 160
-            y = rect.height - 30
-            page.insert_text(fitz.Point(x, y), label, fontsize=10, fontname="helv", color=(0, 0, 0))
+            
+            # Calculate x position based on horizontal alignment
+            if horizontal == "left":
+                x = margin_x
+            elif horizontal == "center":
+                # Center the text approximately (text width varies, so use margin as offset from center)
+                text_width_estimate = len(label) * font_size * 0.5
+                x = (rect.width - text_width_estimate) / 2
+            else:  # right (default)
+                x = rect.width - margin_x
+            
+            # Calculate y position based on vertical alignment
+            if vertical == "top":
+                y = margin_y
+            else:  # bottom (default)
+                y = rect.height - margin_y
+            
+            page.insert_text(
+                fitz.Point(x, y),
+                label,
+                fontsize=font_size,
+                fontname=font_name,
+                color=tuple(font_color),
+            )
         doc.save(output_path, garbage=4, deflate=True)
         doc.close()
 
@@ -303,6 +359,9 @@ class PacketBuilderService:
         if not packet:
             raise ValueError(f"Packet {packet_id} not found")
 
+        # Get court rule profile for this packet
+        profile = self._get_court_profile(packet)
+
         documents_result = await session.execute(
             select(Document)
             .where(Document.packet_id == packet_id)
@@ -389,7 +448,7 @@ class PacketBuilderService:
 
             doc_bates_list = [ba.bates_label for ba in doc_bates]
             stamped_path = settings.working_path / f"{document.sha256}_stamped.pdf"
-            self._stamp_pdf_file(source_path, stamped_path, doc_bates_list)
+            self._stamp_pdf_file(source_path, stamped_path, doc_bates_list, profile)
 
             stamped_reader = PdfReader(stamped_path)
             cover_reader = PdfReader(BytesIO(cover_sheet_bytes))
@@ -544,6 +603,26 @@ class PacketBuilderService:
                 for e in manifest_entries
             ],
         }
+
+        # Perform page-count reconciliation proof
+        reconciliation = verify_reconciliation(
+            manifest_entries=[
+                {
+                    "exhibit_identifier": e.exhibit_identifier,
+                    "bates_start": e.bates_start,
+                    "bates_end": e.bates_end,
+                    "page_count": e.page_count,
+                }
+                for e in manifest_entries
+            ],
+            total_packet_pages=manifest.total_pages,
+            packet_prefix=packet.bates_prefix,
+        )
+        manifest_data["reconciliation"] = reconciliation.to_dict()
+
+        # Generate reconciliation README content
+        manifest_data["reconciliation_readme"] = generate_reconciliation_readme(reconciliation)
+
         with open(manifest_path, "w") as f:
             json.dump(manifest_data, f, indent=2, default=str)
 
@@ -628,6 +707,25 @@ class PacketBuilderService:
                     else:
                         errors.append(f"Exhibit file missing: {entry.exhibit_identifier}")
                         valid = False
+
+            # Page-count reconciliation proof
+            if manifest.entries:
+                reconciliation = verify_reconciliation(
+                    manifest_entries=[
+                        {
+                            "exhibit_identifier": e.exhibit_identifier,
+                            "bates_start": e.bates_start,
+                            "bates_end": e.bates_end,
+                            "page_count": e.page_count,
+                        }
+                        for e in manifest.entries
+                    ],
+                    total_packet_pages=manifest.total_pages,
+                    packet_prefix=packet.bates_prefix,
+                )
+                if not reconciliation.is_valid:
+                    errors.extend(reconciliation.discrepancies)
+                    valid = False
 
         total_pages = sum(doc.page_count for doc in documents) + len(documents)
 
