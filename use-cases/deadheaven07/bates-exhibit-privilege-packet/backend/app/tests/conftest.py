@@ -38,7 +38,7 @@ async def test_engine():
         poolclass=NullPool,
     )
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(Base.metadata.create_all, checkfirst=True)
     yield engine
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
@@ -109,29 +109,29 @@ def mock_superdocs_adapter():
 
 
 @pytest.fixture(scope="function")
-def superdocs_override(api_client):
-    """Override the SuperDocs dependency with the in-memory fake engine.
+def fake_superdocs():
+    from qa_helpers import FakeSuperDocsService
+
+    return FakeSuperDocsService()
+
+
+@pytest.fixture(scope="function")
+def superdocs_override(api_client, fake_superdocs):
+    """API client whose SuperDocs dependency AND background-task factories are
+    wired to the in-memory fake engine.
 
     Yields (client, fake_service). The fake mirrors the SuperDocs API contract
     (detect_pii/apply_redactions/upload) against locally stored files, so the
     SuperDocs-native redaction paths run without a network.
     """
-    from qa_helpers import FakeSuperDocsService
-
-    from app.main import app
-    from app.services.superdocs_integration import get_superdocs_service
-
-    fake = FakeSuperDocsService()
-    app.dependency_overrides[get_superdocs_service] = lambda: fake
-    yield api_client, fake
-    app.dependency_overrides.pop(get_superdocs_service, None)
+    return api_client, fake_superdocs
 
 
 @pytest_asyncio.fixture(scope="function")
-async def api_client(test_engine, monkeypatch, tmp_path):
-    """HTTP client exercising the real FastAPI routers with an isolated DB and
-    storage root. Background tasks (detect/processing) are redirected to the
-    test database."""
+async def api_client(test_engine, monkeypatch, tmp_path, fake_superdocs):
+    """HTTP client exercising the real FastAPI routers with an isolated DB,
+    isolated storage root, and the in-memory SuperDocs fake. Background tasks
+    (detect/processing) are redirected to the test database and the fake."""
     from httpx import ASGITransport, AsyncClient
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -140,6 +140,8 @@ async def api_client(test_engine, monkeypatch, tmp_path):
     from app.config import get_settings
     from app.database import get_session
     from app.main import app
+    from app.services.redaction import RedactionApplicationService, RedactionDetectionService
+    from app.services.superdocs_integration import get_superdocs_service
 
     session_factory = async_sessionmaker(
         test_engine, class_=AsyncSession, expire_on_commit=False
@@ -155,6 +157,17 @@ async def api_client(test_engine, monkeypatch, tmp_path):
                 raise
 
     app.dependency_overrides[get_session] = override_get_session
+    app.dependency_overrides[get_superdocs_service] = lambda: fake_superdocs
+    monkeypatch.setattr(
+        redactions_module,
+        "_new_detection_service",
+        lambda: RedactionDetectionService(superdocs=fake_superdocs),
+    )
+    monkeypatch.setattr(
+        redactions_module,
+        "_new_application_service",
+        lambda: RedactionApplicationService(superdocs=fake_superdocs),
+    )
     monkeypatch.setattr(redactions_module, "async_session_maker", session_factory)
     monkeypatch.setattr(processor_module, "async_session_maker", session_factory)
 

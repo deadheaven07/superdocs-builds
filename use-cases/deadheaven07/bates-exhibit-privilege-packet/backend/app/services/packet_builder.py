@@ -684,6 +684,43 @@ class PacketBuilderService:
             manifest=manifest,
         )
 
+    async def reexport_packet_through_superdocs(
+        self,
+        final_packet_path: Path,
+    ) -> dict | None:
+        """Upload the locally assembled packet PDF into a fresh SuperDocs
+        session and export it as a native SuperDocs document.
+
+        This ensures the final deliverable is a native SuperDocs document
+        rather than a pure local PDF assembly.  Returns the export metadata
+        or None if SuperDocs is unreachable (graceful degradation).
+        """
+        from app.services.superdocs_integration import (
+            get_superdocs_service,
+        )
+
+        service = await get_superdocs_service()
+        if service is None:
+            logger.info("SuperDocs unavailable; local packet remains authoritative")
+            return None
+
+        try:
+            export_result = await service.export_artifact(
+                file_bytes=final_packet_path.read_bytes(),
+                filename=final_packet_path.name,
+            )
+            logger.info(
+                f"Re-exported final packet through SuperDocs: "
+                f"{export_result.download_url}"
+            )
+            return {"download_url": export_result.download_url, "filename": export_result.filename}
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                f"SuperDocs re-export failed for final packet: {exc}; "
+                "local artifact remains authoritative"
+            )
+            return None
+
     async def validate_packet(
         self,
         session,

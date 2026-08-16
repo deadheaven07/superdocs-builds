@@ -50,6 +50,11 @@ class PrivilegeDecision(Base):
         onupdate=utc_now,
         nullable=False,
     )
+    # Provenance of the proposal: "superdocs" (native pending_change from the
+    # primary intelligence layer) or "local_fallback". Mirrors the native
+    # SuperDocs pending_change id for 1:1 approval sync.
+    proposed_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    superdocs_change_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
 
     packet: Mapped["Packet"] = relationship("Packet", back_populates="privilege_decisions")
     document: Mapped["Document"] = relationship("Document", back_populates="privilege_decisions")

@@ -3,6 +3,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 
 
+PLACEHOLDER_API_KEYS = {"your-key-here", "", "changeme", "superdocs-api-key"}
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -13,6 +16,13 @@ class Settings(BaseSettings):
 
     superdocs_api_key: str = "your-key-here"
     superdocs_base_url: str = "https://api.superdocs.app"
+
+    # When True, SuperDocs is the primary intelligence layer (PII detection,
+    # privilege analysis, redaction proposals via the async chat API with
+    # approval_mode="ask_every_time"). The local PyMuPDF/regex/OCR path is
+    # then a strictly labeled fallback used only when SuperDocs is
+    # unavailable. Set to False to force fallback mode explicitly.
+    superdocs_primary: bool = True
 
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/bates_packet"
 
@@ -49,6 +59,19 @@ class Settings(BaseSettings):
     @property
     def final_path(self) -> Path:
         return self.storage_root / self.final_dir
+
+    @property
+    def has_real_superdocs_key(self) -> bool:
+        """True only when a real SuperDocs API key is configured. Placeholder
+        keys (e.g. 'your-key-here' from .env.example) are never sent upstream."""
+        return self.superdocs_api_key not in PLACEHOLDER_API_KEYS
+
+    @property
+    def superdocs_available(self) -> bool:
+        """SuperDocs is the primary intelligence layer only when enabled AND a
+        real key is configured. Otherwise the local fallback path is used and
+        every proposal is explicitly labeled `local_fallback`."""
+        return self.superdocs_primary and self.has_real_superdocs_key
 
     def ensure_directories(self) -> None:
         for path in [

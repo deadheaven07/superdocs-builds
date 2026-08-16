@@ -1,0 +1,105 @@
+# Pre-registered ground truth for the Bates Packet Builder evaluation corpus.
+# Every document in corpus/ has known PII, privilege language, and edge cases.
+# The evaluation test computes precision, recall, and F1 against this file.
+
+corpus_version: "1.0"
+
+documents:
+  - filename: test_document_ssn_email.pdf
+    sha256: "d711daaf312ccfbf341ea3b6ec4b3e21e6a37829424edfcd0a5e5e9733c0f070"
+    page_count: 1
+    description: "Single-page document with SSN, email, phone, account, medical, and privilege language"
+
+    expected_pii:
+      - category: ssn
+        text: "123-45-6789"
+        page_number: 1
+      - category: email
+        text: "jane.doe@example.com"
+        page_number: 1
+      - category: phone
+        text: "(555) 123-4567"
+        page_number: 1
+      - category: account_number
+        text: "ACC-8821-4433"
+        page_number: 1
+      - category: name
+        text: "Jane Doe"
+        page_number: 1
+      - category: medical_term
+        text: "cancer"
+        page_number: 1
+      - category: medical_term
+        text: "chemotherapy"
+        page_number: 1
+
+    expected_privilege:
+      - is_privileged: true
+        category: attorney_client
+        key_phrases:
+          - "attorney-client privilege"
+          - "confidential attorney client"
+
+    # Items that must NOT be flagged as PII
+    expected_false_positive_rejects:
+      - text: "CONFIDENTIAL MEDICAL RECORD"
+        reason: "Document title, not PII"
+      - text: "Tylenol 500mg"
+        reason: "Medication name with dosage, not PII"
+
+  - filename: test_document_privilege.pdf
+    sha256: "d973dc302688aa08f62f61dcf5416212476162b99bacc5c0ad748982bdc76d36"
+    page_count: 1
+    description: "Single-page memorandum with privilege language"
+
+    expected_pii: []
+
+    expected_privilege:
+      - is_privileged: true
+        category: attorney_client
+        key_phrases:
+          - "attorney-client privilege"
+          - "work product"
+          - "anticipation of litigation"
+
+    expected_false_positive_rejects: []
+
+  - filename: test_document_edge_cases.pdf
+    sha256: "1100f7114ae318e2041e1951f99f4b72b0f47f75d77122f93eae04db2175833f"
+    page_count: 1
+    description: "Single-page document with invoice refs, dates, and Bates labels that must NOT be flagged"
+
+    expected_pii: []
+
+    expected_privilege: []
+
+    expected_false_positive_rejects:
+      - text: "INV-12345"
+        reason: "Invoice reference number"
+      - text: "FQ-2024"
+        reason: "Statement code"
+      - text: "2024-01-15"
+        reason: "Calendar date"
+      - text: "CASE-000001"
+        reason: "Bates-style label"
+      - text: "Page 1 of 3"
+        reason: "Page marker"
+
+  - filename: test_document_multipage.pdf
+    sha256: "9f3e3a608022bffb097a27d4739ee59081f70694e4c5a3d689db36fadce8be2e"
+    page_count: 5
+    description: "Multi-page document with PII on page 3 only"
+
+    expected_pii:
+      - category: ssn
+        text: "987-65-4321"
+        page_number: 3
+      - category: email
+        text: "john.smith@corp.com"
+        page_number: 3
+
+    expected_privilege: []
+
+    expected_false_positive_rejects:
+      - text: "CASE-000001"
+        reason: "Bates label in document header"

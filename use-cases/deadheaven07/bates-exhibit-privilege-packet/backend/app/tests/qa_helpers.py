@@ -175,9 +175,21 @@ class FakeSuperDocsService:
                         category = PIICategory(category_value)
                         if categories and category not in categories:
                             continue
-                        text = match.group(0).strip()
+                        raw_text = match.group(0).strip()
+                        text = raw_text
                         if category_value == "name":
                             text = match.group(1).strip()
+                        elif category_value == "account_number" and any(
+                            ch.isalpha() for ch in raw_text
+                        ):
+                            text = raw_text.upper()
+                        if not text:
+                            continue
+                        rects = page.search_for(raw_text) or page.search_for(text)
+                        x0 = y0 = x1 = y1 = None
+                        if rects:
+                            rect = rects[0]
+                            x0, y0, x1, y1 = rect.x0, rect.y0, rect.x1, rect.y1
                         start = match.start()
                         before = page_text[max(0, start - 40):start]
                         after = page_text[match.end():match.end() + 40]
@@ -190,6 +202,10 @@ class FakeSuperDocsService:
                             confidence=0.95,
                             context_before=before,
                             context_after=after,
+                            x0=x0,
+                            y0=y0,
+                            x1=x1,
+                            y1=y1,
                         ))
         finally:
             doc.close()
@@ -210,37 +226,18 @@ class FakeSuperDocsService:
         )
 
     async def apply_redactions(self, session, document, candidates):
-        from app.services.storage import original_path_for, redacted_pdf_path_for
-
+        """Mirror of the SuperDocs apply sync. The authoritative byte-scrub is
+        performed locally by the application layer; this fake only records the
+        sync and returns a completed job status (no file mutation, so
+        re-application stays deterministic and never clobbers the scrubbed
+        artifact)."""
         self.apply_calls += 1
         if not document.superdocs_session_id:
             await self.upload_document_to_superdocs(session, document)
             await session.refresh(document)
 
-        source = original_path_for(document)
-        if not source.exists():
-            return self.JobStatus(
-                job_id="fake-job", status="failed", error="Original file not found"
-            )
-
-        doc = fitz.open(source)
-        try:
-            for candidate in candidates:
-                if not candidate.approved:
-                    continue
-                for page in doc:
-                    rects = page.search_for(candidate.entity.text)
-                    for rect in rects:
-                        page.add_redact_annot(rect, fill=(0, 0, 0))
-            for page in doc:
-                page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
-            output = redacted_pdf_path_for(document)
-            output.parent.mkdir(parents=True, exist_ok=True)
-            doc.save(output, garbage=4, deflate=True)
-        finally:
-            doc.close()
-
         return self.JobStatus(
-            job_id="fake-job", status="completed",
-            result={"applied": len(candidates)},
+            job_id="fake-job",
+            status="completed",
+            result={"applied": sum(1 for c in candidates if c.approved)},
         )

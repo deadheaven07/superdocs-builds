@@ -53,6 +53,11 @@ class RedactionCandidate(Base):
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     proposed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     proposed_by: Mapped[str] = mapped_column(String(255), nullable=False, default="system")
+    # Provenance of the proposal: "superdocs" (primary intelligence layer,
+    # native pending_change) or "local_fallback" (regex/OCR path, demoted).
+    # Mirrors the native SuperDocs pending_change id so a human approval maps
+    # 1:1 back to the platform change for approval sync.
+    superdocs_change_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
 
     document: Mapped["Document"] = relationship("Document", back_populates="redaction_candidates")
     approval: Mapped["RedactionApproval"] = relationship(

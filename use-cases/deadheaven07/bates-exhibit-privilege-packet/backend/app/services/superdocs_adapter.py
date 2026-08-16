@@ -166,7 +166,7 @@ class SuperDocsRESTAdapter(SuperDocsPort):
         message: str,
         session_id: str,
         document_html: str | None = None,
-        approval_mode: str = "approve_all",
+        approval_mode: str = "ask_every_time",
         model_tier: str = "core",
     ) -> str:
         client = await self._get_client()

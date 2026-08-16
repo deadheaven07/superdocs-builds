@@ -1,6 +1,13 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import StrEnum
+
+
+class SuperDocsUnavailableError(Exception):
+    """Raised when the SuperDocs platform is unreachable (network failure,
+    timeout, or 5xx), so callers can degrade to the local fallback engine."""
 
 
 class PIICategory(StrEnum):
@@ -92,7 +99,7 @@ class ExportResult:
 
 @dataclass
 class PIIEntity:
-    category: "PIICategory"
+    category: PIICategory
     text: str
     page_number: int
     start_offset: int
@@ -100,28 +107,55 @@ class PIIEntity:
     confidence: float
     context_before: str = ""
     context_after: str = ""
+    x0: float | None = None
+    y0: float | None = None
+    x1: float | None = None
+    y1: float | None = None
+    superdocs_change_id: str | None = None
+    change_id: str = ""
 
 
 @dataclass
 class PIIDetectionResult:
-    entities: list["PIIEntity"]
+    entities: list[PIIEntity]
     total_count: int
     session_id: str
     document_id: str
+    batch_id: str = ""
+    job_id: str = ""
 
 
 @dataclass
 class PrivilegeAnalysisResult:
     is_privileged: bool
-    category: "PrivilegeCategory | None"
+    category: PrivilegeCategory | None
     reason: str
     confidence: float
     key_phrases: list[str]
 
 
 @dataclass
+class PrivilegeSuggestion:
+    """AI privilege proposal surfaced as a native SuperDocs pending_change.
+
+    A human reviewer must approve (PRIVILEGED) or reject (NOT_PRIVILEGED)
+    before the decision is recorded in the privilege log.
+    """
+
+    is_privileged: bool
+    category: PrivilegeCategory | None
+    reason: str
+    confidence: float
+    key_phrases: list[str]
+    change_id: str = ""
+    batch_id: str = ""
+    job_id: str = ""
+    source: str = "superdocs"
+
+
+@dataclass
 class RedactionCandidate:
-    entity: "PIIEntity"
+    entity: PIIEntity
     approved: bool = False
     approved_by: str | None = None
     approved_at: str | None = None
@@ -157,7 +191,7 @@ class SuperDocsPort(ABC):
         message: str,
         session_id: str,
         document_html: str | None = None,
-        approval_mode: str = "approve_all",
+        approval_mode: str = "ask_every_time",
         model_tier: str = "core",
     ) -> str:
         pass
@@ -204,8 +238,8 @@ class SuperDocsPort(ABC):
         self,
         session_id: str,
         document_id: str,
-        categories: list["PIICategory"] | None = None,
-    ) -> "PIIDetectionResult":
+        categories: list[PIICategory] | None = None,
+    ) -> PIIDetectionResult:
         pass
 
     @abstractmethod
@@ -213,7 +247,7 @@ class SuperDocsPort(ABC):
         self,
         session_id: str,
         document_id: str,
-    ) -> "PrivilegeAnalysisResult":
+    ) -> PrivilegeAnalysisResult:
         pass
 
     @abstractmethod
@@ -221,7 +255,7 @@ class SuperDocsPort(ABC):
         self,
         session_id: str,
         document_id: str,
-        candidates: list["RedactionCandidate"],
+        candidates: list[RedactionCandidate],
     ) -> JobStatus:
         pass
 
@@ -230,6 +264,6 @@ class SuperDocsPort(ABC):
         self,
         session_id: str,
         document_id: str,
-        candidates: list["RedactionCandidate"],
+        candidates: list[RedactionCandidate],
     ) -> ExportResult:
         pass
