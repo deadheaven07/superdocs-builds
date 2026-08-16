@@ -16,24 +16,28 @@ from app.services.redaction_state import (
 
 class TestRedactionStateMachine:
     def test_proposed_to_approved(self):
-        assert RedactionStateMachine.transition(
-            RedactionStatus.PROPOSED, RedactionStatus.APPROVED
-        ) == RedactionStatus.APPROVED
+        assert (
+            RedactionStateMachine.transition(RedactionStatus.PROPOSED, RedactionStatus.APPROVED)
+            == RedactionStatus.APPROVED
+        )
 
     def test_proposed_to_rejected(self):
-        assert RedactionStateMachine.transition(
-            RedactionStatus.PROPOSED, RedactionStatus.REJECTED
-        ) == RedactionStatus.REJECTED
+        assert (
+            RedactionStateMachine.transition(RedactionStatus.PROPOSED, RedactionStatus.REJECTED)
+            == RedactionStatus.REJECTED
+        )
 
     def test_approved_to_applied(self):
-        assert RedactionStateMachine.transition(
-            RedactionStatus.APPROVED, RedactionStatus.APPLIED
-        ) == RedactionStatus.APPLIED
+        assert (
+            RedactionStateMachine.transition(RedactionStatus.APPROVED, RedactionStatus.APPLIED)
+            == RedactionStatus.APPLIED
+        )
 
     def test_applied_to_verified(self):
-        assert RedactionStateMachine.transition(
-            RedactionStatus.APPLIED, RedactionStatus.VERIFIED
-        ) == RedactionStatus.VERIFIED
+        assert (
+            RedactionStateMachine.transition(RedactionStatus.APPLIED, RedactionStatus.VERIFIED)
+            == RedactionStatus.VERIFIED
+        )
 
     def test_rejected_is_terminal(self):
         assert RedactionStateMachine.is_terminal(RedactionStatus.REJECTED)
@@ -63,9 +67,7 @@ class TestRedactionStateMachine:
 
     def test_invalid_transition_raises(self):
         with pytest.raises(InvalidTransitionError):
-            RedactionStateMachine.transition(
-                RedactionStatus.PROPOSED, RedactionStatus.APPLIED
-            )
+            RedactionStateMachine.transition(RedactionStatus.PROPOSED, RedactionStatus.APPLIED)
 
     def test_full_happy_path(self):
         """PROPOSED -> PENDING_APPROVAL -> APPROVED -> APPLIED -> VERIFIED."""
@@ -78,17 +80,24 @@ class TestRedactionStateMachine:
         assert RedactionStateMachine.is_terminal(s)
 
     def test_proposed_to_pending_approval(self):
-        assert RedactionStateMachine.transition(
-            RedactionStatus.PROPOSED, RedactionStatus.PENDING_APPROVAL
-        ) == RedactionStatus.PENDING_APPROVAL
+        assert (
+            RedactionStateMachine.transition(
+                RedactionStatus.PROPOSED, RedactionStatus.PENDING_APPROVAL
+            )
+            == RedactionStatus.PENDING_APPROVAL
+        )
 
     def test_pending_approval_to_rejected(self):
-        assert RedactionStateMachine.transition(
-            RedactionStatus.PENDING_APPROVAL, RedactionStatus.REJECTED
-        ) == RedactionStatus.REJECTED
+        assert (
+            RedactionStateMachine.transition(
+                RedactionStatus.PENDING_APPROVAL, RedactionStatus.REJECTED
+            )
+            == RedactionStatus.REJECTED
+        )
 
     def test_failed_can_retry_to_proposed(self):
         """FAILED -> PROPOSED is allowed (retry)."""
-        assert RedactionStateMachine.transition(
-            RedactionStatus.FAILED, RedactionStatus.PROPOSED
-        ) == RedactionStatus.PROPOSED
+        assert (
+            RedactionStateMachine.transition(RedactionStatus.FAILED, RedactionStatus.PROPOSED)
+            == RedactionStatus.PROPOSED
+        )

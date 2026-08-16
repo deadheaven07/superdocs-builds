@@ -1,8 +1,9 @@
 from pathlib import Path
 
+from sqlalchemy import select
+
 from app.config import get_settings
 from app.domain.document import Document, DocumentType
-from sqlalchemy import select
 
 settings = get_settings()
 
@@ -52,9 +53,7 @@ async def cleanup_unreferenced_original(session, sha256: str, filename: str) -> 
     """
     from app.domain.document import Document as DocumentModel
 
-    result = await session.execute(
-        select(DocumentModel.id).where(DocumentModel.sha256 == sha256)
-    )
+    result = await session.execute(select(DocumentModel.id).where(DocumentModel.sha256 == sha256))
     if result.first() is not None:
         return False
 

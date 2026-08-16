@@ -18,17 +18,24 @@ def _check_tesseract() -> dict:
         return {
             "available": False,
             "path": None,
-            "message": "Tesseract OCR is not installed. Scanned PDFs and images will be processed without text extraction.",
+            "message": (
+                "Tesseract OCR is not installed. Scanned PDFs and images will be "
+                "processed without text extraction."
+            ),
         }
     try:
         import pytesseract
+
         pytesseract.pytesseract.tesseract_cmd = tesseract_path
         languages = pytesseract.get_languages(config="")
         return {
             "available": True,
             "path": tesseract_path,
             "languages": languages,
-            "message": f"Tesseract OCR available with languages: {', '.join(languages) if languages else 'none'}",
+            "message": (
+                f"Tesseract OCR available with languages: "
+                f"{', '.join(languages) if languages else 'none'}"
+            ),
         }
     except Exception as e:
         return {

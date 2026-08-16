@@ -16,42 +16,57 @@ class TestSuperDocsIntegrationService:
     @pytest.fixture
     def mock_adapter(self):
         adapter = MagicMock()
-        adapter.upload_document = AsyncMock(return_value=DocumentUploadResult(
-            session_id="test-session",
-            document_id="test-doc",
-            chunks_count=10,
-            version_id="v1",
-            page_setup={},
-            html="<html>Test</html>",
-        ))
+        adapter.upload_document = AsyncMock(
+            return_value=DocumentUploadResult(
+                session_id="test-session",
+                document_id="test-doc",
+                chunks_count=10,
+                version_id="v1",
+                page_setup={},
+                html="<html>Test</html>",
+            )
+        )
         adapter.chat_async = AsyncMock(return_value="test-job")
-        adapter.poll_job = AsyncMock(return_value=JobStatus(
-            job_id="test-job",
-            status="completed",
-            result={"response": "Done", "document_changes": {"updated_html": "<html>Updated</html>"}},
-            metadata=None,
-        ))
-        adapter.approve_changes = AsyncMock(return_value=JobStatus(
-            job_id="test-job",
-            status="completed",
-            result={"response": "Done"},
-        ))
-        adapter.continue_job = AsyncMock(return_value=JobStatus(
-            job_id="test-job",
-            status="completed",
-        ))
-        adapter.export_document = AsyncMock(return_value=ExportResult(
-            download_url="https://example.com/download",
-            filename="export.pdf",
-            format="pdf",
-        ))
+        adapter.poll_job = AsyncMock(
+            return_value=JobStatus(
+                job_id="test-job",
+                status="completed",
+                result={
+                    "response": "Done",
+                    "document_changes": {"updated_html": "<html>Updated</html>"},
+                },
+                metadata=None,
+            )
+        )
+        adapter.approve_changes = AsyncMock(
+            return_value=JobStatus(
+                job_id="test-job",
+                status="completed",
+                result={"response": "Done"},
+            )
+        )
+        adapter.continue_job = AsyncMock(
+            return_value=JobStatus(
+                job_id="test-job",
+                status="completed",
+            )
+        )
+        adapter.export_document = AsyncMock(
+            return_value=ExportResult(
+                download_url="https://example.com/download",
+                filename="export.pdf",
+                format="pdf",
+            )
+        )
         adapter.get_session_history = AsyncMock(return_value={"messages": []})
-        adapter.parse_proposed_change_batch = MagicMock(return_value=ProposedChangeBatch(
-            batch_id="batch-1",
-            batch_total=1,
-            changes=[],
-            awaiting_kind="approval",
-        ))
+        adapter.parse_proposed_change_batch = MagicMock(
+            return_value=ProposedChangeBatch(
+                batch_id="batch-1",
+                batch_total=1,
+                changes=[],
+                awaiting_kind="approval",
+            )
+        )
         adapter.close = AsyncMock()
         return adapter
 
@@ -78,7 +93,10 @@ class TestSuperDocsIntegrationService:
     @pytest.mark.asyncio
     async def test_upload_document_to_superdocs(self, mock_adapter, sample_document, tmp_path):
         from app.config import Settings
-        test_file = tmp_path / "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.pdf"
+
+        test_file = (
+            tmp_path / "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.pdf"
+        )
         test_file.write_bytes(b"%PDF-1.4 test")
 
         test_settings = Settings(

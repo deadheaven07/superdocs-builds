@@ -1,6 +1,7 @@
 from datetime import datetime
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.audit import AuditEvent, AuditEventType
@@ -49,12 +50,11 @@ class TestPacketModel:
 
         # Query documents directly instead of relying on relationship lazy loading
         from sqlalchemy import select
-        result = await test_session.execute(
-            select(Document).where(Document.packet_id == packet.id)
-        )
+
+        result = await test_session.execute(select(Document).where(Document.packet_id == packet.id))
         docs = result.scalars().all()
         assert len(docs) == 0
-        
+
         # Test that next_display_order logic works with session
         assert await packet.next_display_order(test_session) == 1
 
@@ -159,7 +159,9 @@ class TestPageModel:
 class TestBatesAssignmentModel:
     @pytest.mark.asyncio
     async def test_create_bates_assignment(self, test_session: AsyncSession):
-        packet = Packet(name="Test Packet", bates_prefix="CASE-", bates_start_number=1, bates_padding=6)
+        packet = Packet(
+            name="Test Packet", bates_prefix="CASE-", bates_start_number=1, bates_padding=6
+        )
         test_session.add(packet)
         await test_session.commit()
 
@@ -248,7 +250,7 @@ class TestBatesAssignmentModel:
         await test_session.commit()
 
         test_session.add(bates2)
-        with pytest.raises(Exception):
+        with pytest.raises(IntegrityError):
             await test_session.commit()
 
 

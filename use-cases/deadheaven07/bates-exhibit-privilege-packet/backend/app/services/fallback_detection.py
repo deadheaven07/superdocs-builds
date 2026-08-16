@@ -180,8 +180,8 @@ def _detect_on_line(
             RedactionMatch(
                 category=category,
                 matched_text=text,
-                context_before=line_text[max(0, span_start - 60):span_start],
-                context_after=line_text[span_end:span_end + 60],
+                context_before=line_text[max(0, span_start - 60) : span_start],
+                context_after=line_text[span_end : span_end + 60],
                 page_number=page_number,
                 x0=rect[0],
                 y0=rect[1],
@@ -239,9 +239,7 @@ def detect_in_pdf(
                 line_words = lines[baseline]
                 line_text = " ".join(w for w, _ in line_words)
                 mapping = _word_rects_from_line(line_text, line_words)
-                results.extend(
-                    _detect_on_line(line_text, page_number, mapping, category_set)
-                )
+                results.extend(_detect_on_line(line_text, page_number, mapping, category_set))
     finally:
         doc.close()
     return results

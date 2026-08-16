@@ -1,7 +1,7 @@
-from pathlib import Path
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
+from pathlib import Path
 
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PLACEHOLDER_API_KEYS = {"your-key-here", "", "changeme", "superdocs-api-key"}
 

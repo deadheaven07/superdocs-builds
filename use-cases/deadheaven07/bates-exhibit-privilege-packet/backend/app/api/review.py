@@ -1,4 +1,3 @@
-from typing import List, Optional
 from uuid import UUID
 
 import httpx
@@ -22,7 +21,9 @@ def _translate_superdocs_error(exc: Exception) -> HTTPException:
     leaking API keys, raw provider bodies, or internal stack traces."""
     if isinstance(exc, SuperDocsAPIError):
         if 400 <= exc.status_code < 500:
-            return HTTPException(status_code=exc.status_code, detail="SuperDocs API rejected the request")
+            return HTTPException(
+                status_code=exc.status_code, detail="SuperDocs API rejected the request"
+            )
         return HTTPException(status_code=502, detail="SuperDocs API error")
     if isinstance(exc, (httpx.TimeoutException, httpx.NetworkError)):
         return HTTPException(status_code=504, detail="SuperDocs service unavailable")
@@ -38,8 +39,8 @@ class AIAnalysisRequest(BaseModel):
 class ApproveChangesRequest(BaseModel):
     job_id: str
     approved: bool
-    changes: List[dict]
-    feedback: Optional[str] = None
+    changes: list[dict]
+    feedback: str | None = None
 
 
 class ContinueJobRequest(BaseModel):
@@ -61,7 +62,9 @@ async def request_ai_analysis(
         raise HTTPException(status_code=404, detail="Document not found")
 
     if document.processing_status != ProcessingStatus.COMPLETED:
-        raise HTTPException(status_code=400, detail="Document must be fully processed before AI analysis")
+        raise HTTPException(
+            status_code=400, detail="Document must be fully processed before AI analysis"
+        )
 
     try:
         job_id = await superdocs.request_ai_analysis(
@@ -73,23 +76,27 @@ async def request_ai_analysis(
         )
     except Exception as e:
         document.processing_status = ProcessingStatus.COMPLETED
-        session.add(AuditEvent(
+        session.add(
+            AuditEvent(
+                packet_id=packet_id,
+                document_id=document.id,
+                event_type=AuditEventType.AI_ANALYSIS_FAILED,
+                user_id="system",
+                event_metadata={"error": type(e).__name__},
+            )
+        )
+        await session.commit()
+        raise _translate_superdocs_error(e) from e
+
+    session.add(
+        AuditEvent(
             packet_id=packet_id,
             document_id=document.id,
-            event_type=AuditEventType.AI_ANALYSIS_FAILED,
+            event_type=AuditEventType.AI_ANALYSIS_STARTED,
             user_id="system",
-            event_metadata={"error": type(e).__name__},
-        ))
-        await session.commit()
-        raise _translate_superdocs_error(e)
-
-    session.add(AuditEvent(
-        packet_id=packet_id,
-        document_id=document.id,
-        event_type=AuditEventType.AI_ANALYSIS_STARTED,
-        user_id="system",
-        event_metadata={"job_id": job_id, "instruction": request.instruction},
-    ))
+            event_metadata={"job_id": job_id, "instruction": request.instruction},
+        )
+    )
     await session.commit()
 
     return {
@@ -171,24 +178,30 @@ async def approve_ai_changes(
             feedback=request.feedback,
         )
     except Exception as e:
-        raise _translate_superdocs_error(e)
+        raise _translate_superdocs_error(e) from e
 
-    session.add(AuditEvent(
-        packet_id=packet_id,
-        document_id=document.id,
-        event_type=AuditEventType.CHANGE_APPROVED if request.approved else AuditEventType.CHANGE_REJECTED,
-        user_id="system",
-        event_metadata={"job_id": request.job_id, "change_count": len(request.changes)},
-    ))
-    if job_status.status == "completed":
-        document.processing_status = ProcessingStatus.COMPLETED
-        session.add(AuditEvent(
+    session.add(
+        AuditEvent(
             packet_id=packet_id,
             document_id=document.id,
-            event_type=AuditEventType.AI_ANALYSIS_COMPLETED,
+            event_type=AuditEventType.CHANGE_APPROVED
+            if request.approved
+            else AuditEventType.CHANGE_REJECTED,
             user_id="system",
-            event_metadata={"job_id": request.job_id},
-        ))
+            event_metadata={"job_id": request.job_id, "change_count": len(request.changes)},
+        )
+    )
+    if job_status.status == "completed":
+        document.processing_status = ProcessingStatus.COMPLETED
+        session.add(
+            AuditEvent(
+                packet_id=packet_id,
+                document_id=document.id,
+                event_type=AuditEventType.AI_ANALYSIS_COMPLETED,
+                user_id="system",
+                event_metadata={"job_id": request.job_id},
+            )
+        )
     elif job_status.status == "awaiting_approval":
         document.processing_status = ProcessingStatus.WAITING_REVIEW
     await session.commit()
@@ -219,24 +232,30 @@ async def continue_ai_job(
             continue_job=request.continue_job,
         )
     except Exception as e:
-        raise _translate_superdocs_error(e)
+        raise _translate_superdocs_error(e) from e
 
-    session.add(AuditEvent(
-        packet_id=packet_id,
-        document_id=document.id,
-        event_type=AuditEventType.CHANGE_PROPOSED if request.continue_job else AuditEventType.CHANGE_REJECTED,
-        user_id="system",
-        event_metadata={"job_id": request.job_id},
-    ))
-    if job_status.status == "completed":
-        document.processing_status = ProcessingStatus.COMPLETED
-        session.add(AuditEvent(
+    session.add(
+        AuditEvent(
             packet_id=packet_id,
             document_id=document.id,
-            event_type=AuditEventType.AI_ANALYSIS_COMPLETED,
+            event_type=AuditEventType.CHANGE_PROPOSED
+            if request.continue_job
+            else AuditEventType.CHANGE_REJECTED,
             user_id="system",
             event_metadata={"job_id": request.job_id},
-        ))
+        )
+    )
+    if job_status.status == "completed":
+        document.processing_status = ProcessingStatus.COMPLETED
+        session.add(
+            AuditEvent(
+                packet_id=packet_id,
+                document_id=document.id,
+                event_type=AuditEventType.AI_ANALYSIS_COMPLETED,
+                user_id="system",
+                event_metadata={"job_id": request.job_id},
+            )
+        )
     elif job_status.status == "awaiting_approval":
         document.processing_status = ProcessingStatus.WAITING_REVIEW
     await session.commit()
@@ -253,7 +272,7 @@ async def export_superdocs_document(
     packet_id: UUID,
     document_id: UUID,
     format: str = "pdf",
-    options: Optional[dict] = None,
+    options: dict | None = None,
     session: AsyncSession = Depends(get_session),
     superdocs: SuperDocsIntegrationService = Depends(get_superdocs_service),
 ):
@@ -268,15 +287,17 @@ async def export_superdocs_document(
             options=options,
         )
     except Exception as e:
-        raise _translate_superdocs_error(e)
+        raise _translate_superdocs_error(e) from e
 
-    session.add(AuditEvent(
-        packet_id=packet_id,
-        document_id=document.id,
-        event_type=AuditEventType.EXPORT_STARTED,
-        user_id="system",
-        event_metadata={"format": format, "filename": export_result.filename},
-    ))
+    session.add(
+        AuditEvent(
+            packet_id=packet_id,
+            document_id=document.id,
+            event_type=AuditEventType.EXPORT_STARTED,
+            user_id="system",
+            event_metadata={"format": format, "filename": export_result.filename},
+        )
+    )
     await session.commit()
 
     return {
@@ -300,7 +321,7 @@ async def get_document_history(
     try:
         history = await superdocs.get_session_history(document)
     except Exception as e:
-        raise _translate_superdocs_error(e)
+        raise _translate_superdocs_error(e) from e
 
     return history
 
@@ -317,7 +338,9 @@ async def get_packet_ai_changes(
     result = await session.execute(
         select(Document).where(
             Document.packet_id == packet_id,
-            Document.processing_status.in_([ProcessingStatus.AI_ANALYSIS, ProcessingStatus.WAITING_REVIEW])
+            Document.processing_status.in_(
+                [ProcessingStatus.AI_ANALYSIS, ProcessingStatus.WAITING_REVIEW]
+            ),
         )
     )
     documents = result.scalars().all()
@@ -337,35 +360,43 @@ async def get_packet_ai_changes(
 
 async def _mark_waiting_review(session: AsyncSession, document: Document, job_id: str) -> None:
     document.processing_status = ProcessingStatus.WAITING_REVIEW
-    session.add(AuditEvent(
-        packet_id=document.packet_id,
-        document_id=document.id,
-        event_type=AuditEventType.CHANGE_PROPOSED,
-        user_id="system",
-        event_metadata={"job_id": job_id},
-    ))
+    session.add(
+        AuditEvent(
+            packet_id=document.packet_id,
+            document_id=document.id,
+            event_type=AuditEventType.CHANGE_PROPOSED,
+            user_id="system",
+            event_metadata={"job_id": job_id},
+        )
+    )
     await session.commit()
 
 
 async def _mark_completed(session: AsyncSession, document: Document, job_id: str) -> None:
     document.processing_status = ProcessingStatus.COMPLETED
-    session.add(AuditEvent(
-        packet_id=document.packet_id,
-        document_id=document.id,
-        event_type=AuditEventType.AI_ANALYSIS_COMPLETED,
-        user_id="system",
-        event_metadata={"job_id": job_id},
-    ))
+    session.add(
+        AuditEvent(
+            packet_id=document.packet_id,
+            document_id=document.id,
+            event_type=AuditEventType.AI_ANALYSIS_COMPLETED,
+            user_id="system",
+            event_metadata={"job_id": job_id},
+        )
+    )
     await session.commit()
 
 
-async def _mark_ai_failed(session: AsyncSession, document: Document, job_id: str, error: str | None) -> None:
+async def _mark_ai_failed(
+    session: AsyncSession, document: Document, job_id: str, error: str | None
+) -> None:
     document.processing_status = ProcessingStatus.COMPLETED
-    session.add(AuditEvent(
-        packet_id=document.packet_id,
-        document_id=document.id,
-        event_type=AuditEventType.AI_ANALYSIS_FAILED,
-        user_id="system",
-        event_metadata={"job_id": job_id, "error": error},
-    ))
+    session.add(
+        AuditEvent(
+            packet_id=document.packet_id,
+            document_id=document.id,
+            event_type=AuditEventType.AI_ANALYSIS_FAILED,
+            user_id="system",
+            event_metadata={"job_id": job_id, "error": error},
+        )
+    )
     await session.commit()

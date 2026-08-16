@@ -43,11 +43,13 @@ class TestRedactionFlow:
         await test_session.commit()
         await test_session.refresh(packet)
 
-        pdf_bytes = make_pdf([
-            "Employee: Jane Q Public",
-            "SSN: 123-45-6789",
-            "Email: jane.public@example.com",
-        ])
+        pdf_bytes = make_pdf(
+            [
+                "Employee: Jane Q Public",
+                "SSN: 123-45-6789",
+                "Email: jane.public@example.com",
+            ]
+        )
         sha = sha256_of(pdf_bytes)
         original_path = settings.originals_path / f"{sha}.pdf"
         original_path.parent.mkdir(parents=True, exist_ok=True)
@@ -82,9 +84,7 @@ class TestRedactionFlow:
                 f.unlink()
 
     @pytest.mark.asyncio
-    async def test_detect_finds_pii_candidates(
-        self, test_session: AsyncSession, document_with_pii
-    ):
+    async def test_detect_finds_pii_candidates(self, test_session: AsyncSession, document_with_pii):
         packet, doc, original_path = document_with_pii
         fake = FakeSuperDocsService()
         detection = RedactionDetectionService(superdocs=fake)
@@ -114,9 +114,9 @@ class TestRedactionFlow:
 
         first = await detection.detect_pii_in_document(test_session, str(doc.id))
         created, skipped = await detection.reconcile_candidates(
-            test_session, str(doc.id), (
-                await detection.create_redaction_candidates(test_session, str(doc.id), first)
-            )
+            test_session,
+            str(doc.id),
+            (await detection.create_redaction_candidates(test_session, str(doc.id), first)),
         )
         for c in created:
             test_session.add(c)
@@ -126,17 +126,15 @@ class TestRedactionFlow:
 
         second = await detection.detect_pii_in_document(test_session, str(doc.id))
         created_again, skipped_again = await detection.reconcile_candidates(
-            test_session, str(doc.id), (
-                await detection.create_redaction_candidates(test_session, str(doc.id), second)
-            )
+            test_session,
+            str(doc.id),
+            (await detection.create_redaction_candidates(test_session, str(doc.id), second)),
         )
         assert created_again == []
         assert skipped_again == len(created), "re-detect must not duplicate candidates"
 
     @pytest.mark.asyncio
-    async def test_approve_apply_verify_flow(
-        self, test_session: AsyncSession, document_with_pii
-    ):
+    async def test_approve_apply_verify_flow(self, test_session: AsyncSession, document_with_pii):
         packet, doc, original_path = document_with_pii
         fake = FakeSuperDocsService()
         detection = RedactionDetectionService(superdocs=fake)
@@ -166,9 +164,7 @@ class TestRedactionFlow:
         )
 
         assert results[str(ssn_candidate.id)]["applied"] is True
-        assert str(email_candidate.id) not in results, (
-            "unapproved candidate must be skipped"
-        )
+        assert str(email_candidate.id) not in results, "unapproved candidate must be skipped"
 
         redacted_path = settings.working_path / f"{doc.sha256}_redacted.pdf"
         assert redacted_path.exists()
@@ -208,16 +204,16 @@ class TestRedactionFlow:
         await test_session.flush()
 
         ssn_candidate.status = RedactionStatus.REJECTED
-        test_session.add(RedactionApproval(
-            candidate_id=ssn_candidate.id,
-            status=RedactionStatus.REJECTED,
-            approver="reviewer-1",
-        ))
+        test_session.add(
+            RedactionApproval(
+                candidate_id=ssn_candidate.id,
+                status=RedactionStatus.REJECTED,
+                approver="reviewer-1",
+            )
+        )
         await test_session.commit()
 
-        results = await application.apply_redactions(
-            test_session, doc, [ssn_candidate]
-        )
+        results = await application.apply_redactions(test_session, doc, [ssn_candidate])
 
         assert str(ssn_candidate.id) not in results, (
             "rejected candidates must be skipped by apply_redactions"

@@ -25,9 +25,10 @@ class TestIngestionService:
         import io
 
         from PIL import Image
-        img = Image.new('RGB', (100, 100), color='white')
+
+        img = Image.new("RGB", (100, 100), color="white")
         img_bytes = io.BytesIO()
-        img.save(img_bytes, format='PNG')
+        img.save(img_bytes, format="PNG")
         return img_bytes.getvalue()
 
     def test_validate_file_supported_pdf(self, service, sample_pdf_bytes):
@@ -62,7 +63,7 @@ class TestIngestionService:
         file_stream = BytesIO(sample_pdf_bytes)
         sha256 = service.calculate_sha256(file_stream)
         assert len(sha256) == 64
-        assert all(c in '0123456789abcdef' for c in sha256)
+        assert all(c in "0123456789abcdef" for c in sha256)
 
     @pytest.mark.asyncio
     async def test_ingest_file_pdf(self, service, sample_pdf_bytes, tmp_path):
@@ -72,22 +73,24 @@ class TestIngestionService:
         processed_file = tmp_path / "processed.pdf"
         processed_file.write_bytes(sample_pdf_bytes)
 
-        with patch.object(service, 'detect_document_type', return_value=DocumentType.PDF):
-            with patch.object(service, 'count_pages', return_value=1):
-                with patch.object(service, 'extract_text', return_value=("Sample text", True)):
-                    with patch.object(service, 'create_searchable_pdf', return_value=processed_file):
-                        with patch.object(service, 'save_original', return_value=original_file):
-                            with patch.object(service, 'calculate_sha256', return_value="a" * 64):
-                                file_stream = BytesIO(sample_pdf_bytes)
-                                result = await service.ingest_file(
-                                    file=file_stream,
-                                    original_filename="test.pdf",
-                                    packet_id="00000000-0000-0000-0000-000000000001",
-                                    display_order=1,
-                                )
-                                assert result.document is not None
-                                assert result.document.original_filename == "test.pdf"
-                                assert result.document.document_type.value == "pdf"
+        with (
+            patch.object(service, "detect_document_type", return_value=DocumentType.PDF),
+            patch.object(service, "count_pages", return_value=1),
+            patch.object(service, "extract_text", return_value=("Sample text", True)),
+            patch.object(service, "create_searchable_pdf", return_value=processed_file),
+            patch.object(service, "save_original", return_value=original_file),
+            patch.object(service, "calculate_sha256", return_value="a" * 64),
+        ):
+            file_stream = BytesIO(sample_pdf_bytes)
+            result = await service.ingest_file(
+                file=file_stream,
+                original_filename="test.pdf",
+                packet_id="00000000-0000-0000-0000-000000000001",
+                display_order=1,
+            )
+            assert result.document is not None
+            assert result.document.original_filename == "test.pdf"
+            assert result.document.document_type.value == "pdf"
 
     def test_detect_document_type_pdf(self, service, tmp_path):
         pdf_file = tmp_path / "test.pdf"
@@ -98,14 +101,16 @@ class TestIngestionService:
     def test_count_pages_image(self, service, tmp_path):
         image_file = tmp_path / "test.png"
         from PIL import Image
-        Image.new('RGB', (100, 100)).save(image_file)
+
+        Image.new("RGB", (100, 100)).save(image_file)
         count = service.count_pages(image_file, "image")
         assert count == 1
 
     def test_extract_text_image(self, service, tmp_path):
         image_file = tmp_path / "test.png"
         from PIL import Image
-        img = Image.new('RGB', (100, 100), color='white')
+
+        img = Image.new("RGB", (100, 100), color="white")
         img.save(image_file)
         text, searchable = service.extract_text(image_file, "image")
         assert isinstance(text, str)

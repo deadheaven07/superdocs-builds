@@ -1,3 +1,4 @@
+import contextlib
 import hashlib
 import json
 from datetime import UTC, datetime
@@ -28,7 +29,7 @@ settings = get_settings()
 def make_pdf(lines, page_count=1):
     """Render a real PDF (with extractable text) using PyMuPDF."""
     doc = fitz.open()
-    for i in range(page_count):
+    for _ in range(page_count):
         page = doc.new_page(width=612, height=792)
         for j, line in enumerate(lines):
             page.insert_text((72, 100 + j * 20), line, fontsize=12, fontname="helv")
@@ -62,10 +63,12 @@ class TestPacketBuilderService:
     @pytest.fixture
     async def sample_documents(self, test_session: AsyncSession, sample_packet: Packet):
         docs = []
-        for i, (filename, pages, content) in enumerate([
-            ("exhibit_a.pdf", 2, ["Exhibit A content one", "Exhibit A content two"]),
-            ("exhibit_b.pdf", 1, ["Exhibit B content"]),
-        ]):
+        for i, (filename, pages, content) in enumerate(
+            [
+                ("exhibit_a.pdf", 2, ["Exhibit A content one", "Exhibit A content two"]),
+                ("exhibit_b.pdf", 1, ["Exhibit B content"]),
+            ]
+        ):
             pdf_bytes = make_pdf(content, pages)
             sha = sha256_of(pdf_bytes)
             original_path = settings.originals_path / f"{sha}.pdf"
@@ -99,7 +102,9 @@ class TestPacketBuilderService:
         return docs
 
     @pytest.fixture
-    async def bates_assigned(self, test_session: AsyncSession, sample_packet: Packet, sample_documents):
+    async def bates_assigned(
+        self, test_session: AsyncSession, sample_packet: Packet, sample_documents
+    ):
         number = sample_packet.bates_start_number
         for doc in sample_documents:
             pages_result = await test_session.execute(
@@ -126,10 +131,8 @@ class TestPacketBuilderService:
             for f in final_dir.rglob("*"):
                 if f.is_file():
                     f.unlink()
-            try:
+            with contextlib.suppress(OSError):
                 final_dir.rmdir()
-            except OSError:
-                pass
         for doc in docs:
             for suffix in [".pdf", "_stamped.pdf", "_redacted.pdf", "_searchable.pdf"]:
                 f = settings.working_path / f"{doc.sha256}{suffix}"
@@ -227,19 +230,24 @@ class TestPacketBuilderService:
             matched_text="CASE-000001",
             context_before="",
             context_after="",
-            x0=0, y0=0, x1=0, y1=0,
+            x0=0,
+            y0=0,
+            x1=0,
+            y1=0,
             status=RedactionStatus.APPLIED,
         )
         test_session.add(candidate)
         await test_session.flush()
-        test_session.add(RedactionApproval(
-            candidate_id=candidate.id,
-            status=RedactionStatus.APPLIED,
-            approver="tester",
-            applied_at=datetime.now(UTC),
-            verified_at=datetime.now(UTC),
-            verification_passed=True,
-        ))
+        test_session.add(
+            RedactionApproval(
+                candidate_id=candidate.id,
+                status=RedactionStatus.APPLIED,
+                approver="tester",
+                applied_at=datetime.now(UTC),
+                verified_at=datetime.now(UTC),
+                verification_passed=True,
+            )
+        )
         await test_session.commit()
 
         result = await builder.build_packet(test_session, packet.id)
@@ -263,7 +271,7 @@ class TestPacketBuilderService:
         assert result["total_documents"] == 2
         assert result["total_pages"] == 5
 
-        missing = await test_session.execute(
+        await test_session.execute(
             text("DELETE FROM bates_assignments WHERE packet_id = :pid AND bates_number = 2"),
             {"pid": str(packet.id)},
         )

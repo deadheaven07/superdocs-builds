@@ -233,9 +233,7 @@ class SuperDocsIntelligenceService:
     async def _ensure_uploaded(self, session: AsyncSession, document: Document) -> None:
         from app.services.superdocs_integration import SuperDocsIntegrationService
 
-        integration = SuperDocsIntegrationService(
-            adapter=self.adapter, settings=self.settings
-        )
+        integration = SuperDocsIntegrationService(adapter=self.adapter, settings=self.settings)
         await integration.upload_document_to_superdocs(session, document)
         document.processing_status = ProcessingStatus.AI_ANALYSIS
         await session.commit()
@@ -330,9 +328,7 @@ class SuperDocsIntelligenceService:
             feedback=feedback,
         )
 
-    async def reexport_document(
-        self, document: Document, format: str = "pdf"
-    ) -> Path:
+    async def reexport_document(self, document: Document, format: str = "pdf") -> Path:
         """Re-export the post-approval artifact through SuperDocs so the final
         packet is built from a native SuperDocs document, not a pure local
         assembly. Returns the local cache path of the exported PDF."""
@@ -436,9 +432,7 @@ class SuperDocsIntelligenceService:
         SuperDocs session and export the native artifact."""
         from app.services.superdocs_integration import SuperDocsIntegrationService
 
-        integration = SuperDocsIntegrationService(
-            adapter=self.adapter, settings=self.settings
-        )
+        integration = SuperDocsIntegrationService(adapter=self.adapter, settings=self.settings)
         return await integration.scrub_and_reimport(session, document, local_pdf_path)
 
     async def close(self):

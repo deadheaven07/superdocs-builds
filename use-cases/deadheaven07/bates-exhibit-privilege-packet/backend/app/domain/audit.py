@@ -1,14 +1,23 @@
 import enum
 import uuid
 from datetime import datetime
-from sqlalchemy import String, ForeignKey, DateTime, Enum, JSON, Index
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Index, String
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.database import Base
 from app.time import utc_now
 
 
-class AuditEventType(str, enum.Enum):
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.domain.packet import Packet
+    from app.domain.document import Document
+
+
+class AuditEventType(enum.StrEnum):
     UPLOAD = "upload"
     PACKET_CREATED = "packet_created"
     PACKET_UPDATED = "packet_updated"
@@ -45,9 +54,7 @@ class AuditEventType(str, enum.Enum):
 class AuditEvent(Base):
     __tablename__ = "audit_events"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     packet_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("packets.id", ondelete="SET NULL"), nullable=True
     )
@@ -57,10 +64,12 @@ class AuditEvent(Base):
     event_type: Mapped[AuditEventType] = mapped_column(Enum(AuditEventType), nullable=False)
     user_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     event_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
 
-    packet: Mapped["Packet"] = relationship("Packet", back_populates="audit_events")
-    document: Mapped["Document"] = relationship("Document", back_populates="audit_events")
+    packet: Mapped["Packet"] = relationship("Packet", back_populates="audit_events")  # noqa: F821
+    document: Mapped["Document"] = relationship("Document", back_populates="audit_events")  # noqa: F821
 
     __table_args__ = (
         Index("ix_audit_packet_time", "packet_id", "timestamp"),

@@ -1,13 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, or_
-from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.database import get_session
-from app.domain.packet import Packet
-from app.domain.document import Document
-from app.domain.page import Page
 from app.domain.bates import BatesAssignment
+from app.domain.document import Document
+from app.domain.packet import Packet
+from app.domain.page import Page
 
 router = APIRouter()
 
@@ -46,8 +47,7 @@ async def search_packet(packet_id: UUID, q: str, session: AsyncSession = Depends
     page_matches = page_results.fetchall()
 
     bates_results = await session.execute(
-        select(BatesAssignment)
-        .where(
+        select(BatesAssignment).where(
             BatesAssignment.packet_id == packet_id,
             BatesAssignment.bates_label.ilike(pattern),
         )
@@ -63,15 +63,17 @@ async def search_packet(packet_id: UUID, q: str, session: AsyncSession = Depends
             matched_fields.append("filename")
         if document.description and query.lower() in document.description.lower():
             matched_fields.append("description")
-        results.append({
-            "document_id": str(document.id),
-            "document_name": document.original_filename,
-            "document_type": document.document_type.value,
-            "page_count": document.page_count,
-            "status": document.processing_status.value,
-            "matched_fields": matched_fields,
-            "snippets": [],
-        })
+        results.append(
+            {
+                "document_id": str(document.id),
+                "document_name": document.original_filename,
+                "document_type": document.document_type.value,
+                "page_count": document.page_count,
+                "status": document.processing_status.value,
+                "matched_fields": matched_fields,
+                "snippets": [],
+            }
+        )
         seen_documents.add(document.id)
 
     for page, document in page_matches:
@@ -82,16 +84,18 @@ async def search_packet(packet_id: UUID, q: str, session: AsyncSession = Depends
         lower = text.lower()
         idx = lower.find(query.lower())
         start = max(0, idx - 100)
-        snippet = text[start:idx + len(query) + 100]
-        results.append({
-            "document_id": str(document.id),
-            "document_name": document.original_filename,
-            "document_type": document.document_type.value,
-            "page_count": document.page_count,
-            "status": document.processing_status.value,
-            "matched_fields": ["content"],
-            "snippets": [{"page_number": page.page_number, "snippet": snippet}],
-        })
+        snippet = text[start : idx + len(query) + 100]
+        results.append(
+            {
+                "document_id": str(document.id),
+                "document_name": document.original_filename,
+                "document_type": document.document_type.value,
+                "page_count": document.page_count,
+                "status": document.processing_status.value,
+                "matched_fields": ["content"],
+                "snippets": [{"page_number": page.page_number, "snippet": snippet}],
+            }
+        )
 
     for ba in bates_matches:
         if ba.document_id in seen_documents:
@@ -100,15 +104,19 @@ async def search_packet(packet_id: UUID, q: str, session: AsyncSession = Depends
         document = await session.get(Document, ba.document_id)
         if not document:
             continue
-        results.append({
-            "document_id": str(document.id),
-            "document_name": document.original_filename,
-            "document_type": document.document_type.value,
-            "page_count": document.page_count,
-            "status": document.processing_status.value,
-            "matched_fields": ["bates_label"],
-            "snippets": [{"page_number": ba.page_number, "snippet": f"Bates number {ba.bates_label}"}],
-        })
+        results.append(
+            {
+                "document_id": str(document.id),
+                "document_name": document.original_filename,
+                "document_type": document.document_type.value,
+                "page_count": document.page_count,
+                "status": document.processing_status.value,
+                "matched_fields": ["bates_label"],
+                "snippets": [
+                    {"page_number": ba.page_number, "snippet": f"Bates number {ba.bates_label}"}
+                ],
+            }
+        )
 
     return {
         "packet_id": packet_id,
@@ -119,7 +127,9 @@ async def search_packet(packet_id: UUID, q: str, session: AsyncSession = Depends
 
 
 @router.get("/{packet_id}/bates/{bates_number}")
-async def search_by_bates(packet_id: UUID, bates_number: str, session: AsyncSession = Depends(get_session)):
+async def search_by_bates(
+    packet_id: UUID, bates_number: str, session: AsyncSession = Depends(get_session)
+):
     packet = await session.get(Packet, packet_id)
     if not packet:
         raise HTTPException(status_code=404, detail="Packet not found")

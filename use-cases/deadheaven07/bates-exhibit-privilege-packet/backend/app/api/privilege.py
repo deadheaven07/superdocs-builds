@@ -87,8 +87,7 @@ async def analyze_privilege(
 
     if document.processing_status != "completed":
         raise HTTPException(
-            status_code=400,
-            detail="Document must be fully processed before privilege analysis"
+            status_code=400, detail="Document must be fully processed before privilege analysis"
         )
 
     result = await superdocs.analyze_privilege(session, document)
@@ -120,8 +119,7 @@ async def mark_privilege(
 
     if request.status == PrivilegeStatus.PRIVILEGED and not request.reason:
         raise HTTPException(
-            status_code=400,
-            detail="Privilege reason is required for privileged documents"
+            status_code=400, detail="Privilege reason is required for privileged documents"
         )
 
     result = await session.execute(
@@ -133,10 +131,12 @@ async def mark_privilege(
     existing = result.scalars().first()
 
     bates_assignments = await session.execute(
-        select(BatesAssignment).where(
+        select(BatesAssignment)
+        .where(
             BatesAssignment.packet_id == packet_id,
             BatesAssignment.document_id == document_id,
-        ).order_by(BatesAssignment.bates_number)
+        )
+        .order_by(BatesAssignment.bates_number)
     )
     bates_list = bates_assignments.scalars().all()
     bates_start = bates_list[0].bates_label if bates_list else None
@@ -223,25 +223,29 @@ async def generate_privilege_log(packet_id: UUID, session: AsyncSession = Depend
     log_entries = []
     for decision, document in privileged_docs:
         bates_assignments = await session.execute(
-            select(BatesAssignment).where(
+            select(BatesAssignment)
+            .where(
                 BatesAssignment.packet_id == packet_id,
                 BatesAssignment.document_id == document.id,
-            ).order_by(BatesAssignment.bates_number)
+            )
+            .order_by(BatesAssignment.bates_number)
         )
         bates_list = bates_assignments.scalars().all()
         bates_start = bates_list[0].bates_label if bates_list else "N/A"
         bates_end = bates_list[-1].bates_label if bates_list else "N/A"
 
-        log_entries.append({
-            "document_id": str(document.id),
-            "filename": document.original_filename,
-            "bates_range": f"{bates_start} - {bates_end}",
-            "privilege_category": decision.category.value if decision.category else "other",
-            "reason": decision.reason,
-            "reviewer": decision.reviewer,
-            "decided_at": decision.decided_at.isoformat() if decision.decided_at else None,
-            "page_count": document.page_count,
-        })
+        log_entries.append(
+            {
+                "document_id": str(document.id),
+                "filename": document.original_filename,
+                "bates_range": f"{bates_start} - {bates_end}",
+                "privilege_category": decision.category.value if decision.category else "other",
+                "reason": decision.reason,
+                "reviewer": decision.reviewer,
+                "decided_at": decision.decided_at.isoformat() if decision.decided_at else None,
+                "page_count": document.page_count,
+            }
+        )
 
     return {
         "packet_id": packet_id,

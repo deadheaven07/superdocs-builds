@@ -1,11 +1,24 @@
 import logging
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api import (
+    audit,
+    bates,
+    documents,
+    exports,
+    health,
+    packets,
+    privilege,
+    processing,
+    redactions,
+    review,
+    search,
+)
 from app.config import get_settings
-from app.database import init_db, close_db
-from app.api import health, packets, documents, processing, review, privilege, redactions, bates, exports, search, audit
+from app.database import close_db, init_db
 
 settings = get_settings()
 
@@ -30,7 +43,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Bates Exhibit & Privilege Packet Builder",
-    description="Legal e-discovery packet builder with Bates stamping, privilege logging, and redaction workflow",
+    description=(
+        "Legal e-discovery packet builder with Bates stamping, privilege "
+        "logging, and redaction workflow"
+    ),
     version="0.1.0",
     lifespan=lifespan,
 )

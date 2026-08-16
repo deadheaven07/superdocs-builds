@@ -46,13 +46,18 @@ async def process_document(document_id: str):
                 await session.commit()
                 return
 
-            session.add(AuditEvent(
-                packet_id=document.packet_id,
-                document_id=document.id,
-                event_type=AuditEventType.PROCESSING_STARTED,
-                user_id="system",
-                event_metadata={"filename": document.original_filename, "retry": document.retry_count},
-            ))
+            session.add(
+                AuditEvent(
+                    packet_id=document.packet_id,
+                    document_id=document.id,
+                    event_type=AuditEventType.PROCESSING_STARTED,
+                    user_id="system",
+                    event_metadata={
+                        "filename": document.original_filename,
+                        "retry": document.retry_count,
+                    },
+                )
+            )
 
             document.processing_status = ProcessingStatus.OCR
             document.last_completed_step = "ocr"
@@ -77,11 +82,13 @@ async def process_document(document_id: str):
                         for i, image in enumerate(images):
                             text = pytesseract.image_to_string(image, lang=settings.tesseract_lang)
                             if text.strip():
-                                text_parts.append(f"[Page {i+1}]\n{text}")
+                                text_parts.append(f"[Page {i + 1}]\n{text}")
                         extracted_text = "\n\n".join(text_parts)
                         is_searchable = len(extracted_text.strip()) > 0
 
-                        output_path = settings.processed_path / f"{original_path.stem}_searchable.pdf"
+                        output_path = (
+                            settings.processed_path / f"{original_path.stem}_searchable.pdf"
+                        )
                         doc = fitz.open(original_path)
                         for page_num in range(len(doc)):
                             page = doc[page_num]
@@ -110,6 +117,7 @@ async def process_document(document_id: str):
 
             elif document.document_type.value == "docx":
                 from docx import Document as DocxDocument
+
                 doc = DocxDocument(original_path)
                 text_parts = [para.text for para in doc.paragraphs if para.text.strip()]
                 extracted_text = "\n\n".join(text_parts)
@@ -125,8 +133,11 @@ async def process_document(document_id: str):
             elif document.document_type.value == "image":
                 try:
                     import pytesseract
+
                     image = Image.open(original_path)
-                    extracted_text = pytesseract.image_to_string(image, lang=settings.tesseract_lang)
+                    extracted_text = pytesseract.image_to_string(
+                        image, lang=settings.tesseract_lang
+                    )
                 except Exception as e:
                     logger.warning(f"OCR unavailable for image {document.id}: {e}")
                     extracted_text = ""
@@ -164,30 +175,34 @@ async def process_document(document_id: str):
                     )
                     session.add(page)
 
-            session.add(AuditEvent(
-                packet_id=document.packet_id,
-                document_id=document.id,
-                event_type=AuditEventType.PROCESSING_COMPLETED,
-                user_id="system",
-                event_metadata={
-                    "filename": document.original_filename,
-                    "page_count": page_count,
-                    "is_searchable": is_searchable,
-                },
-            ))
+            session.add(
+                AuditEvent(
+                    packet_id=document.packet_id,
+                    document_id=document.id,
+                    event_type=AuditEventType.PROCESSING_COMPLETED,
+                    user_id="system",
+                    event_metadata={
+                        "filename": document.original_filename,
+                        "page_count": page_count,
+                        "is_searchable": is_searchable,
+                    },
+                )
+            )
             await session.commit()
 
         except Exception as e:
             document.processing_status = ProcessingStatus.FAILED
             document.processing_error = str(e)
             document.retry_count += 1
-            session.add(AuditEvent(
-                packet_id=document.packet_id,
-                document_id=document.id,
-                event_type=AuditEventType.PROCESSING_FAILED,
-                user_id="system",
-                event_metadata={"filename": document.original_filename, "error": str(e)},
-            ))
+            session.add(
+                AuditEvent(
+                    packet_id=document.packet_id,
+                    document_id=document.id,
+                    event_type=AuditEventType.PROCESSING_FAILED,
+                    user_id="system",
+                    event_metadata={"filename": document.original_filename, "error": str(e)},
+                )
+            )
             await session.commit()
 
 
@@ -196,7 +211,7 @@ async def process_packet_documents(packet_id: str):
         result = await session.execute(
             select(Document).where(
                 Document.packet_id == packet_id,
-                Document.processing_status.in_([ProcessingStatus.QUEUED, ProcessingStatus.FAILED])
+                Document.processing_status.in_([ProcessingStatus.QUEUED, ProcessingStatus.FAILED]),
             )
         )
         documents = result.scalars().all()

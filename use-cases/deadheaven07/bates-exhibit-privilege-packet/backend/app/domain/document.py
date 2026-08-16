@@ -1,14 +1,27 @@
 import enum
 import uuid
 from datetime import datetime
-from sqlalchemy import String, DateTime, ForeignKey, Integer, Enum, Index, Text, Boolean
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.database import Base
 from app.time import utc_now
 
 
-class DocumentType(str, enum.Enum):
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.domain.packet import Packet
+    from app.domain.page import Page
+    from app.domain.bates import BatesAssignment
+    from app.domain.privilege import PrivilegeDecision
+    from app.domain.redaction import RedactionCandidate
+    from app.domain.audit import AuditEvent
+
+
+class DocumentType(enum.StrEnum):
     PDF = "pdf"
     DOCX = "docx"
     SCANNED_PDF = "scanned_pdf"
@@ -16,7 +29,7 @@ class DocumentType(str, enum.Enum):
     UNKNOWN = "unknown"
 
 
-class ProcessingStatus(str, enum.Enum):
+class ProcessingStatus(enum.StrEnum):
     QUEUED = "queued"
     PROCESSING = "processing"
     OCR = "ocr"
@@ -32,9 +45,7 @@ class ProcessingStatus(str, enum.Enum):
 class Document(Base):
     __tablename__ = "documents"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     packet_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("packets.id", ondelete="CASCADE"), nullable=False
     )
@@ -60,7 +71,9 @@ class Document(Base):
     superdocs_document_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     description_source: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    description_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    description_generated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     is_searchable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, nullable=False
@@ -68,20 +81,20 @@ class Document(Base):
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    packet: Mapped["Packet"] = relationship("Packet", back_populates="documents")
-    pages: Mapped[list["Page"]] = relationship(
+    packet: Mapped["Packet"] = relationship("Packet", back_populates="documents")  # noqa: F821
+    pages: Mapped[list["Page"]] = relationship(  # noqa: F821
         "Page", back_populates="document", cascade="all, delete-orphan", order_by="Page.page_number"
     )
-    bates_assignments: Mapped[list["BatesAssignment"]] = relationship(
+    bates_assignments: Mapped[list["BatesAssignment"]] = relationship(  # noqa: F821
         "BatesAssignment", back_populates="document", cascade="all, delete-orphan"
     )
-    privilege_decisions: Mapped[list["PrivilegeDecision"]] = relationship(
+    privilege_decisions: Mapped[list["PrivilegeDecision"]] = relationship(  # noqa: F821
         "PrivilegeDecision", back_populates="document", cascade="all, delete-orphan"
     )
-    redaction_candidates: Mapped[list["RedactionCandidate"]] = relationship(
+    redaction_candidates: Mapped[list["RedactionCandidate"]] = relationship(  # noqa: F821
         "RedactionCandidate", back_populates="document", cascade="all, delete-orphan"
     )
-    audit_events: Mapped[list["AuditEvent"]] = relationship(
+    audit_events: Mapped[list["AuditEvent"]] = relationship(  # noqa: F821
         "AuditEvent", back_populates="document", cascade="all, delete-orphan"
     )
 

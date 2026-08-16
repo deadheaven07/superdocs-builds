@@ -1,14 +1,22 @@
 import enum
 import uuid
 from datetime import datetime
-from sqlalchemy import String, ForeignKey, DateTime, Enum, Text, Integer, Index
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from sqlalchemy import DateTime, Enum, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.database import Base
 from app.time import utc_now
 
 
-class RedactionStatus(str, enum.Enum):
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.domain.document import Document
+
+
+class RedactionStatus(enum.StrEnum):
     PROPOSED = "proposed"
     PENDING_APPROVAL = "pending_approval"
     APPROVED = "approved"
@@ -18,7 +26,7 @@ class RedactionStatus(str, enum.Enum):
     FAILED = "failed"
 
 
-class RedactionCategory(str, enum.Enum):
+class RedactionCategory(enum.StrEnum):
     NAME = "name"
     ACCOUNT_NUMBER = "account_number"
     MEDICAL_TERM = "medical_term"
@@ -32,9 +40,7 @@ class RedactionCategory(str, enum.Enum):
 class RedactionCandidate(Base):
     __tablename__ = "redaction_candidates"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     document_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
     )
@@ -51,7 +57,9 @@ class RedactionCandidate(Base):
         Enum(RedactionStatus), nullable=False, default=RedactionStatus.PROPOSED
     )
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    proposed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    proposed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
     proposed_by: Mapped[str] = mapped_column(String(255), nullable=False, default="system")
     # Provenance of the proposal: "superdocs" (primary intelligence layer,
     # native pending_change) or "local_fallback" (regex/OCR path, demoted).
@@ -59,8 +67,8 @@ class RedactionCandidate(Base):
     # 1:1 back to the platform change for approval sync.
     superdocs_change_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
 
-    document: Mapped["Document"] = relationship("Document", back_populates="redaction_candidates")
-    approval: Mapped["RedactionApproval"] = relationship(
+    document: Mapped["Document"] = relationship("Document", back_populates="redaction_candidates")  # noqa: F821
+    approval: Mapped["RedactionApproval"] = relationship(  # noqa: F821
         "RedactionApproval", back_populates="candidate", uselist=False, cascade="all, delete-orphan"
     )
 
@@ -73,17 +81,18 @@ class RedactionCandidate(Base):
 class RedactionApproval(Base):
     __tablename__ = "redaction_approvals"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     candidate_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("redaction_candidates.id", ondelete="CASCADE"), nullable=False, unique=True
+        UUID(as_uuid=True),
+        ForeignKey("redaction_candidates.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
     )
-    status: Mapped[RedactionStatus] = mapped_column(
-        Enum(RedactionStatus), nullable=False
-    )
+    status: Mapped[RedactionStatus] = mapped_column(Enum(RedactionStatus), nullable=False)
     approver: Mapped[str] = mapped_column(String(255), nullable=False)
-    approved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    approved_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
     applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     applied_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -91,8 +100,8 @@ class RedactionApproval(Base):
     verification_passed: Mapped[bool | None] = mapped_column(nullable=True)
     verification_details: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    candidate: Mapped["RedactionCandidate"] = relationship("RedactionCandidate", back_populates="approval")
-
-    __table_args__ = (
-        Index("ix_redaction_approval_status", "status"),
+    candidate: Mapped["RedactionCandidate"] = relationship(  # noqa: F821
+        "RedactionCandidate", back_populates="approval"
     )
+
+    __table_args__ = (Index("ix_redaction_approval_status", "status"),)

@@ -29,7 +29,10 @@ def _make_candidate(
         matched_text=text,
         context_before="",
         context_after="",
-        x0=0, y0=0, x1=0, y1=0,
+        x0=0,
+        y0=0,
+        x1=0,
+        y1=0,
         status=status,
     )
 

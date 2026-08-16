@@ -9,12 +9,15 @@ from qa_helpers import make_pdf
 
 
 async def _make_packet(client, name="Privilege QA Packet", start=1):
-    resp = await client.post("/api/packets", json={
-        "name": name,
-        "bates_prefix": "PV-",
-        "bates_start_number": start,
-        "bates_padding": 4,
-    })
+    resp = await client.post(
+        "/api/packets",
+        json={
+            "name": name,
+            "bates_prefix": "PV-",
+            "bates_start_number": start,
+            "bates_padding": 4,
+        },
+    )
     assert resp.status_code == 200, resp.text
     return resp.json()["id"]
 
@@ -88,15 +91,23 @@ async def test_privilege_patch_overrides_existing_decision(api_client):
 
     first = await client.post(
         f"/api/privilege/{packet_id}/{doc_id}",
-        json={"status": "privileged", "category": "attorney_client",
-              "reason": "Initial reason", "reviewer": "qa-reviewer"},
+        json={
+            "status": "privileged",
+            "category": "attorney_client",
+            "reason": "Initial reason",
+            "reviewer": "qa-reviewer",
+        },
     )
     assert first.status_code == 200, first.text
 
     override = await client.patch(
         f"/api/privilege/{packet_id}/{doc_id}",
-        json={"status": "privileged", "category": "work_product",
-              "reason": "Override reason", "reviewer": "qa-reviewer"},
+        json={
+            "status": "privileged",
+            "category": "work_product",
+            "reason": "Override reason",
+            "reviewer": "qa-reviewer",
+        },
     )
     assert override.status_code == 200, override.text
     data = override.json()
@@ -105,8 +116,12 @@ async def test_privilege_patch_overrides_existing_decision(api_client):
 
     confirm = await client.patch(
         f"/api/privilege/{packet_id}/{doc_id}",
-        json={"status": "not_privileged", "category": None,
-              "reason": None, "reviewer": "qa-reviewer"},
+        json={
+            "status": "not_privileged",
+            "category": None,
+            "reason": None,
+            "reviewer": "qa-reviewer",
+        },
     )
     assert confirm.status_code == 200, confirm.text
     assert confirm.json()["status"] == "not_privileged"
@@ -184,8 +199,12 @@ async def test_privilege_reason_required_400(api_client):
 
     resp = await client.post(
         f"/api/privilege/{packet_id}/{doc_id}",
-        json={"status": "privileged", "category": "attorney_client",
-              "reason": None, "reviewer": "qa"},
+        json={
+            "status": "privileged",
+            "category": "attorney_client",
+            "reason": None,
+            "reviewer": "qa",
+        },
     )
     assert resp.status_code == 400, resp.text
 
@@ -211,13 +230,21 @@ async def test_privilege_emits_audit_events(api_client):
 
     await client.post(
         f"/api/privilege/{packet_id}/{doc_id}",
-        json={"status": "privileged", "category": "attorney_client",
-              "reason": "r", "reviewer": "qa-audit"},
+        json={
+            "status": "privileged",
+            "category": "attorney_client",
+            "reason": "r",
+            "reviewer": "qa-audit",
+        },
     )
     await client.patch(
         f"/api/privilege/{packet_id}/{doc_id}",
-        json={"status": "privileged", "category": "work_product",
-              "reason": "r2", "reviewer": "qa-audit"},
+        json={
+            "status": "privileged",
+            "category": "work_product",
+            "reason": "r2",
+            "reviewer": "qa-audit",
+        },
     )
 
     resp = await client.get(f"/api/audit/{packet_id}")

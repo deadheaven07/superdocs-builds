@@ -1,13 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from fastapi.responses import FileResponse
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 from uuid import UUID
 
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi.responses import FileResponse
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.database import get_session
-from app.domain.packet import Packet
-from app.domain.manifest import Manifest, ManifestEntry
 from app.domain.audit import AuditEvent, AuditEventType
+from app.domain.manifest import Manifest, ManifestEntry
+from app.domain.packet import Packet
 from app.services.packet_builder import PacketBuilderService, get_packet_builder
 
 router = APIRouter()
@@ -27,9 +28,9 @@ async def build_packet(
     try:
         result = await builder.build_packet(session, packet_id)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Packet build failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Packet build failed: {str(e)}") from e
 
     return {
         "message": "Packet built successfully",
@@ -56,18 +57,20 @@ async def validate_packet(
     try:
         validation = await builder.validate_packet(session, packet_id)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Validation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Validation failed: {str(e)}") from e
 
-    session.add(AuditEvent(
-        packet_id=packet_id,
-        event_type=AuditEventType.PACKET_VALIDATED,
-        user_id="system",
-        event_metadata={
-            "valid": validation.get("valid"),
-            "errors": validation.get("errors"),
-            "warnings": validation.get("warnings"),
-        },
-    ))
+    session.add(
+        AuditEvent(
+            packet_id=packet_id,
+            event_type=AuditEventType.PACKET_VALIDATED,
+            user_id="system",
+            event_metadata={
+                "valid": validation.get("valid"),
+                "errors": validation.get("errors"),
+                "warnings": validation.get("warnings"),
+            },
+        )
+    )
     await session.commit()
 
     return validation
@@ -79,9 +82,7 @@ async def get_manifest(packet_id: UUID, session: AsyncSession = Depends(get_sess
     if not packet:
         raise HTTPException(status_code=404, detail="Packet not found")
 
-    manifest = await session.execute(
-        select(Manifest).where(Manifest.packet_id == packet_id)
-    )
+    manifest = await session.execute(select(Manifest).where(Manifest.packet_id == packet_id))
     manifest = manifest.scalars().first()
 
     if not manifest:
@@ -133,27 +134,28 @@ async def download_final_packet(packet_id: UUID, session: AsyncSession = Depends
     if not packet:
         raise HTTPException(status_code=404, detail="Packet not found")
 
-    manifest = await session.execute(
-        select(Manifest).where(Manifest.packet_id == packet_id)
-    )
+    manifest = await session.execute(select(Manifest).where(Manifest.packet_id == packet_id))
     manifest = manifest.scalars().first()
 
     if not manifest or not manifest.final_packet_path:
         raise HTTPException(status_code=404, detail="Final packet not built yet")
 
     from app.config import get_settings
+
     settings = get_settings()
     file_path = settings.final_path / manifest.final_packet_path
 
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Final packet file not found")
 
-    session.add(AuditEvent(
-        packet_id=packet_id,
-        event_type=AuditEventType.PACKET_EXPORTED,
-        user_id="system",
-        event_metadata={"filename": file_path.name},
-    ))
+    session.add(
+        AuditEvent(
+            packet_id=packet_id,
+            event_type=AuditEventType.PACKET_EXPORTED,
+            user_id="system",
+            event_metadata={"filename": file_path.name},
+        )
+    )
     await session.commit()
 
     return FileResponse(
@@ -173,20 +175,23 @@ async def download_packet_component(
     if not packet:
         raise HTTPException(status_code=404, detail="Packet not found")
 
-    manifest = await session.execute(
-        select(Manifest).where(Manifest.packet_id == packet_id)
-    )
+    manifest = await session.execute(select(Manifest).where(Manifest.packet_id == packet_id))
     manifest = manifest.scalars().first()
 
     if not manifest:
         raise HTTPException(status_code=404, detail="Packet not built yet")
 
     from app.config import get_settings
+
     settings = get_settings()
 
     file_map = {
-        "exhibit_index": manifest.final_packet_path.replace("final_packet.pdf", "exhibit_index.pdf"),
-        "privilege_log": manifest.final_packet_path.replace("final_packet.pdf", "privilege_log.pdf"),
+        "exhibit_index": manifest.final_packet_path.replace(
+            "final_packet.pdf", "exhibit_index.pdf"
+        ),
+        "privilege_log": manifest.final_packet_path.replace(
+            "final_packet.pdf", "privilege_log.pdf"
+        ),
     }
 
     if file_type not in file_map:
@@ -210,9 +215,7 @@ async def list_exhibits(packet_id: UUID, session: AsyncSession = Depends(get_ses
     if not packet:
         raise HTTPException(status_code=404, detail="Packet not found")
 
-    manifest = await session.execute(
-        select(Manifest).where(Manifest.packet_id == packet_id)
-    )
+    manifest = await session.execute(select(Manifest).where(Manifest.packet_id == packet_id))
     manifest = manifest.scalars().first()
 
     if not manifest:
@@ -224,19 +227,22 @@ async def list_exhibits(packet_id: UUID, session: AsyncSession = Depends(get_ses
     entries = entries_result.scalars().all()
 
     from app.config import get_settings
+
     settings = get_settings()
 
     exhibits = []
     for entry in entries:
         file_path = settings.final_path / entry.final_file_path
-        exhibits.append({
-            "exhibit_identifier": entry.exhibit_identifier,
-            "bates_range": f"{entry.bates_start} - {entry.bates_end}",
-            "page_count": entry.page_count,
-            "description": entry.description,
-            "file_exists": file_path.exists(),
-            "file_path": str(file_path.relative_to(settings.final_path)),
-            "sha256": entry.final_sha256,
-        })
+        exhibits.append(
+            {
+                "exhibit_identifier": entry.exhibit_identifier,
+                "bates_range": f"{entry.bates_start} - {entry.bates_end}",
+                "page_count": entry.page_count,
+                "description": entry.description,
+                "file_exists": file_path.exists(),
+                "file_path": str(file_path.relative_to(settings.final_path)),
+                "sha256": entry.final_sha256,
+            }
+        )
 
     return {"exhibits": exhibits}

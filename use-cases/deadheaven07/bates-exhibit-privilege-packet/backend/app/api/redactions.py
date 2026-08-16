@@ -183,12 +183,8 @@ async def run_intelligence_pass(document_id: UUID):
             await bg_session.commit()
             return
 
-        candidates = await detection.create_redaction_candidates(
-            bg_session, document, pii_result
-        )
-        created, skipped = await detection.reconcile_candidates(
-            bg_session, document.id, candidates
-        )
+        candidates = await detection.create_redaction_candidates(bg_session, document, pii_result)
+        created, skipped = await detection.reconcile_candidates(bg_session, document.id, candidates)
         for candidate in created:
             bg_session.add(candidate)
 
@@ -202,7 +198,9 @@ async def run_intelligence_pass(document_id: UUID):
                     "candidates_found": len(candidates),
                     "candidates_created": len(created),
                     "candidates_skipped": skipped,
-                    "intelligence_source": pii_result.session_id and "superdocs" or "local_fallback",
+                    "intelligence_source": pii_result.session_id
+                    and "superdocs"
+                    or "local_fallback",
                 },
             )
         )
@@ -354,18 +352,22 @@ async def approve_redaction_batch(
         raise HTTPException(status_code=404, detail="Packet not found")
 
     candidates = (
-        await session.execute(
-            select(RedactionCandidate)
-            .where(
-                RedactionCandidate.id.in_(request.redaction_ids),
-                RedactionCandidate.document.has(Document.packet_id == packet_id),
-            )
-            .options(
-                selectinload(RedactionCandidate.approval),
-                selectinload(RedactionCandidate.document),
+        (
+            await session.execute(
+                select(RedactionCandidate)
+                .where(
+                    RedactionCandidate.id.in_(request.redaction_ids),
+                    RedactionCandidate.document.has(Document.packet_id == packet_id),
+                )
+                .options(
+                    selectinload(RedactionCandidate.approval),
+                    selectinload(RedactionCandidate.document),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     if len(candidates) != len(request.redaction_ids):
         raise HTTPException(

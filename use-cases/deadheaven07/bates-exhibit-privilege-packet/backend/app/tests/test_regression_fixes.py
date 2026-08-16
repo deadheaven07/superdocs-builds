@@ -64,8 +64,12 @@ def _cleanup(sha: str):
 
 
 async def _make_document(
-    session: AsyncSession, packet: Packet, pdf_bytes: bytes,
-    filename: str, display_order=1, pages=None,
+    session: AsyncSession,
+    packet: Packet,
+    pdf_bytes: bytes,
+    filename: str,
+    display_order=1,
+    pages=None,
 ):
     sha = _write_original(pdf_bytes)
     with fitz.open(stream=pdf_bytes) as probe:
@@ -96,26 +100,36 @@ async def _make_document(
 async def _assign_bates(session: AsyncSession, packet: Packet, docs):
     number = packet.bates_start_number
     for doc in sorted(docs, key=lambda d: d.display_order):
-        pages = (await session.execute(
-            select(Page).where(Page.document_id == doc.id).order_by(Page.page_number)
-        )).scalars().all()
+        pages = (
+            (
+                await session.execute(
+                    select(Page).where(Page.document_id == doc.id).order_by(Page.page_number)
+                )
+            )
+            .scalars()
+            .all()
+        )
         for page in pages:
-            session.add(BatesAssignment(
-                packet_id=packet.id,
-                document_id=doc.id,
-                page_id=page.id,
-                page_number=page.page_number,
-                bates_number=number,
-                bates_label=f"{packet.bates_prefix}{str(number).zfill(packet.bates_padding)}",
-            ))
+            session.add(
+                BatesAssignment(
+                    packet_id=packet.id,
+                    document_id=doc.id,
+                    page_id=page.id,
+                    page_number=page.page_number,
+                    bates_number=number,
+                    bates_label=f"{packet.bates_prefix}{str(number).zfill(packet.bates_padding)}",
+                )
+            )
             number += 1
     await session.commit()
 
 
 async def _seed_doc_with_bates(session: AsyncSession, pdf_bytes: bytes, filename: str):
     packet = Packet(
-        name=f"Regression {filename}", bates_prefix="CASE-",
-        bates_start_number=1, bates_padding=6,
+        name=f"Regression {filename}",
+        bates_prefix="CASE-",
+        bates_start_number=1,
+        bates_padding=6,
     )
     session.add(packet)
     await session.commit()
@@ -128,15 +142,18 @@ async def _seed_doc_with_bates(session: AsyncSession, pdf_bytes: bytes, filename
 class TestRegressionPerOccurrenceRedaction:
     @pytest.fixture
     async def doc_ssn(self, test_session: AsyncSession):
-        pdf_bytes = make_pdf([
-            "First record SSN: 123-45-6789",
-            "Second record SSN: 123-45-6789",
-        ])
+        pdf_bytes = make_pdf(
+            [
+                "First record SSN: 123-45-6789",
+                "Second record SSN: 123-45-6789",
+            ]
+        )
         packet, doc = await _seed_doc_with_bates(test_session, pdf_bytes, "ssn_twice.pdf")
         yield packet, doc
         _cleanup(doc.sha256)
         if (settings.final_path / str(packet.id)).exists():
             import shutil
+
             shutil.rmtree(settings.final_path / str(packet.id))
 
     async def test_detection_returns_ssn_candidates(self, test_session: AsyncSession, doc_ssn):
@@ -216,17 +233,20 @@ class TestRegressionPerOccurrenceRedaction:
 class TestRedactionCrossLineAndVerify:
     @pytest.fixture
     async def doc_split_name(self, test_session: AsyncSession):
-        pdf_bytes = make_pdf([
-            "Patient name is",
-            "John",
-            "Doe",
-            "Single line name: John Doe",
-        ])
+        pdf_bytes = make_pdf(
+            [
+                "Patient name is",
+                "John",
+                "Doe",
+                "Single line name: John Doe",
+            ]
+        )
         packet, doc = await _seed_doc_with_bates(test_session, pdf_bytes, "split_name.pdf")
         yield packet, doc
         _cleanup(doc.sha256)
         if (settings.final_path / str(packet.id)).exists():
             import shutil
+
             shutil.rmtree(settings.final_path / str(packet.id))
 
     async def test_name_split_across_lines_not_detected(
@@ -247,13 +267,9 @@ class TestRedactionCrossLineAndVerify:
         )
         assert not any(
             c.matched_text == "John" or c.matched_text == "Doe" for c in name_candidates
-        ), (
-            "line fragments must not be flagged as names"
-        )
+        ), "line fragments must not be flagged as names"
 
-    async def test_apply_only_removes_target_text(
-        self, test_session: AsyncSession, doc_split_name
-    ):
+    async def test_apply_only_removes_target_text(self, test_session: AsyncSession, doc_split_name):
         packet, doc = doc_split_name
         fake = FakeSuperDocsService()
         application = RedactionApplicationService(superdocs=fake)
@@ -265,7 +281,10 @@ class TestRedactionCrossLineAndVerify:
             matched_text="John Doe",
             context_before="",
             context_after="",
-            x0=0, y0=0, x1=0, y1=0,
+            x0=0,
+            y0=0,
+            x1=0,
+            y1=0,
             status=RedactionStatus.APPROVED,
         )
         results = await application.apply_redactions(test_session, doc, [candidate])
@@ -294,7 +313,10 @@ class TestRedactionCrossLineAndVerify:
             matched_text="123-45-6789",
             context_before="",
             context_after="",
-            x0=0, y0=0, x1=0, y1=0,
+            x0=0,
+            y0=0,
+            x1=0,
+            y1=0,
             status=RedactionStatus.APPROVED,
         )
         results = await application.apply_redactions(test_session, doc, [candidate])
@@ -316,19 +338,24 @@ class TestBuildGateAndRebuild:
             matched_text="123-45-6789",
             context_before="",
             context_after="",
-            x0=0, y0=0, x1=0, y1=0,
+            x0=0,
+            y0=0,
+            x1=0,
+            y1=0,
             status=RedactionStatus.APPLIED,
         )
         test_session.add(candidate)
         await test_session.flush()
-        test_session.add(RedactionApproval(
-            candidate_id=candidate.id,
-            status=RedactionStatus.APPLIED,
-            approver="tester",
-            applied_at=datetime.now(UTC),
-            verified_at=datetime.now(UTC),
-            verification_passed=with_verification,
-        ))
+        test_session.add(
+            RedactionApproval(
+                candidate_id=candidate.id,
+                status=RedactionStatus.APPLIED,
+                approver="tester",
+                applied_at=datetime.now(UTC),
+                verified_at=datetime.now(UTC),
+                verification_passed=with_verification,
+            )
+        )
         await test_session.commit()
 
         application = RedactionApplicationService(superdocs=FakeSuperDocsService())
@@ -342,9 +369,7 @@ class TestBuildGateAndRebuild:
             pdf.close()
         return packet, doc
 
-    async def test_build_scrubs_redacted_terms_from_descriptions(
-        self, test_session: AsyncSession
-    ):
+    async def test_build_scrubs_redacted_terms_from_descriptions(self, test_session: AsyncSession):
         pdf_bytes = make_pdf(["EMPLOYEE RECORD", "SSN: 123-45-6789"])
         packet, doc = await _seed_doc_with_bates(test_session, pdf_bytes, "scrub.pdf")
         doc.description = "EMPLOYEE RECORD SSN: 123-45-6789 record for John Doe"
@@ -358,19 +383,24 @@ class TestBuildGateAndRebuild:
             matched_text="123-45-6789",
             context_before="",
             context_after="",
-            x0=0, y0=0, x1=0, y1=0,
+            x0=0,
+            y0=0,
+            x1=0,
+            y1=0,
             status=RedactionStatus.APPLIED,
         )
         test_session.add(candidate)
         await test_session.flush()
-        test_session.add(RedactionApproval(
-            candidate_id=candidate.id,
-            status=RedactionStatus.APPLIED,
-            approver="tester",
-            applied_at=datetime.now(UTC),
-            verified_at=datetime.now(UTC),
-            verification_passed=True,
-        ))
+        test_session.add(
+            RedactionApproval(
+                candidate_id=candidate.id,
+                status=RedactionStatus.APPLIED,
+                approver="tester",
+                applied_at=datetime.now(UTC),
+                verified_at=datetime.now(UTC),
+                verification_passed=True,
+            )
+        )
         await test_session.commit()
 
         application = RedactionApplicationService(superdocs=FakeSuperDocsService())
@@ -391,12 +421,11 @@ class TestBuildGateAndRebuild:
         assert "[REDACTED]" in cover_text
 
         import shutil
+
         shutil.rmtree(settings.final_path / str(packet.id))
         _cleanup(doc.sha256)
 
-    async def test_build_refuses_applied_redaction_still_present(
-        self, test_session: AsyncSession
-    ):
+    async def test_build_refuses_applied_redaction_still_present(self, test_session: AsyncSession):
         packet, doc = await self._docs_with_redacted_file(
             test_session, with_verification=True, tamper=True
         )
@@ -405,6 +434,7 @@ class TestBuildGateAndRebuild:
             await builder.build_packet(test_session, packet.id)
         _cleanup(doc.sha256)
         import shutil
+
         if (settings.final_path / str(packet.id)).exists():
             shutil.rmtree(settings.final_path / str(packet.id))
 
@@ -421,18 +451,23 @@ class TestBuildGateAndRebuild:
             matched_text="123-45-6789",
             context_before="",
             context_after="",
-            x0=0, y0=0, x1=0, y1=0,
+            x0=0,
+            y0=0,
+            x1=0,
+            y1=0,
             status=RedactionStatus.APPLIED,
         )
         test_session.add(candidate)
         await test_session.flush()
-        test_session.add(RedactionApproval(
-            candidate_id=candidate.id,
-            status=RedactionStatus.APPLIED,
-            approver="tester",
-            applied_at=datetime.now(UTC),
-            verification_passed=False,
-        ))
+        test_session.add(
+            RedactionApproval(
+                candidate_id=candidate.id,
+                status=RedactionStatus.APPLIED,
+                approver="tester",
+                applied_at=datetime.now(UTC),
+                verification_passed=False,
+            )
+        )
         await test_session.commit()
 
         builder = PacketBuilderService()
@@ -440,6 +475,7 @@ class TestBuildGateAndRebuild:
             await builder.build_packet(test_session, packet.id)
         _cleanup(doc.sha256)
         import shutil
+
         if (settings.final_path / str(packet.id)).exists():
             shutil.rmtree(settings.final_path / str(packet.id))
 
@@ -451,9 +487,11 @@ class TestBuildGateAndRebuild:
         first = await builder.build_packet(test_session, packet.id)
         second = await builder.build_packet(test_session, packet.id)
 
-        manifests = (await test_session.execute(
-            select(Manifest).where(Manifest.packet_id == packet.id)
-        )).scalars().all()
+        manifests = (
+            (await test_session.execute(select(Manifest).where(Manifest.packet_id == packet.id)))
+            .scalars()
+            .all()
+        )
         assert len(manifests) == 1, "rebuild must replace the manifest, not accumulate"
 
         final_dir = settings.final_path / str(packet.id)
@@ -462,21 +500,23 @@ class TestBuildGateAndRebuild:
 
         assert (final_dir / "final_packet.pdf").exists()
         import hashlib
+
         actual = hashlib.sha256((final_dir / "final_packet.pdf").read_bytes()).hexdigest()
         assert manifests[0].final_packet_sha256 == actual
 
         import shutil
+
         shutil.rmtree(final_dir)
         _cleanup(doc.sha256)
 
-    async def test_validate_detects_display_order_bates_mismatch(
-        self, test_session: AsyncSession
-    ):
+    async def test_validate_detects_display_order_bates_mismatch(self, test_session: AsyncSession):
         pdf_a = make_pdf(["Doc A"])
         pdf_b = make_pdf(["Doc B"])
         packet = Packet(
-            name="Order Test", bates_prefix="CASE-",
-            bates_start_number=1, bates_padding=6,
+            name="Order Test",
+            bates_prefix="CASE-",
+            bates_start_number=1,
+            bates_padding=6,
         )
         test_session.add(packet)
         await test_session.commit()
@@ -499,14 +539,14 @@ class TestBuildGateAndRebuild:
 
 
 class TestBatesFullReassign:
-    async def test_assign_bates_renumbers_after_document_removal(
-        self, test_session: AsyncSession
-    ):
+    async def test_assign_bates_renumbers_after_document_removal(self, test_session: AsyncSession):
         pdf_a = make_pdf(["Doc A content"], page_count=2)
         pdf_b = make_pdf(["Doc B content"])
         packet = Packet(
-            name="Renumber Test", bates_prefix="CASE-",
-            bates_start_number=1, bates_padding=6,
+            name="Renumber Test",
+            bates_prefix="CASE-",
+            bates_start_number=1,
+            bates_padding=6,
         )
         test_session.add(packet)
         await test_session.commit()
@@ -515,9 +555,15 @@ class TestBatesFullReassign:
         doc_b = await _make_document(test_session, packet, pdf_b, "b.pdf", display_order=2)
         await _assign_bates(test_session, packet, [doc_a, doc_b])
 
-        for bates in (await test_session.execute(
-            select(BatesAssignment).where(BatesAssignment.document_id == doc_a.id)
-        )).scalars().all():
+        for bates in (
+            (
+                await test_session.execute(
+                    select(BatesAssignment).where(BatesAssignment.document_id == doc_a.id)
+                )
+            )
+            .scalars()
+            .all()
+        ):
             await test_session.delete(bates)
         await test_session.delete(doc_a)
         await test_session.commit()
@@ -526,9 +572,15 @@ class TestBatesFullReassign:
         assignments = await service.assign_bates(test_session, packet.id)
         assert len(assignments) == 1
 
-        remaining = (await test_session.execute(
-            select(BatesAssignment).where(BatesAssignment.packet_id == packet.id)
-        )).scalars().all()
+        remaining = (
+            (
+                await test_session.execute(
+                    select(BatesAssignment).where(BatesAssignment.packet_id == packet.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
         numbers = sorted(ba.bates_number for ba in remaining)
         assert numbers == [1], f"must restart contiguously at start number, got {numbers}"
         assert all(ba.bates_label == "CASE-000001" for ba in remaining)

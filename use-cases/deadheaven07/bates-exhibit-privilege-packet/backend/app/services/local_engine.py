@@ -103,8 +103,8 @@ class LocalPIIFallbackEngine:
                             start_offset=start,
                             end_offset=match.end(),
                             confidence=0.95,
-                            context_before=page_text[max(0, start - 40):start],
-                            context_after=page_text[match.end():match.end() + 40],
+                            context_before=page_text[max(0, start - 40) : start],
+                            context_after=page_text[match.end() : match.end() + 40],
                             change_id=f"{change_id_prefix}{page_index + 1}-{len(entities) + 1}",
                         )
                     )

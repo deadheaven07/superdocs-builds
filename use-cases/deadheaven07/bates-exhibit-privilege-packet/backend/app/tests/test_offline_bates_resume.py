@@ -34,9 +34,16 @@ class TestBatesAssignmentOffline:
         padding = 6
         labels = [format_bates_number(prefix, i, padding) for i in range(1, 11)]
         assert labels == [
-            "CASE-000001", "CASE-000002", "CASE-000003", "CASE-000004",
-            "CASE-000005", "CASE-000006", "CASE-000007", "CASE-000008",
-            "CASE-000009", "CASE-000010",
+            "CASE-000001",
+            "CASE-000002",
+            "CASE-000003",
+            "CASE-000004",
+            "CASE-000005",
+            "CASE-000006",
+            "CASE-000007",
+            "CASE-000008",
+            "CASE-000009",
+            "CASE-000010",
         ]
 
     def test_resume_after_crash_via_journal(self):
@@ -46,14 +53,16 @@ class TestBatesAssignmentOffline:
 
             # Simulate 5 assigned pages before crash
             for i in range(1, 6):
-                journal.append(JournalEntry(
-                    page_key=f"doc1:p{i}",
-                    document_id="doc1",
-                    page_number=i,
-                    bates_number=i,
-                    bates_label=format_bates_number("CASE-", i, 6),
-                    assigned_at="2024-01-01T00:00:00Z",
-                ))
+                journal.append(
+                    JournalEntry(
+                        page_key=f"doc1:p{i}",
+                        document_id="doc1",
+                        page_number=i,
+                        bates_number=i,
+                        bates_label=format_bates_number("CASE-", i, 6),
+                        assigned_at="2024-01-01T00:00:00Z",
+                    )
+                )
 
             # Resume should start at 6
             assert journal.resume_start(bates_start_number=1) == 6
@@ -71,8 +80,11 @@ class TestBatesAssignmentOffline:
         all_labels = doc1_labels + doc2_labels
         assert len(all_labels) == 5
         assert all_labels == [
-            "CASE-000001", "CASE-000002", "CASE-000003",
-            "CASE-000004", "CASE-000005",
+            "CASE-000001",
+            "CASE-000002",
+            "CASE-000003",
+            "CASE-000004",
+            "CASE-000005",
         ]
         # Verify no duplicates
         assert len(set(all_labels)) == 5
@@ -84,22 +96,26 @@ class TestBatesAssignmentOffline:
         with tempfile.TemporaryDirectory() as tmpdir:
             journal = BatesJournal(Path(tmpdir) / "journal.jsonl")
 
-            journal.append(JournalEntry(
-                page_key="doc1:p1",
-                document_id="doc1",
-                page_number=1,
-                bates_number=1,
-                bates_label="CASE-000001",
-                assigned_at="2024-01-01T00:00:00Z",
-            ))
-            journal.append(JournalEntry(
-                page_key="doc1:p1",
-                document_id="doc1",
-                page_number=1,
-                bates_number=2,
-                bates_label="CASE-000002",
-                assigned_at="2024-01-01T00:00:01Z",
-            ))
+            journal.append(
+                JournalEntry(
+                    page_key="doc1:p1",
+                    document_id="doc1",
+                    page_number=1,
+                    bates_number=1,
+                    bates_label="CASE-000001",
+                    assigned_at="2024-01-01T00:00:00Z",
+                )
+            )
+            journal.append(
+                JournalEntry(
+                    page_key="doc1:p1",
+                    document_id="doc1",
+                    page_number=1,
+                    bates_number=2,
+                    bates_label="CASE-000002",
+                    assigned_at="2024-01-01T00:00:01Z",
+                )
+            )
 
             # Page key appears twice -> double-stamped
             proof = journal.prove_continuity(expected_count=2, bates_start_number=1)

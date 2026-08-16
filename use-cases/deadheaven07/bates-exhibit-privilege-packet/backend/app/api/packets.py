@@ -1,15 +1,16 @@
 import shutil
-from fastapi import APIRouter, Depends, HTTPException, Body
-from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
 from uuid import UUID
 
-from app.database import get_session
+from fastapi import APIRouter, Body, Depends, HTTPException
+from pydantic import BaseModel, Field
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.config import get_settings
-from app.domain.packet import Packet
-from app.domain.document import Document, ProcessingStatus
+from app.database import get_session
 from app.domain.audit import AuditEvent, AuditEventType
+from app.domain.document import Document, ProcessingStatus
+from app.domain.packet import Packet
 from app.services.storage import cleanup_document_files
 
 router = APIRouter()
@@ -31,7 +32,9 @@ class PacketUpdateRequest(BaseModel):
     bates_padding: int | None = Field(None, ge=1)
 
 
-def serialize_packet(packet: Packet, document_count: int, total_pages: int, completed_count: int, failed_count: int) -> dict:
+def serialize_packet(
+    packet: Packet, document_count: int, total_pages: int, completed_count: int, failed_count: int
+) -> dict:
     return {
         "id": str(packet.id),
         "name": packet.name,
@@ -43,9 +46,12 @@ def serialize_packet(packet: Packet, document_count: int, total_pages: int, comp
         "total_pages": total_pages,
         "completed_count": completed_count,
         "failed_count": failed_count,
-        "status": "completed" if completed_count == document_count and document_count > 0
-        else "failed" if failed_count > 0
-        else "in_progress" if document_count > 0
+        "status": "completed"
+        if completed_count == document_count and document_count > 0
+        else "failed"
+        if failed_count > 0
+        else "in_progress"
+        if document_count > 0
         else "draft",
         "created_at": packet.created_at.isoformat() if packet.created_at else None,
         "updated_at": packet.updated_at.isoformat() if packet.updated_at else None,
@@ -57,7 +63,9 @@ async def _packet_summary(session: AsyncSession, packet_id) -> tuple[int, int, i
         select(
             func.count(Document.id),
             func.coalesce(func.sum(Document.page_count), 0),
-            func.count(Document.id).filter(Document.processing_status == ProcessingStatus.COMPLETED),
+            func.count(Document.id).filter(
+                Document.processing_status == ProcessingStatus.COMPLETED
+            ),
             func.count(Document.id).filter(Document.processing_status == ProcessingStatus.FAILED),
         ).where(Document.packet_id == packet_id)
     )
@@ -79,12 +87,14 @@ async def create_packet(
     )
     session.add(packet)
     await session.flush()
-    session.add(AuditEvent(
-        packet_id=packet.id,
-        event_type=AuditEventType.PACKET_CREATED,
-        user_id="system",
-        event_metadata={"name": packet.name},
-    ))
+    session.add(
+        AuditEvent(
+            packet_id=packet.id,
+            event_type=AuditEventType.PACKET_CREATED,
+            user_id="system",
+            event_metadata={"name": packet.name},
+        )
+    )
     await session.commit()
     await session.refresh(packet)
     return serialize_packet(packet, 0, 0, 0, 0)
@@ -92,15 +102,17 @@ async def create_packet(
 
 @router.get("")
 async def list_packets(session: AsyncSession = Depends(get_session)):
-    result = await session.execute(
-        select(Packet).order_by(Packet.updated_at.desc())
-    )
+    result = await session.execute(select(Packet).order_by(Packet.updated_at.desc()))
     packets = result.scalars().all()
 
     packets_data = []
     for packet in packets:
-        document_count, total_pages, completed_count, failed_count = await _packet_summary(session, packet.id)
-        packets_data.append(serialize_packet(packet, document_count, total_pages, completed_count, failed_count))
+        document_count, total_pages, completed_count, failed_count = await _packet_summary(
+            session, packet.id
+        )
+        packets_data.append(
+            serialize_packet(packet, document_count, total_pages, completed_count, failed_count)
+        )
 
     return packets_data
 
@@ -111,7 +123,9 @@ async def get_packet(packet_id: UUID, session: AsyncSession = Depends(get_sessio
     if not packet:
         raise HTTPException(status_code=404, detail="Packet not found")
 
-    document_count, total_pages, completed_count, failed_count = await _packet_summary(session, packet.id)
+    document_count, total_pages, completed_count, failed_count = await _packet_summary(
+        session, packet.id
+    )
     return serialize_packet(packet, document_count, total_pages, completed_count, failed_count)
 
 
@@ -129,16 +143,20 @@ async def update_packet(
     for field, value in update_data.items():
         setattr(packet, field, value)
 
-    session.add(AuditEvent(
-        packet_id=packet.id,
-        event_type=AuditEventType.PACKET_UPDATED,
-        user_id="system",
-        event_metadata={"fields": list(update_data.keys())},
-    ))
+    session.add(
+        AuditEvent(
+            packet_id=packet.id,
+            event_type=AuditEventType.PACKET_UPDATED,
+            user_id="system",
+            event_metadata={"fields": list(update_data.keys())},
+        )
+    )
     await session.commit()
     await session.refresh(packet)
 
-    document_count, total_pages, completed_count, failed_count = await _packet_summary(session, packet.id)
+    document_count, total_pages, completed_count, failed_count = await _packet_summary(
+        session, packet.id
+    )
     return serialize_packet(packet, document_count, total_pages, completed_count, failed_count)
 
 
@@ -157,11 +175,17 @@ async def delete_packet(packet_id: UUID, session: AsyncSession = Depends(get_ses
     for document in documents:
         removed_files.extend(await cleanup_document_files(session, document))
 
-    session.add(AuditEvent(
-        event_type=AuditEventType.PACKET_DELETED,
-        user_id="system",
-        event_metadata={"packet_id": str(packet.id), "packet_name": packet.name, "document_count": len(documents)},
-    ))
+    session.add(
+        AuditEvent(
+            event_type=AuditEventType.PACKET_DELETED,
+            user_id="system",
+            event_metadata={
+                "packet_id": str(packet.id),
+                "packet_name": packet.name,
+                "document_count": len(documents),
+            },
+        )
+    )
 
     await session.delete(packet)
     await session.commit()

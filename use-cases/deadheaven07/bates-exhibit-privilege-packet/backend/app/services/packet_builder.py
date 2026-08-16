@@ -337,9 +337,7 @@ class PacketBuilderService:
                     continue
                 redacted_path = redacted_pdf_path_for(document)
                 if redacted_path.exists():
-                    verification = await verifier.verify_redactions(
-                        session, document, [candidate]
-                    )
+                    verification = await verifier.verify_redactions(session, document, [candidate])
                     verified = verification.get(str(candidate.id), {}).get("verified", False)
                     if not verified:
                         errors.append(
@@ -709,10 +707,7 @@ class PacketBuilderService:
                 file_bytes=final_packet_path.read_bytes(),
                 filename=final_packet_path.name,
             )
-            logger.info(
-                f"Re-exported final packet through SuperDocs: "
-                f"{export_result.download_url}"
-            )
+            logger.info(f"Re-exported final packet through SuperDocs: {export_result.download_url}")
             return {"download_url": export_result.download_url, "filename": export_result.filename}
         except Exception as exc:  # noqa: BLE001
             logger.warning(

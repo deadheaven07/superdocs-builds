@@ -11,9 +11,15 @@ from app.config import get_settings
 
 
 async def _make_packet(client, name="Upload QA Packet", start=1):
-    resp = await client.post("/api/packets", json={
-        "name": name, "bates_prefix": "UP-", "bates_start_number": start, "bates_padding": 4,
-    })
+    resp = await client.post(
+        "/api/packets",
+        json={
+            "name": name,
+            "bates_prefix": "UP-",
+            "bates_start_number": start,
+            "bates_padding": 4,
+        },
+    )
     assert resp.status_code == 200, resp.text
     return resp.json()["id"]
 
@@ -141,7 +147,8 @@ async def test_missing_packet_404(api_client):
     client = api_client
     files = {"files": ("x.pdf", make_pdf(["x"]), "application/pdf")}
     resp = await client.post(
-        f"/api/documents/{'00000000-0000-0000-0000-000000000001'}/upload", files=files)
+        f"/api/documents/{'00000000-0000-0000-0000-000000000001'}/upload", files=files
+    )
     assert resp.status_code == 404, resp.text
     assert _orphan_pdfs() == []
 
@@ -168,20 +175,30 @@ async def test_batch_upload_rollback_leaves_no_docs_and_no_files(api_client):
 @pytest.mark.asyncio
 async def test_negative_bates_start_rejected_422(api_client):
     client = api_client
-    resp = await client.post("/api/packets", json={
-        "name": "Bad Packet", "bates_prefix": "NG-",
-        "bates_start_number": -5, "bates_padding": 4,
-    })
+    resp = await client.post(
+        "/api/packets",
+        json={
+            "name": "Bad Packet",
+            "bates_prefix": "NG-",
+            "bates_start_number": -5,
+            "bates_padding": 4,
+        },
+    )
     assert resp.status_code == 422, resp.text
 
     packet_id = await _make_packet(client)
     resp = await client.patch(f"/api/packets/{packet_id}", json={"bates_start_number": -1})
     assert resp.status_code == 422, resp.text
 
-    resp = await client.post("/api/packets", json={
-        "name": "Zero Padding", "bates_prefix": "ZP-",
-        "bates_start_number": 1, "bates_padding": 0,
-    })
+    resp = await client.post(
+        "/api/packets",
+        json={
+            "name": "Zero Padding",
+            "bates_prefix": "ZP-",
+            "bates_start_number": 1,
+            "bates_padding": 0,
+        },
+    )
     assert resp.status_code == 422, resp.text
 
 
@@ -204,7 +221,9 @@ async def test_delete_document_removes_referenced_files(api_client, tmp_path):
 
     resp = await client.delete(f"/api/documents/{packet_id}/{doc_id}")
     assert resp.status_code == 200, resp.text
-    assert os.path.exists(source_path), "shared file must be kept while another document references it"
+    assert os.path.exists(source_path), (
+        "shared file must be kept while another document references it"
+    )
 
     other_doc = (await client.get(f"/api/documents/{other_packet}")).json()[0]
     resp = await client.delete(f"/api/documents/{other_packet}/{other_doc['id']}")

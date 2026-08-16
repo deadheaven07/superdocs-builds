@@ -121,11 +121,7 @@ class RedactionVerifier:
             if not text:
                 results[str(candidate.id)] = {"verified": True, "text_still_present": False}
                 continue
-            page_text = (
-                pages[page_index]
-                if 0 <= page_index < len(pages)
-                else "\n".join(pages)
-            )
+            page_text = pages[page_index] if 0 <= page_index < len(pages) else "\n".join(pages)
             still_present = text.lower() in page_text.lower()
             results[str(candidate.id)] = {
                 "verified": not still_present,

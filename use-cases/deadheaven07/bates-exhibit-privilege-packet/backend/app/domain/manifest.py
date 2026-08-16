@@ -1,43 +1,56 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, ForeignKey, DateTime, Integer, JSON, Index
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from app.database import Base
 from app.time import utc_now
+
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.domain.packet import Packet
+    from app.domain.document import Document
 
 
 class Manifest(Base):
     __tablename__ = "manifests"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     packet_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("packets.id", ondelete="CASCADE"), nullable=False, unique=True
+        UUID(as_uuid=True),
+        ForeignKey("packets.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
     )
     total_pages: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total_documents: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     bates_start: Mapped[str | None] = mapped_column(String(100), nullable=True)
     bates_end: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    generated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
     validation_passed: Mapped[bool | None] = mapped_column(nullable=True)
     validation_details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     final_packet_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     final_packet_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
-    packet: Mapped["Packet"] = relationship("Packet")
-    entries: Mapped[list["ManifestEntry"]] = relationship(
-        "ManifestEntry", back_populates="manifest", cascade="all, delete-orphan", order_by="ManifestEntry.exhibit_identifier"
+    packet: Mapped["Packet"] = relationship("Packet")  # noqa: F821
+    entries: Mapped[list["ManifestEntry"]] = relationship(  # noqa: F821
+        "ManifestEntry",
+        back_populates="manifest",
+        cascade="all, delete-orphan",
+        order_by="ManifestEntry.exhibit_identifier",
     )
 
 
 class ManifestEntry(Base):
     __tablename__ = "manifest_entries"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     manifest_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("manifests.id", ondelete="CASCADE"), nullable=False
     )
@@ -60,8 +73,8 @@ class ManifestEntry(Base):
     page_hashes: Mapped[list[str]] = mapped_column(JSON, nullable=True, default=list)
     merkle_root: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
-    manifest: Mapped["Manifest"] = relationship("Manifest", back_populates="entries")
-    document: Mapped["Document"] = relationship("Document")
+    manifest: Mapped["Manifest"] = relationship("Manifest", back_populates="entries")  # noqa: F821
+    document: Mapped["Document"] = relationship("Document")  # noqa: F821
 
     __table_args__ = (
         Index("ix_manifest_entry_manifest", "manifest_id"),

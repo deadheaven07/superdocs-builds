@@ -102,9 +102,7 @@ class TestLocalFallbackEvaluation:
             if item["category"] in ("ssn", "email"):
                 page_matches = [m for m in matches if m.page_number == item["page_number"]]
                 found = any(item["text"] in m.matched_text for m in page_matches)
-                assert found, (
-                    f"PII '{item['text']}' not found on page {item['page_number']}"
-                )
+                assert found, f"PII '{item['text']}' not found on page {item['page_number']}"
 
     def test_corpus_integrity(self):
         """All corpus files exist and SHA256 matches expected.yaml."""
@@ -115,8 +113,7 @@ class TestLocalFallbackEvaluation:
             if doc["sha256"]:
                 actual = _sha256_of(pdf_path)
                 assert actual == doc["sha256"], (
-                    f"SHA256 mismatch for {doc['filename']}: "
-                    f"expected {doc['sha256']}, got {actual}"
+                    f"SHA256 mismatch for {doc['filename']}: expected {doc['sha256']}, got {actual}"
                 )
 
     def test_privilege_language_not_flagged_as_pii(self):

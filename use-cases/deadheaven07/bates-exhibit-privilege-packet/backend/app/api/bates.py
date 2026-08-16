@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.database import get_session
-from app.domain.packet import Packet
 from app.domain.audit import AuditEvent, AuditEventType
+from app.domain.packet import Packet
 from app.services.bates_assignment import BatesAssignmentService, format_bates_number
 
 router = APIRouter()
@@ -16,19 +17,21 @@ async def assign_bates(packet_id: UUID, session: AsyncSession = Depends(get_sess
     try:
         assignments = await service.assign_bates(session, packet_id)
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
 
     if assignments:
-        session.add(AuditEvent(
-            packet_id=packet_id,
-            event_type=AuditEventType.BATES_ASSIGNED,
-            user_id="system",
-            event_metadata={
-                "count": len(assignments),
-                "bates_start": assignments[0].bates_label,
-                "bates_end": assignments[-1].bates_label,
-            },
-        ))
+        session.add(
+            AuditEvent(
+                packet_id=packet_id,
+                event_type=AuditEventType.BATES_ASSIGNED,
+                user_id="system",
+                event_metadata={
+                    "count": len(assignments),
+                    "bates_start": assignments[0].bates_label,
+                    "bates_end": assignments[-1].bates_label,
+                },
+            )
+        )
         await session.commit()
 
     return {

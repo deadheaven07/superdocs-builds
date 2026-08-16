@@ -38,7 +38,7 @@ class TestBatesAssignmentService:
             doc = Document(
                 packet_id=sample_packet.id,
                 display_order=i + 1,
-                original_filename=f"doc_{i+1}.pdf",
+                original_filename=f"doc_{i + 1}.pdf",
                 mime_type="application/pdf",
                 file_size=1024,
                 sha256=f"{'a' * 63}{i}",
@@ -61,13 +61,17 @@ class TestBatesAssignmentService:
 
     @pytest.mark.asyncio
     async def test_assign_bates_deterministic(
-        self, test_session: AsyncSession, service: BatesAssignmentService, sample_packet: Packet, sample_documents
+        self,
+        test_session: AsyncSession,
+        service: BatesAssignmentService,
+        sample_packet: Packet,
+        sample_documents,
     ):
         await service.assign_bates(test_session, sample_packet.id)
 
         result = await test_session.execute(
             text("SELECT * FROM bates_assignments WHERE packet_id = :pid ORDER BY bates_number"),
-            {"pid": uuid_to_str(sample_packet.id)}
+            {"pid": uuid_to_str(sample_packet.id)},
         )
         rows = result.fetchall()
 
@@ -83,13 +87,20 @@ class TestBatesAssignmentService:
 
     @pytest.mark.asyncio
     async def test_assign_bates_respects_display_order(
-        self, test_session: AsyncSession, service: BatesAssignmentService, sample_packet: Packet, sample_documents
+        self,
+        test_session: AsyncSession,
+        service: BatesAssignmentService,
+        sample_packet: Packet,
+        sample_documents,
     ):
         await service.assign_bates(test_session, sample_packet.id)
 
         result = await test_session.execute(
-            text("SELECT document_id, page_number, bates_number FROM bates_assignments WHERE packet_id = :pid ORDER BY bates_number"),
-            {"pid": uuid_to_str(sample_packet.id)}
+            text(
+                "SELECT document_id, page_number, bates_number FROM bates_assignments "
+                "WHERE packet_id = :pid ORDER BY bates_number"
+            ),
+            {"pid": uuid_to_str(sample_packet.id)},
         )
         rows = result.fetchall()
 
@@ -117,8 +128,11 @@ class TestBatesAssignmentService:
         await service.assign_bates(test_session, sample_packet.id)
 
         result = await test_session.execute(
-            text("SELECT bates_number FROM bates_assignments WHERE packet_id = :pid ORDER BY bates_number"),
-            {"pid": uuid_to_str(sample_packet.id)}
+            text(
+                "SELECT bates_number FROM bates_assignments "
+                "WHERE packet_id = :pid ORDER BY bates_number"
+            ),
+            {"pid": uuid_to_str(sample_packet.id)},
         )
         rows = result.fetchall()
 
@@ -137,8 +151,11 @@ class TestBatesAssignmentService:
         await service.assign_bates(test_session, sample_packet.id)
 
         result = await test_session.execute(
-            text("SELECT bates_label FROM bates_assignments WHERE packet_id = :pid ORDER BY bates_number"),
-            {"pid": uuid_to_str(sample_packet.id)}
+            text(
+                "SELECT bates_label FROM bates_assignments "
+                "WHERE packet_id = :pid ORDER BY bates_number"
+            ),
+            {"pid": uuid_to_str(sample_packet.id)},
         )
         rows = result.fetchall()
 
@@ -148,21 +165,25 @@ class TestBatesAssignmentService:
 
     @pytest.mark.asyncio
     async def test_assign_bates_idempotent(
-        self, test_session: AsyncSession, service: BatesAssignmentService, sample_packet: Packet, sample_documents
+        self,
+        test_session: AsyncSession,
+        service: BatesAssignmentService,
+        sample_packet: Packet,
+        sample_documents,
     ):
         await service.assign_bates(test_session, sample_packet.id)
-        
+
         result = await test_session.execute(
             text("SELECT COUNT(*) FROM bates_assignments WHERE packet_id = :pid"),
-            {"pid": uuid_to_str(sample_packet.id)}
+            {"pid": uuid_to_str(sample_packet.id)},
         )
         first_count = result.scalar()
-        
+
         await service.assign_bates(test_session, sample_packet.id)
-        
+
         result = await test_session.execute(
             text("SELECT COUNT(*) FROM bates_assignments WHERE packet_id = :pid"),
-            {"pid": uuid_to_str(sample_packet.id)}
+            {"pid": uuid_to_str(sample_packet.id)},
         )
         second_count = result.scalar()
         assert first_count == 12
@@ -170,7 +191,11 @@ class TestBatesAssignmentService:
 
     @pytest.mark.asyncio
     async def test_assign_bates_skip_incomplete_documents(
-        self, test_session: AsyncSession, service: BatesAssignmentService, sample_packet: Packet, sample_documents
+        self,
+        test_session: AsyncSession,
+        service: BatesAssignmentService,
+        sample_packet: Packet,
+        sample_documents,
     ):
         sample_documents[1].processing_status = ProcessingStatus.PROCESSING
         await test_session.commit()
@@ -178,8 +203,11 @@ class TestBatesAssignmentService:
         await service.assign_bates(test_session, sample_packet.id)
 
         result = await test_session.execute(
-            text("SELECT document_id, COUNT(*) FROM bates_assignments WHERE packet_id = :pid GROUP BY document_id"),
-            {"pid": uuid_to_str(sample_packet.id)}
+            text(
+                "SELECT document_id, COUNT(*) FROM bates_assignments "
+                "WHERE packet_id = :pid GROUP BY document_id"
+            ),
+            {"pid": uuid_to_str(sample_packet.id)},
         )
         rows = result.fetchall()
 

@@ -47,9 +47,7 @@ async def test_engine():
 
 @pytest_asyncio.fixture(scope="function")
 async def test_session(test_engine):
-    async_session = async_sessionmaker(
-        test_engine, class_=AsyncSession, expire_on_commit=False
-    )
+    async_session = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with async_session() as session:
         yield session
 
@@ -67,44 +65,65 @@ def mock_superdocs_adapter():
     )
 
     adapter = MagicMock(spec=SuperDocsPort)
-    adapter.upload_document = AsyncMock(return_value=DocumentUploadResult(
-        session_id="test-session",
-        document_id="test-doc",
-        chunks_count=10,
-        version_id="v1",
-        page_setup={},
-        html="<html>Test</html>",
-    ))
-    adapter.upload_attachment = AsyncMock(return_value=AttachmentUploadResult(
-        job_id="test-job",
-        filename="test.pdf",
-        status="processing",
-    ))
-    adapter.poll_job = AsyncMock(return_value=JobStatus(
-        job_id="test-job",
-        status="completed",
-        result={"response": "Done", "document_changes": {"updated_html": "<html>Updated</html>"}},
-    ))
+    adapter.upload_document = AsyncMock(
+        return_value=DocumentUploadResult(
+            session_id="test-session",
+            document_id="test-doc",
+            chunks_count=10,
+            version_id="v1",
+            page_setup={},
+            html="<html>Test</html>",
+        )
+    )
+    adapter.upload_attachment = AsyncMock(
+        return_value=AttachmentUploadResult(
+            job_id="test-job",
+            filename="test.pdf",
+            status="processing",
+        )
+    )
+    adapter.poll_job = AsyncMock(
+        return_value=JobStatus(
+            job_id="test-job",
+            status="completed",
+            result={
+                "response": "Done",
+                "document_changes": {"updated_html": "<html>Updated</html>"},
+            },
+        )
+    )
     adapter.chat_async = AsyncMock(return_value="test-job")
-    adapter.approve_changes = AsyncMock(return_value=JobStatus(
-        job_id="test-job",
-        status="completed",
-    ))
-    adapter.continue_job = AsyncMock(return_value=JobStatus(
-        job_id="test-job",
-        status="completed",
-    ))
-    adapter.export_document = AsyncMock(return_value=type('ExportResult', (), {
-        'download_url': 'https://example.com/download',
-        'filename': 'export.pdf',
-        'format': 'pdf',
-    })())
+    adapter.approve_changes = AsyncMock(
+        return_value=JobStatus(
+            job_id="test-job",
+            status="completed",
+        )
+    )
+    adapter.continue_job = AsyncMock(
+        return_value=JobStatus(
+            job_id="test-job",
+            status="completed",
+        )
+    )
+    adapter.export_document = AsyncMock(
+        return_value=type(
+            "ExportResult",
+            (),
+            {
+                "download_url": "https://example.com/download",
+                "filename": "export.pdf",
+                "format": "pdf",
+            },
+        )()
+    )
     adapter.get_session_history = AsyncMock(return_value={})
-    adapter.parse_proposed_change_batch = MagicMock(return_value=ProposedChangeBatch(
-        batch_id="batch-1",
-        batch_total=1,
-        changes=[],
-    ))
+    adapter.parse_proposed_change_batch = MagicMock(
+        return_value=ProposedChangeBatch(
+            batch_id="batch-1",
+            batch_total=1,
+            changes=[],
+        )
+    )
     return adapter
 
 
@@ -143,9 +162,7 @@ async def api_client(test_engine, monkeypatch, tmp_path, fake_superdocs):
     from app.services.redaction import RedactionApplicationService, RedactionDetectionService
     from app.services.superdocs_integration import get_superdocs_service
 
-    session_factory = async_sessionmaker(
-        test_engine, class_=AsyncSession, expire_on_commit=False
-    )
+    session_factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
 
     async def override_get_session():
         async with session_factory() as session:

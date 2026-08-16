@@ -118,14 +118,19 @@ class TestBatesJournalCrashRecovery:
             with open(journal_path, "w") as f:
                 for i in range(1, 4):
                     entry = self._make_entry("doc1", i, i)
-                    f.write(json.dumps({
-                        "page_key": entry.page_key,
-                        "document_id": entry.document_id,
-                        "page_number": entry.page_number,
-                        "bates_number": entry.bates_number,
-                        "bates_label": entry.bates_label,
-                        "assigned_at": entry.assigned_at,
-                    }) + "\n")
+                    f.write(
+                        json.dumps(
+                            {
+                                "page_key": entry.page_key,
+                                "document_id": entry.document_id,
+                                "page_number": entry.page_number,
+                                "bates_number": entry.bates_number,
+                                "bates_label": entry.bates_label,
+                                "assigned_at": entry.assigned_at,
+                            }
+                        )
+                        + "\n"
+                    )
                 f.write('{"truncated": true\n')  # malformed
 
             journal = BatesJournal(journal_path)

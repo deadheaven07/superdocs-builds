@@ -1,12 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 from uuid import UUID
 
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.database import get_session
-from app.domain.packet import Packet
-from app.domain.document import Document, ProcessingStatus
 from app.domain.audit import AuditEvent, AuditEventType
+from app.domain.document import Document, ProcessingStatus
+from app.domain.packet import Packet
 from app.workers.processor import process_document
 
 router = APIRouter()
@@ -25,7 +26,7 @@ async def start_processing(
     result = await session.execute(
         select(Document).where(
             Document.packet_id == packet_id,
-            Document.processing_status.in_([ProcessingStatus.QUEUED, ProcessingStatus.FAILED])
+            Document.processing_status.in_([ProcessingStatus.QUEUED, ProcessingStatus.FAILED]),
         )
     )
     documents = result.scalars().all()
@@ -35,7 +36,7 @@ async def start_processing(
 
     return {
         "message": f"Processing started for {len(documents)} documents",
-        "documents_queued": [{"id": str(d.id), "filename": d.original_filename} for d in documents]
+        "documents_queued": [{"id": str(d.id), "filename": d.original_filename} for d in documents],
     }
 
 
@@ -45,14 +46,14 @@ async def get_processing_status(packet_id: UUID, session: AsyncSession = Depends
     if not packet:
         raise HTTPException(status_code=404, detail="Packet not found")
 
-    result = await session.execute(
-        select(Document).where(Document.packet_id == packet_id)
-    )
+    result = await session.execute(select(Document).where(Document.packet_id == packet_id))
     documents = result.scalars().all()
 
     status_counts = {}
     for doc in documents:
-        status_counts[doc.processing_status.value] = status_counts.get(doc.processing_status.value, 0) + 1
+        status_counts[doc.processing_status.value] = (
+            status_counts.get(doc.processing_status.value, 0) + 1
+        )
 
     return {
         "packet_id": packet_id,
@@ -69,12 +70,14 @@ async def get_processing_status(packet_id: UUID, session: AsyncSession = Depends
                 "retry_count": doc.retry_count,
             }
             for doc in documents
-        ]
+        ],
     }
 
 
 @router.get("/{packet_id}/{document_id}/status")
-async def get_document_status(packet_id: UUID, document_id: UUID, session: AsyncSession = Depends(get_session)):
+async def get_document_status(
+    packet_id: UUID, document_id: UUID, session: AsyncSession = Depends(get_session)
+):
     document = await session.get(Document, document_id)
     if not document or document.packet_id != packet_id:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -107,13 +110,18 @@ async def retry_document(
 
     document.processing_status = ProcessingStatus.QUEUED
     document.processing_error = None
-    session.add(AuditEvent(
-        packet_id=packet_id,
-        document_id=document.id,
-        event_type=AuditEventType.PROCESSING_RETRIED,
-        user_id="system",
-        event_metadata={"filename": document.original_filename, "retry_count": document.retry_count},
-    ))
+    session.add(
+        AuditEvent(
+            packet_id=packet_id,
+            document_id=document.id,
+            event_type=AuditEventType.PROCESSING_RETRIED,
+            user_id="system",
+            event_metadata={
+                "filename": document.original_filename,
+                "retry_count": document.retry_count,
+            },
+        )
+    )
     await session.commit()
 
     background_tasks.add_task(process_document, str(document.id))

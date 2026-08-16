@@ -107,12 +107,7 @@ class BatesJournal:
             by_page.setdefault(e.page_key, []).append(e.bates_number)
         double_stamped = [k for k, v in by_page.items() if len(v) > 1]
 
-        valid = (
-            numbers == expected
-            and not gaps
-            and not duplicates
-            and not double_stamped
-        )
+        valid = numbers == expected and not gaps and not duplicates and not double_stamped
         return ContinuityProof(
             valid=valid,
             start=min(numbers) if numbers else bates_start_number,

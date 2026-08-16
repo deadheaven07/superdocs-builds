@@ -204,9 +204,8 @@ class IngestionService:
         """Best-effort local OCR via tesseract (demoted fallback; SuperDocs
         is the primary OCR path)."""
         try:
-            from PIL import Image
-
             import pytesseract
+            from PIL import Image
 
             image = Image.open(file_path)
             text = pytesseract.image_to_string(image).strip()
@@ -218,17 +217,13 @@ class IngestionService:
     def _extract_docx_text(self, file_path: Path) -> tuple[str, bool]:
         try:
             import zipfile
-
             from xml.etree import ElementTree
 
             with zipfile.ZipFile(file_path) as zf:
                 xml = zf.read("word/document.xml")
             root = ElementTree.fromstring(xml)
-            namespaces = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
-            paragraphs = [
-                "".join(node.itertext())
-                for node in root.iter("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p")
-            ]
+            w_ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+            paragraphs = ["".join(node.itertext()) for node in root.iter(f"{{{w_ns}}}p")]
             text = "\n".join(p for p in paragraphs if p.strip())
             return text, bool(text)
         except Exception as e:

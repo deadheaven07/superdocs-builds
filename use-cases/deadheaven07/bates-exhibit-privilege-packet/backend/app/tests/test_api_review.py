@@ -11,9 +11,15 @@ from qa_helpers import make_pdf
 
 
 async def _make_packet(client, name="Review QA Packet"):
-    resp = await client.post("/api/packets", json={
-        "name": name, "bates_prefix": "RV-", "bates_start_number": 1, "bates_padding": 4,
-    })
+    resp = await client.post(
+        "/api/packets",
+        json={
+            "name": name,
+            "bates_prefix": "RV-",
+            "bates_start_number": 1,
+            "bates_padding": 4,
+        },
+    )
     assert resp.status_code == 200, resp.text
     return resp.json()["id"]
 
@@ -134,12 +140,14 @@ async def test_poll_awaiting_approval_returns_proposed_changes(review_service):
     doc_id = await _upload(client, packet_id)
     await _analyze(client, packet_id, doc_id)
 
-    adapter.poll_job = AsyncMock(return_value=JobStatus(
-        job_id="test-job",
-        status="awaiting_approval",
-        result={},
-        metadata={"pending_changes": {"html": "x"}},
-    ))
+    adapter.poll_job = AsyncMock(
+        return_value=JobStatus(
+            job_id="test-job",
+            status="awaiting_approval",
+            result={},
+            metadata={"pending_changes": {"html": "x"}},
+        )
+    )
     adapter.parse_proposed_change_batch = lambda content: ProposedChangeBatch(
         batch_id="batch-1",
         batch_total=1,

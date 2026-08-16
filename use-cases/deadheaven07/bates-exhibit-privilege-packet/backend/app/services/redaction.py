@@ -186,9 +186,7 @@ class RedactionDetectionService:
                 )
                 await self._mark_fallback(session, document, str(exc))
         else:
-            logger.info(
-                f"SuperDocs unavailable; using local fallback detection for {document.id}"
-            )
+            logger.info(f"SuperDocs unavailable; using local fallback detection for {document.id}")
 
         return await self._detect_via_fallback(document)
 
@@ -229,9 +227,7 @@ class RedactionDetectionService:
         if pii_result is None:
             pii_result = await self._detect_via_fallback(document)
 
-        provenance = (
-            PROVENANCE_SUPERDOCS if pii_result.session_id else PROVENANCE_LOCAL_FALLBACK
-        )
+        provenance = PROVENANCE_SUPERDOCS if pii_result.session_id else PROVENANCE_LOCAL_FALLBACK
         candidates = []
         for entity in pii_result.entities:
             candidates.append(
@@ -431,11 +427,7 @@ class RedactionApplicationService:
 
         for candidate in candidates:
             page_index = (candidate.page_number or 1) - 1
-            page_text = (
-                pages[page_index]
-                if 0 <= page_index < len(pages)
-                else "\n".join(pages)
-            )
+            page_text = pages[page_index] if 0 <= page_index < len(pages) else "\n".join(pages)
             present = candidate.matched_text.lower() in page_text
             results[str(candidate.id)] = {
                 "verified": not present,
@@ -489,8 +481,7 @@ class RedactionApplicationService:
             raise ValueError(f"No PDF source available for {document.original_filename}")
 
         appliable = [
-            c for c in candidates
-            if c.status in (RedactionStatus.APPROVED, RedactionStatus.APPLIED)
+            c for c in candidates if c.status in (RedactionStatus.APPROVED, RedactionStatus.APPLIED)
         ]
         output_path = redacted_pdf_path_for(document)
         results = self.apply_redactions_to_pdf(source, output_path, appliable)
@@ -511,9 +502,7 @@ class RedactionApplicationService:
             ).scalars()
         }
 
-        job_id = await self._sync_and_reexport(
-            session, document, appliable, output_path, approvals
-        )
+        job_id = await self._sync_and_reexport(session, document, appliable, output_path, approvals)
 
         for candidate in appliable:
             entry = results.get(str(candidate.id), {})

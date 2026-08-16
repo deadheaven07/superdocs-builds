@@ -12,9 +12,15 @@ from app.domain.audit import AuditEvent, AuditEventType
 
 
 async def _make_packet(client, name="Audit QA Packet", start=1):
-    resp = await client.post("/api/packets", json={
-        "name": name, "bates_prefix": "AU-", "bates_start_number": start, "bates_padding": 4,
-    })
+    resp = await client.post(
+        "/api/packets",
+        json={
+            "name": name,
+            "bates_prefix": "AU-",
+            "bates_start_number": start,
+            "bates_padding": 4,
+        },
+    )
     assert resp.status_code == 200, resp.text
     return resp.json()["id"]
 
@@ -62,8 +68,12 @@ async def test_upload_emits_processing_and_bates_events_with_metadata(api_client
     assert bates_assigned[0]["metadata"]["bates_end"] == "AU-0001"
 
     ordered = [e["event_type"] for e in events]
-    assert ordered.index("bates_assigned") < ordered.index("processing_completed") < ordered.index(
-        "upload") < ordered.index("processing_started")
+    assert (
+        ordered.index("bates_assigned")
+        < ordered.index("processing_completed")
+        < ordered.index("upload")
+        < ordered.index("processing_started")
+    )
 
 
 @pytest.mark.asyncio
@@ -81,10 +91,15 @@ async def test_upload_metadata_persisted_in_db(api_client):
 @pytest.mark.asyncio
 async def test_packet_created_and_updated_events(api_client):
     client = api_client
-    resp = await client.post("/api/packets", json={
-        "name": "Audit Trail Packet", "bates_prefix": "TR-",
-        "bates_start_number": 1, "bates_padding": 4,
-    })
+    resp = await client.post(
+        "/api/packets",
+        json={
+            "name": "Audit Trail Packet",
+            "bates_prefix": "TR-",
+            "bates_start_number": 1,
+            "bates_padding": 4,
+        },
+    )
     packet_id = resp.json()["id"]
 
     await client.patch(f"/api/packets/{packet_id}", json={"name": "Renamed Packet"})
@@ -160,8 +175,7 @@ async def test_reorder_emits_bates_reassignment(api_client):
     await _upload(client, packet_id, filename="first.pdf")
     second = await _upload(client, packet_id, filename="second.pdf")
 
-    resp = await client.patch(f"/api/documents/{packet_id}/{second}/reorder",
-                              json={"new_order": 1})
+    resp = await client.patch(f"/api/documents/{packet_id}/{second}/reorder", json={"new_order": 1})
     assert resp.status_code == 200, resp.text
 
     events = await _events(client, packet_id)

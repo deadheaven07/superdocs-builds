@@ -50,9 +50,7 @@ async def _detect_lines(test_session: AsyncSession, lines, page_count=1):
     detection = RedactionDetectionService(superdocs=fake)
     pii_result = await detection.detect_pii_in_document(test_session, str(doc.id))
 
-    candidates = await detection.create_redaction_candidates(
-        test_session, str(doc.id), pii_result
-    )
+    candidates = await detection.create_redaction_candidates(test_session, str(doc.id), pii_result)
     return candidates, pii_result, sha
 
 
@@ -65,15 +63,18 @@ def _account_matches(candidates):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line,expected_text", [
-    ("Account: ACC-8821-4433", "ACC-8821-4433"),
-    ("ACC-8821-4433", "ACC-8821-4433"),
-    ("acc-8821-4433", "ACC-8821-4433"),
-    ("Account: ACC 8821 4433", "ACC 8821 4433"),
-    ("Account number: ACCOUNT-8821-4433", "ACCOUNT-8821-4433"),
-    ("ACCT 8821 4433", "ACCT 8821 4433"),
-    ("ACC-8821-4433 is the client account", "ACC-8821-4433"),
-])
+@pytest.mark.parametrize(
+    "line,expected_text",
+    [
+        ("Account: ACC-8821-4433", "ACC-8821-4433"),
+        ("ACC-8821-4433", "ACC-8821-4433"),
+        ("acc-8821-4433", "ACC-8821-4433"),
+        ("Account: ACC 8821 4433", "ACC 8821 4433"),
+        ("Account number: ACCOUNT-8821-4433", "ACCOUNT-8821-4433"),
+        ("ACCT 8821 4433", "ACCT 8821 4433"),
+        ("ACC-8821-4433 is the client account", "ACC-8821-4433"),
+    ],
+)
 async def test_alphanumeric_account_patterns_detected(
     test_session: AsyncSession, line, expected_text
 ):
@@ -91,20 +92,23 @@ async def test_alphanumeric_account_with_coordinates(test_session: AsyncSession)
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("line", [
-    "Ref: FQ-0500",
-    "Invoice: INV-2026-001",
-    "Date: 2026-08-14",
-    "Page One",
-    "Docket: 1:23-cv-04567",
-    "Account is currently on hold",
-    "ACC has no digits",
-    "The account: 12345 only",
-    "CONFIDENTIAL ATTORNEY CLIENT PRIVILEGED",
-    "Attorney Client Privileged",
-    "Privileged Communication",
-    "Confidential Legal Advice",
-])
+@pytest.mark.parametrize(
+    "line",
+    [
+        "Ref: FQ-0500",
+        "Invoice: INV-2026-001",
+        "Date: 2026-08-14",
+        "Page One",
+        "Docket: 1:23-cv-04567",
+        "Account is currently on hold",
+        "ACC has no digits",
+        "The account: 12345 only",
+        "CONFIDENTIAL ATTORNEY CLIENT PRIVILEGED",
+        "Attorney Client Privileged",
+        "Privileged Communication",
+        "Confidential Legal Advice",
+    ],
+)
 async def test_non_accounts_not_detected(test_session: AsyncSession, line):
     candidates, _, _ = await _detect_lines(test_session, [line])
     assert _account_matches(candidates) == [], f"line={line!r} produced matches"
@@ -128,9 +132,7 @@ async def test_pure_numeric_accounts_still_detected(test_session: AsyncSession):
 
 @pytest.mark.asyncio
 async def test_multi_page_detection(test_session: AsyncSession):
-    candidates, _, _ = await _detect_lines(
-        test_session, ["Account: ACC-8821-4433"], page_count=2
-    )
+    candidates, _, _ = await _detect_lines(test_session, ["Account: ACC-8821-4433"], page_count=2)
     match = next(c for c in candidates if "ACC-8821-4433" in c.matched_text)
     assert match.page_number == 1 or match.page_number == 2
     assert match.page_number >= 1

@@ -44,9 +44,7 @@ def assert_text_free_of(text: str, forbidden_values, label: str) -> None:
     lowered = text.lower()
     for values in forbidden_values.values():
         for value in values:
-            assert value.lower() not in lowered, (
-                f"Forbidden value {value!r} found in {label}"
-            )
+            assert value.lower() not in lowered, f"Forbidden value {value!r} found in {label}"
 
 
 def assert_pdf_free_of(path: Path, forbidden_values, label: str = "artifact") -> None:
@@ -147,7 +145,8 @@ class FakeSuperDocsService:
         entities = []
         if document.document_type not in (DocumentType.PDF, DocumentType.SCANNED_PDF):
             return PIIDetectionResult(
-                entities=[], total_count=0,
+                entities=[],
+                total_count=0,
                 session_id=document.superdocs_session_id or "fake-session",
                 document_id=document.superdocs_document_id or "fake-doc",
             )
@@ -157,7 +156,8 @@ class FakeSuperDocsService:
         path = original_path_for(document)
         if not path.exists():
             return PIIDetectionResult(
-                entities=[], total_count=0,
+                entities=[],
+                total_count=0,
                 session_id=document.superdocs_session_id or "fake-session",
                 document_id=document.superdocs_document_id or "fake-doc",
             )
@@ -191,22 +191,24 @@ class FakeSuperDocsService:
                             rect = rects[0]
                             x0, y0, x1, y1 = rect.x0, rect.y0, rect.x1, rect.y1
                         start = match.start()
-                        before = page_text[max(0, start - 40):start]
-                        after = page_text[match.end():match.end() + 40]
-                        entities.append(PIIEntity(
-                            category=category,
-                            text=text,
-                            page_number=page_index + 1,
-                            start_offset=start,
-                            end_offset=match.end(),
-                            confidence=0.95,
-                            context_before=before,
-                            context_after=after,
-                            x0=x0,
-                            y0=y0,
-                            x1=x1,
-                            y1=y1,
-                        ))
+                        before = page_text[max(0, start - 40) : start]
+                        after = page_text[match.end() : match.end() + 40]
+                        entities.append(
+                            PIIEntity(
+                                category=category,
+                                text=text,
+                                page_number=page_index + 1,
+                                start_offset=start,
+                                end_offset=match.end(),
+                                confidence=0.95,
+                                context_before=before,
+                                context_after=after,
+                                x0=x0,
+                                y0=y0,
+                                x1=x1,
+                                y1=y1,
+                            )
+                        )
         finally:
             doc.close()
 

@@ -25,9 +25,15 @@ PII_LINES = [
 
 
 async def _make_packet(client, name="Redaction QA Packet"):
-    resp = await client.post("/api/packets", json={
-        "name": name, "bates_prefix": "RQ-", "bates_start_number": 500, "bates_padding": 4,
-    })
+    resp = await client.post(
+        "/api/packets",
+        json={
+            "name": name,
+            "bates_prefix": "RQ-",
+            "bates_start_number": 500,
+            "bates_padding": 4,
+        },
+    )
     assert resp.status_code == 200, resp.text
     return resp.json()["id"]
 
@@ -190,15 +196,15 @@ async def test_detect_invalid_uuid_422(api_client):
     resp = await client.get("/api/redactions/not-a-uuid/not-a-uuid")
     assert resp.status_code == 422, resp.text
 
-    resp = await client.post("/api/redactions/not-a-uuid/approve",
-                             json={"status": "approved", "approver": "qa"})
+    resp = await client.post(
+        "/api/redactions/not-a-uuid/approve", json={"status": "approved", "approver": "qa"}
+    )
     assert resp.status_code == 422, resp.text
 
     resp = await client.post("/api/redactions/not-a-uuid/apply")
     assert resp.status_code == 422, resp.text
 
-    resp = await client.post("/api/redactions/not-a-uuid/apply-all",
-                             json={"document_ids": []})
+    resp = await client.post("/api/redactions/not-a-uuid/apply-all", json={"document_ids": []})
     assert resp.status_code == 422, resp.text
 
     resp = await client.post(
@@ -216,6 +222,7 @@ async def test_missing_resources_404(api_client):
     assert resp.status_code == 404, resp.text
     resp = await client.get(f"/api/redactions/{missing}")
     assert resp.status_code == 404, resp.text
-    resp = await client.post(f"/api/redactions/{missing}/approve",
-                             json={"status": "approved", "approver": "qa"})
+    resp = await client.post(
+        f"/api/redactions/{missing}/approve", json={"status": "approved", "approver": "qa"}
+    )
     assert resp.status_code == 404, resp.text

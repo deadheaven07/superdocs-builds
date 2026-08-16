@@ -1,6 +1,6 @@
+import hashlib
 from io import BytesIO
 from uuid import UUID
-import hashlib
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -51,12 +51,14 @@ async def upload_documents(
             file_stream = BytesIO(file_content)
 
             try:
-                session.add(AuditEvent(
-                    packet_id=packet_id,
-                    event_type=AuditEventType.PROCESSING_STARTED,
-                    user_id="system",
-                    event_metadata={"filename": filename},
-                ))
+                session.add(
+                    AuditEvent(
+                        packet_id=packet_id,
+                        event_type=AuditEventType.PROCESSING_STARTED,
+                        user_id="system",
+                        event_metadata={"filename": filename},
+                    )
+                )
                 result = await ingestion_service.ingest_file(
                     file=file_stream,
                     original_filename=filename,
@@ -90,42 +92,50 @@ async def upload_documents(
                     document_id=result.document.id,
                     page_number=page_num,
                     has_text=result.is_searchable,
-                    extracted_text=result.extracted_text[:1000000] if result.extracted_text else None,
+                    extracted_text=result.extracted_text[:1000000]
+                    if result.extracted_text
+                    else None,
                 )
                 session.add(page)
 
-            session.add(AuditEvent(
-                packet_id=packet_id,
-                document_id=result.document.id,
-                event_type=AuditEventType.UPLOAD,
-                user_id="system",
-                event_metadata={
-                    "filename": filename,
+            session.add(
+                AuditEvent(
+                    packet_id=packet_id,
+                    document_id=result.document.id,
+                    event_type=AuditEventType.UPLOAD,
+                    user_id="system",
+                    event_metadata={
+                        "filename": filename,
+                        "document_type": result.document.document_type.value,
+                        "page_count": result.document.page_count,
+                    },
+                )
+            )
+
+            session.add(
+                AuditEvent(
+                    packet_id=packet_id,
+                    document_id=result.document.id,
+                    event_type=AuditEventType.PROCESSING_COMPLETED,
+                    user_id="system",
+                    event_metadata={
+                        "filename": filename,
+                        "page_count": result.document.page_count,
+                        "is_searchable": result.is_searchable,
+                    },
+                )
+            )
+
+            uploaded_documents.append(
+                {
+                    "id": str(result.document.id),
+                    "filename": result.document.original_filename,
                     "document_type": result.document.document_type.value,
                     "page_count": result.document.page_count,
-                },
-            ))
-
-            session.add(AuditEvent(
-                packet_id=packet_id,
-                document_id=result.document.id,
-                event_type=AuditEventType.PROCESSING_COMPLETED,
-                user_id="system",
-                event_metadata={
-                    "filename": filename,
-                    "page_count": result.document.page_count,
+                    "status": result.document.processing_status.value,
                     "is_searchable": result.is_searchable,
-                },
-            ))
-
-            uploaded_documents.append({
-                "id": str(result.document.id),
-                "filename": result.document.original_filename,
-                "document_type": result.document.document_type.value,
-                "page_count": result.document.page_count,
-                "status": result.document.processing_status.value,
-                "is_searchable": result.is_searchable,
-            })
+                }
+            )
 
     except FileValidationError as e:
         await _rollback_upload(session, created_documents)
@@ -159,16 +169,18 @@ async def _rollback_upload(session: AsyncSession, created_documents: list) -> No
 async def _record_bates_audit(session: AsyncSession, packet_id: UUID, assignments: list) -> None:
     if not assignments:
         return
-    session.add(AuditEvent(
-        packet_id=packet_id,
-        event_type=AuditEventType.BATES_ASSIGNED,
-        user_id="system",
-        event_metadata={
-            "count": len(assignments),
-            "bates_start": assignments[0].bates_label,
-            "bates_end": assignments[-1].bates_label,
-        },
-    ))
+    session.add(
+        AuditEvent(
+            packet_id=packet_id,
+            event_type=AuditEventType.BATES_ASSIGNED,
+            user_id="system",
+            event_metadata={
+                "count": len(assignments),
+                "bates_start": assignments[0].bates_label,
+                "bates_end": assignments[-1].bates_label,
+            },
+        )
+    )
     await session.commit()
 
 
@@ -197,8 +209,14 @@ async def list_documents(packet_id: UUID, session: AsyncSession = Depends(get_se
             "page_count": doc.page_count,
             "status": doc.processing_status.value,
             "display_order": doc.display_order,
-            "bates_range": f"{doc.bates_assignments[0].bates_label} - {doc.bates_assignments[-1].bates_label}" if doc.bates_assignments else None,
-            "privilege_status": doc.privilege_decisions[0].status.value if doc.privilege_decisions else "pending",
+            "bates_range": (
+                f"{doc.bates_assignments[0].bates_label} - {doc.bates_assignments[-1].bates_label}"
+            )
+            if doc.bates_assignments
+            else None,
+            "privilege_status": doc.privilege_decisions[0].status.value
+            if doc.privilege_decisions
+            else "pending",
             "is_searchable": doc.is_searchable,
             "uploaded_at": doc.uploaded_at.isoformat() if doc.uploaded_at else None,
         }
@@ -207,7 +225,9 @@ async def list_documents(packet_id: UUID, session: AsyncSession = Depends(get_se
 
 
 @router.get("/{packet_id}/{document_id}")
-async def get_document(packet_id: UUID, document_id: UUID, session: AsyncSession = Depends(get_session)):
+async def get_document(
+    packet_id: UUID, document_id: UUID, session: AsyncSession = Depends(get_session)
+):
     document = await session.get(
         Document,
         document_id,
@@ -255,24 +275,35 @@ async def get_document(packet_id: UUID, document_id: UUID, session: AsyncSession
         ],
         "privilege_decision": {
             "status": document.privilege_decisions[0].status.value,
-            "category": document.privilege_decisions[0].category.value if document.privilege_decisions[0].category else None,
+            "category": document.privilege_decisions[0].category.value
+            if document.privilege_decisions[0].category
+            else None,
             "reason": document.privilege_decisions[0].reason,
-        } if document.privilege_decisions else None,
+        }
+        if document.privilege_decisions
+        else None,
     }
 
 
 @router.delete("/{packet_id}/{document_id}")
-async def delete_document(packet_id: UUID, document_id: UUID, session: AsyncSession = Depends(get_session)):
+async def delete_document(
+    packet_id: UUID, document_id: UUID, session: AsyncSession = Depends(get_session)
+):
     document = await session.get(Document, document_id)
     if not document or document.packet_id != packet_id:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    session.add(AuditEvent(
-        packet_id=packet_id,
-        event_type=AuditEventType.DOCUMENT_DELETED,
-        user_id="system",
-        event_metadata={"document_id": str(document.id), "filename": document.original_filename},
-    ))
+    session.add(
+        AuditEvent(
+            packet_id=packet_id,
+            event_type=AuditEventType.DOCUMENT_DELETED,
+            user_id="system",
+            event_metadata={
+                "document_id": str(document.id),
+                "filename": document.original_filename,
+            },
+        )
+    )
     removed_files = await cleanup_document_files(session, document)
     await session.delete(document)
     await session.commit()
@@ -284,7 +315,9 @@ async def delete_document(packet_id: UUID, document_id: UUID, session: AsyncSess
 
 
 @router.get("/{packet_id}/{document_id}/download")
-async def download_document(packet_id: UUID, document_id: UUID, session: AsyncSession = Depends(get_session)):
+async def download_document(
+    packet_id: UUID, document_id: UUID, session: AsyncSession = Depends(get_session)
+):
     from fastapi.responses import FileResponse
 
     document = await session.get(Document, document_id)
@@ -330,13 +363,15 @@ async def reorder_document(
     for i, doc in enumerate(documents):
         doc.display_order = i + 1
 
-    session.add(AuditEvent(
-        packet_id=packet_id,
-        document_id=document.id,
-        event_type=AuditEventType.DOCUMENT_REORDERED,
-        user_id="system",
-        event_metadata={"document_id": str(document.id), "new_order": new_order},
-    ))
+    session.add(
+        AuditEvent(
+            packet_id=packet_id,
+            document_id=document.id,
+            event_type=AuditEventType.DOCUMENT_REORDERED,
+            user_id="system",
+            event_metadata={"document_id": str(document.id), "new_order": new_order},
+        )
+    )
     await session.commit()
 
     assignments = await BatesAssignmentService().assign_bates(session, packet_id)
