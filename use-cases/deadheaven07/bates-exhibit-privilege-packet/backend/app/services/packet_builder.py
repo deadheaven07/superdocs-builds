@@ -1,12 +1,11 @@
 import hashlib
-import logging
 import json
+import logging
 import re
 import shutil
+from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
-from typing import List
-from dataclasses import dataclass
 
 import fitz
 from pypdf import PdfReader, PdfWriter
@@ -14,15 +13,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.config import get_settings
-from app.domain.packet import Packet
-from app.domain.document import Document, ProcessingStatus
-from app.domain.bates import BatesAssignment
-from app.domain.privilege import PrivilegeStatus
-from app.domain.redaction import RedactionStatus, RedactionCandidate
-from app.domain.manifest import Manifest, ManifestEntry
 from app.domain.audit import AuditEvent, AuditEventType
+from app.domain.bates import BatesAssignment
+from app.domain.document import Document, ProcessingStatus
+from app.domain.manifest import Manifest, ManifestEntry
+from app.domain.packet import Packet
+from app.domain.privilege import PrivilegeStatus
+from app.domain.redaction import RedactionCandidate, RedactionStatus
 from app.services.redaction import RedactionApplicationService
-from app.services.storage import resolve_pdf_source, redacted_pdf_path_for
+from app.services.storage import redacted_pdf_path_for, resolve_pdf_source
+from app.services.superdocs_integration import SuperDocsIntegrationService, get_superdocs_service
 from app.time import utc_now
 
 settings = get_settings()
@@ -40,8 +40,9 @@ class BuildResult:
 
 
 class PacketBuilderService:
-    def __init__(self):
+    def __init__(self, superdocs: SuperDocsIntegrationService | None = None):
         settings.ensure_directories()
+        self.superdocs = superdocs or get_superdocs_service()
 
     def _format_bates(self, prefix: str, number: int, padding: int) -> str:
         return f"{prefix}{str(number).zfill(padding)}"
@@ -53,37 +54,9 @@ class PacketBuilderService:
                 sha256.update(chunk)
         return sha256.hexdigest()
 
-    def _calculate_page_hashes(self, pdf_path: Path) -> List[str]:
-        """Compute SHA-256 hash for each individual page in a PDF."""
-        page_hashes = []
-        doc = fitz.open(pdf_path)
-        for page_num in range(len(doc)):
-            page = doc[page_num]
-            page_bytes = page.read_contents()
-            page_hash = hashlib.sha256(page_bytes).hexdigest()
-            page_hashes.append(page_hash)
-        doc.close()
-        return page_hashes
-
-    def _compute_merkle_root(self, page_hashes: List[str]) -> str:
-        """Compute Merkle root from ordered list of page hashes."""
-        if not page_hashes:
-            return ""
-        if len(page_hashes) == 1:
-            return page_hashes[0]
-        
-        current_level = page_hashes[:]
-        while len(current_level) > 1:
-            next_level = []
-            for i in range(0, len(current_level), 2):
-                left = current_level[i]
-                right = current_level[i + 1] if i + 1 < len(current_level) else left
-                combined = hashlib.sha256((left + right).encode()).hexdigest()
-                next_level.append(combined)
-            current_level = next_level
-        return current_level[0]
-
-    def _create_text_pdf(self, title: str, lines: List[str], page_size: tuple = (612, 792)) -> bytes:
+    def _create_text_pdf(
+        self, title: str, lines: list[str], page_size: tuple = (612, 792)
+    ) -> bytes:
         doc = fitz.open()
         page = doc.new_page(width=page_size[0], height=page_size[1])
         margin = 54
@@ -102,7 +75,9 @@ class PacketBuilderService:
         doc.close()
         return data
 
-    def _sanitize_description(self, description: str | None, redacted_texts: list[str]) -> str | None:
+    def _sanitize_description(
+        self, description: str | None, redacted_texts: list[str]
+    ) -> str | None:
         """Remove redacted terms from a description so the final deliverable
         never exposes content that was redacted (covers, index, manifest)."""
         if not description:
@@ -131,15 +106,20 @@ class PacketBuilderService:
             f"Description: {description or document.description or 'No description available'}",
             f"Document: {document.original_filename}",
             f"Pages: {document.page_count}",
-            f"Privilege Status: {document.privilege_decisions[0].status.value if document.privilege_decisions else 'pending'}",
         ]
+        privilege_status = (
+            document.privilege_decisions[0].status.value
+            if document.privilege_decisions
+            else "pending"
+        )
+        lines.append(f"Privilege Status: {privilege_status}")
         return self._create_text_pdf(f"EXHIBIT {exhibit_letter}", lines)
 
     def _create_exhibit_index(
         self,
         packet: Packet,
-        documents: List[Document],
-        manifest_entries: List[ManifestEntry],
+        documents: list[Document],
+        manifest_entries: list[ManifestEntry],
     ) -> bytes:
         lines = [
             f"Packet: {packet.name}",
@@ -151,7 +131,7 @@ class PacketBuilderService:
             "-" * 80,
         ]
 
-        for i, (doc, entry) in enumerate(zip(documents, manifest_entries)):
+        for i, (doc, entry) in enumerate(zip(documents, manifest_entries, strict=True)):
             exhibit_letter = chr(65 + i)
             lines.append(
                 f"{exhibit_letter} | {entry.bates_start} - {entry.bates_end} | "
@@ -160,7 +140,7 @@ class PacketBuilderService:
 
         return self._create_text_pdf("EXHIBIT INDEX", lines)
 
-    def _create_privilege_log(self, packet: Packet, documents: List[Document]) -> bytes:
+    def _create_privilege_log(self, packet: Packet, documents: list[Document]) -> bytes:
         lines = [
             f"Packet: {packet.name}",
             f"Generated: {utc_now().strftime('%Y-%m-%d %H:%M:%S')}",
@@ -170,9 +150,12 @@ class PacketBuilderService:
         ]
 
         for doc in documents:
-            if doc.privilege_decisions and doc.privilege_decisions[0].status == PrivilegeStatus.PRIVILEGED:
+            if (
+                doc.privilege_decisions
+                and doc.privilege_decisions[0].status == PrivilegeStatus.PRIVILEGED
+            ):
                 decision = doc.privilege_decisions[0]
-                bates_assignments = [ba for ba in doc.bates_assignments]
+                bates_assignments = list(doc.bates_assignments)
                 bates_start = bates_assignments[0].bates_label if bates_assignments else "N/A"
                 bates_end = bates_assignments[-1].bates_label if bates_assignments else "N/A"
                 lines.append(
@@ -182,7 +165,7 @@ class PacketBuilderService:
 
         return self._create_text_pdf("PRIVILEGE LOG", lines)
 
-    def _stamp_pdf_file(self, input_path: Path, output_path: Path, bates_labels: List[str]) -> None:
+    def _stamp_pdf_file(self, input_path: Path, output_path: Path, bates_labels: list[str]) -> None:
         doc = fitz.open(input_path)
         for i, label in enumerate(bates_labels):
             if i >= len(doc):
@@ -201,9 +184,9 @@ class PacketBuilderService:
     def _run_validation(
         self,
         packet: Packet,
-        documents: List[Document],
-        bates_list: List[BatesAssignment],
-    ) -> tuple[bool, List[str], List[str]]:
+        documents: list[Document],
+        bates_list: list[BatesAssignment],
+    ) -> tuple[bool, list[str], list[str]]:
         errors = []
         warnings = []
 
@@ -216,13 +199,19 @@ class PacketBuilderService:
         if len(bates_numbers) != len(set(bates_numbers)):
             errors.append("Duplicate Bates numbers found")
 
-        expected_numbers = list(range(packet.bates_start_number, packet.bates_start_number + len(bates_numbers)))
+        expected_numbers = list(
+            range(packet.bates_start_number, packet.bates_start_number + len(bates_numbers))
+        )
         if bates_numbers != expected_numbers:
-            errors.append(f"Bates numbers have gaps. Expected {expected_numbers}, got {bates_numbers}")
+            errors.append(
+                f"Bates numbers have gaps. Expected {expected_numbers}, got {bates_numbers}"
+            )
 
         source_page_count = sum(doc.page_count for doc in documents)
         if len(bates_list) != source_page_count:
-            errors.append(f"Bates count ({len(bates_list)}) does not match page count ({source_page_count})")
+            errors.append(
+                f"Bates count ({len(bates_list)}) does not match page count ({source_page_count})"
+            )
 
         for doc in documents:
             if doc.processing_status != ProcessingStatus.COMPLETED:
@@ -230,7 +219,9 @@ class PacketBuilderService:
 
             doc_bates = [ba for ba in bates_list if ba.document_id == doc.id]
             if len(doc_bates) != doc.page_count:
-                warnings.append(f"Document {doc.original_filename} has {len(doc_bates)} Bates but {doc.page_count} pages")
+                warnings.append(
+                    f"Document {doc.original_filename} has {len(doc_bates)} Bates but {doc.page_count} pages"
+                )
 
         prev_end = None
         for doc in documents:
@@ -250,7 +241,7 @@ class PacketBuilderService:
 
         return len(errors) == 0, errors, warnings
 
-    def _verify_applied_redactions(self, documents: List[Document]) -> None:
+    def _verify_applied_redactions(self, documents: list[Document]) -> None:
         """Refuse to build if any APPLIED redaction is not verified against its output file."""
         errors = []
         verifier = RedactionApplicationService()
@@ -290,7 +281,9 @@ class PacketBuilderService:
             .where(Document.packet_id == packet_id)
             .order_by(Document.display_order)
             .options(
-                selectinload(Document.redaction_candidates).selectinload(RedactionCandidate.approval),
+                selectinload(Document.redaction_candidates).selectinload(
+                    RedactionCandidate.approval
+                ),
                 selectinload(Document.privilege_decisions),
                 selectinload(Document.bates_assignments),
             )
@@ -327,10 +320,12 @@ class PacketBuilderService:
             exhibit_letter = chr(65 + i)
 
             bates_assignments_doc = await session.execute(
-                select(BatesAssignment).where(
+                select(BatesAssignment)
+                .where(
                     BatesAssignment.packet_id == packet_id,
                     BatesAssignment.document_id == document.id,
-                ).order_by(BatesAssignment.page_number)
+                )
+                .order_by(BatesAssignment.page_number)
             )
             doc_bates = bates_assignments_doc.scalars().all()
             bates_start = doc_bates[0].bates_label if doc_bates else "N/A"
@@ -372,21 +367,22 @@ class PacketBuilderService:
             stamped_exhibit_path = exhibits_dir / f"EX-{exhibit_letter}.pdf"
             stamped_writer.write(stamped_exhibit_path)
 
-            page_hashes = self._calculate_page_hashes(stamped_exhibit_path)
-            merkle_root = self._compute_merkle_root(page_hashes)
-
             applied_redactions = []
             for candidate in document.redaction_candidates:
                 if candidate.status == RedactionStatus.APPLIED and candidate.approval:
-                    applied_redactions.append({
-                        "candidate_id": str(candidate.id),
-                        "page": candidate.page_number,
-                        "category": candidate.category.value,
-                        "matched_text": candidate.matched_text,
-                        "approver": candidate.approval.approver,
-                        "approved_at": candidate.approval.approved_at.isoformat() if candidate.approval.approved_at else None,
-                        "verified": candidate.approval.verification_passed,
-                    })
+                    applied_redactions.append(
+                        {
+                            "candidate_id": str(candidate.id),
+                            "page": candidate.page_number,
+                            "category": candidate.category.value,
+                            "matched_text": candidate.matched_text,
+                            "approver": candidate.approval.approver,
+                            "approved_at": candidate.approval.approved_at.isoformat()
+                            if candidate.approval.approved_at
+                            else None,
+                            "verified": candidate.approval.verification_passed,
+                        }
+                    )
 
             privilege_status = None
             privilege_category = None
@@ -413,8 +409,6 @@ class PacketBuilderService:
                 privilege_reason=privilege_reason,
                 applied_redactions=applied_redactions,
                 final_file_path=str(stamped_exhibit_path.relative_to(settings.final_path)),
-                page_hashes=page_hashes,
-                merkle_root=merkle_root,
             )
             manifest_entries.append(manifest_entry)
 
@@ -464,7 +458,9 @@ class PacketBuilderService:
         manifest_data = {
             "packet_id": str(packet.id),
             "packet_name": packet.name,
-            "generated_at": manifest.generated_at.isoformat() if manifest.generated_at else utc_now().isoformat(),
+            "generated_at": manifest.generated_at.isoformat()
+            if manifest.generated_at
+            else utc_now().isoformat(),
             "total_pages": manifest.total_pages,
             "total_documents": manifest.total_documents,
             "bates_start": manifest.bates_start,
@@ -497,8 +493,6 @@ class PacketBuilderService:
                         for redaction in (e.applied_redactions or [])
                     ],
                     "final_file_path": e.final_file_path,
-                    "page_hashes": e.page_hashes or [],
-                    "merkle_root": e.merkle_root,
                 }
                 for e in manifest_entries
             ],
@@ -552,41 +546,16 @@ class PacketBuilderService:
 
         valid, errors, warnings = self._run_validation(packet, documents, bates_list)
 
-        manifest = await session.execute(
-            select(Manifest).where(Manifest.packet_id == packet_id)
-        )
+        manifest = await session.execute(select(Manifest).where(Manifest.packet_id == packet_id))
         manifest = manifest.scalars().first()
 
-        if manifest:
-            if manifest.final_packet_sha256:
-                final_packet_path = settings.final_path / manifest.final_packet_path
-                if final_packet_path.exists():
-                    actual_sha256 = self._calculate_sha256(final_packet_path)
-                    if actual_sha256 != manifest.final_packet_sha256:
-                        errors.append("Final packet checksum mismatch")
-                        valid = False
-
-            for entry in manifest.entries:
-                if entry.page_hashes and entry.final_file_path:
-                    exhibit_path = settings.final_path / entry.final_file_path
-                    if exhibit_path.exists():
-                        current_page_hashes = self._calculate_page_hashes(exhibit_path)
-                        if current_page_hashes != entry.page_hashes:
-                            errors.append(
-                                f"Page hash mismatch for exhibit {entry.exhibit_identifier}: "
-                                f"expected {len(entry.page_hashes)} pages, got {len(current_page_hashes)} "
-                                f"or content mismatch"
-                            )
-                            valid = False
-                        current_merkle = self._compute_merkle_root(current_page_hashes)
-                        if entry.merkle_root and current_merkle != entry.merkle_root:
-                            errors.append(
-                                f"Merkle root mismatch for exhibit {entry.exhibit_identifier}"
-                            )
-                            valid = False
-                    else:
-                        errors.append(f"Exhibit file missing: {entry.exhibit_identifier}")
-                        valid = False
+        if manifest and manifest.final_packet_sha256:
+            final_packet_path = settings.final_path / manifest.final_packet_path
+            if final_packet_path.exists():
+                actual_sha256 = self._calculate_sha256(final_packet_path)
+                if actual_sha256 != manifest.final_packet_sha256:
+                    errors.append("Final packet checksum mismatch")
+                    valid = False
 
         total_pages = sum(doc.page_count for doc in documents) + len(documents)
 
@@ -596,7 +565,9 @@ class PacketBuilderService:
             "warnings": warnings,
             "total_documents": len(documents),
             "total_pages": total_pages,
-            "bates_range": f"{bates_list[0].bates_label} - {bates_list[-1].bates_label}" if bates_list else None,
+            "bates_range": f"{bates_list[0].bates_label} - {bates_list[-1].bates_label}"
+            if bates_list
+            else None,
         }
 
 

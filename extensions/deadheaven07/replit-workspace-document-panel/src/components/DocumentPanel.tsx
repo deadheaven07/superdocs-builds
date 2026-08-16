@@ -100,9 +100,9 @@ export function DocumentPanel() {
     setLastContext({ ...lastContext, files });
     await captureHashes(files);
 
-    await superDocsActions.generateDocument(superDocsInstruction, lastContext.documentType);
+    await superDocsActions.generateDocument(superDocsInstruction, lastContext.documentType, superDocsState.sessionId);
     setActiveTab('review');
-  }, [lastContext, readFile, captureHashes, superDocsActions]);
+  }, [lastContext, readFile, captureHashes, superDocsActions, superDocsState.sessionId]);
 
   const handleApprove = useCallback(async (approved: boolean, changes: { change_id: string; operation: string; chunk_id?: string; old_html?: string; new_html?: string; ai_explanation: string; insert_after_chunk_id?: string; document_id?: string }[]) => {
     await superDocsActions.approveChanges(approved, changes);

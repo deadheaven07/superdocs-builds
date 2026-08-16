@@ -1,16 +1,15 @@
 import logging
-from typing import List, Optional
 from dataclasses import dataclass
-from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.domain.redaction import RedactionCandidate as DBRedactionCandidate, RedactionCategory, RedactionStatus
-from app.services.storage import base_pdf_source, redacted_pdf_path_for
+from app.domain.redaction import RedactionCandidate as DBRedactionCandidate
+from app.domain.redaction import RedactionCategory, RedactionStatus
 from app.services.superdocs_integration import SuperDocsIntegrationService, get_superdocs_service
-from app.services.superdocs_port import PIICategory, PIIDetectionResult, PrivilegeAnalysisResult, RedactionCandidate as SuperDocsRedactionCandidate
+from app.services.superdocs_port import PIICategory, PIIDetectionResult
+from app.services.superdocs_port import RedactionCandidate as SuperDocsRedactionCandidate
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -30,17 +29,18 @@ class RedactionMatch:
 
 
 class RedactionDetectionService:
-    def __init__(self, superdocs: Optional[SuperDocsIntegrationService] = None):
+    def __init__(self, superdocs: SuperDocsIntegrationService | None = None):
         self.superdocs = superdocs or get_superdocs_service()
 
     async def detect_pii_in_document(
         self,
         session: AsyncSession,
         document_id: str,
-        categories: Optional[list[PIICategory]] = None,
+        categories: list[PIICategory] | None = None,
     ) -> PIIDetectionResult:
         """Detect PII in document using SuperDocs."""
         from app.domain.document import Document
+
         document = await session.get(Document, document_id)
         if not document:
             raise ValueError(f"Document {document_id} not found")
@@ -51,9 +51,10 @@ class RedactionDetectionService:
         session: AsyncSession,
         document_id: str,
         pii_result: PIIDetectionResult,
-    ) -> List[DBRedactionCandidate]:
+    ) -> list[DBRedactionCandidate]:
         """Create database redaction candidates from SuperDocs PII detection results."""
         from app.domain.document import Document
+
         document = await session.get(Document, document_id)
         if not document:
             raise ValueError(f"Document {document_id} not found")
@@ -81,17 +82,15 @@ class RedactionDetectionService:
         self,
         session: AsyncSession,
         document_id: str,
-        candidates: List[DBRedactionCandidate],
-    ) -> tuple[List[DBRedactionCandidate], int]:
+        candidates: list[DBRedactionCandidate],
+    ) -> tuple[list[DBRedactionCandidate], int]:
         """Return (new_candidates, skipped_count) so repeated detection never duplicates existing candidates."""
         result = await session.execute(
             select(DBRedactionCandidate).where(DBRedactionCandidate.document_id == document_id)
         )
-        existing_keys = {
-            self._candidate_identity(c) for c in result.scalars().all()
-        }
+        existing_keys = {self._candidate_identity(c) for c in result.scalars().all()}
 
-        created: List[DBRedactionCandidate] = []
+        created: list[DBRedactionCandidate] = []
         skipped = 0
         for candidate in candidates:
             key = self._candidate_identity(candidate)
@@ -135,14 +134,14 @@ class RedactionDetectionService:
 
 
 class RedactionApplicationService:
-    def __init__(self, superdocs: Optional[SuperDocsIntegrationService] = None):
+    def __init__(self, superdocs: SuperDocsIntegrationService | None = None):
         self.superdocs = superdocs or get_superdocs_service()
 
     async def apply_redactions(
         self,
         session: AsyncSession,
         document,
-        candidates: List[DBRedactionCandidate],
+        candidates: list[DBRedactionCandidate],
     ) -> dict:
         """Apply redactions using SuperDocs."""
         from app.domain.document import Document
@@ -150,7 +149,7 @@ class RedactionApplicationService:
 
         document = await session.get(Document, document.id)
         if not document:
-            raise ValueError(f"Document not found")
+            raise ValueError("Document not found")
 
         # Convert DB candidates to SuperDocs candidates
         superdocs_candidates = []
@@ -158,6 +157,7 @@ class RedactionApplicationService:
             if c.status not in (RedactionStatus.APPROVED, RedactionStatus.APPLIED):
                 continue
             from app.services.superdocs_port import PIIEntity
+
             entity = PIIEntity(
                 category=self._map_redaction_category(c.category),
                 text=c.matched_text,
@@ -168,12 +168,16 @@ class RedactionApplicationService:
                 context_before=c.context_before or "",
                 context_after=c.context_after or "",
             )
-            superdocs_candidates.append(SuperDocsRedactionCandidate(
-                entity=entity,
-                approved=True,
-                approved_by=c.approval.approver if c.approval else "system",
-                approved_at=c.approval.approved_at.isoformat() if c.approval and c.approval.approved_at else None,
-            ))
+            superdocs_candidates.append(
+                SuperDocsRedactionCandidate(
+                    entity=entity,
+                    approved=True,
+                    approved_by=c.approval.approver if c.approval else "system",
+                    approved_at=c.approval.approved_at.isoformat()
+                    if c.approval and c.approval.approved_at
+                    else None,
+                )
+            )
 
         if not superdocs_candidates:
             return {}
@@ -200,7 +204,7 @@ class RedactionApplicationService:
         self,
         session: AsyncSession,
         document,
-        candidates: List[DBRedactionCandidate],
+        candidates: list[DBRedactionCandidate],
     ) -> dict:
         """Verify redactions were applied by checking SuperDocs export."""
         # In SuperDocs-native workflow, redactions are applied server-side

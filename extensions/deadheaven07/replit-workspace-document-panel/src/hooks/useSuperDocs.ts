@@ -31,7 +31,7 @@ export interface SuperDocsState {
 }
 
 export interface SuperDocsActions {
-  generateDocument: (instruction: string, documentType: string) => Promise<void>;
+  generateDocument: (instruction: string, documentType: string, sessionId?: string) => Promise<void>;
   approveChanges: (approved: boolean, changes: ProposedChange[]) => Promise<void>;
   continueJob: (continueJob: boolean) => Promise<void>;
   exportDocument: (format: 'pdf' | 'docx') => Promise<Blob>;
@@ -67,7 +67,7 @@ export function useSuperDocs(apiKey: string): [SuperDocsState, SuperDocsActions]
     setState(prev => ({ ...prev, step: 'idle', error: undefined, canRetry: false }));
   }, []);
 
-  const generateDocument = useCallback(async (instruction: string, documentType: string) => {
+const generateDocument = useCallback(async (instruction: string, documentType: string, sessionId?: string) => {
     if (!apiKey) { setError('SuperDocs API key is required', true); return; }
 
     const abortController = new AbortController();
@@ -79,7 +79,7 @@ export function useSuperDocs(apiKey: string): [SuperDocsState, SuperDocsActions]
     try {
       updateStep('uploading', 'Uploading document to SuperDocs...');
       const filename = `${documentType.toUpperCase()}.md`;
-      const uploadResult = await client.uploadDocument(filename, instruction, undefined, true, signal);
+      const uploadResult = await client.uploadDocument(filename, instruction, sessionId, true, signal);
       if (signal.aborted) return;
 
       setState(prev => ({ ...prev, sessionId: uploadResult.session_id, documentId: uploadResult.document_id, uploadResult }));

@@ -1,10 +1,11 @@
 import hashlib
 import logging
-import magic
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO
-from dataclasses import dataclass
+
+import magic
 
 from app.config import get_settings
 from app.domain.document import Document, DocumentType, ProcessingStatus
@@ -30,7 +31,8 @@ class FileValidationError(Exception):
 class IngestionService:
     SUPPORTED_MIME_TYPES = {
         "application/pdf": DocumentType.PDF,
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": DocumentType.DOCX,
+        "application/vnd.openxmlformats-officedocument"
+        ".wordprocessingml.document": DocumentType.DOCX,
         "image/jpeg": DocumentType.IMAGE,
         "image/png": DocumentType.IMAGE,
         "image/tiff": DocumentType.IMAGE,
@@ -85,6 +87,7 @@ class IngestionService:
         try:
             if document_type in (DocumentType.PDF, DocumentType.SCANNED_PDF):
                 import fitz
+
                 doc = fitz.open(file_path)
                 count = doc.page_count
                 doc.close()
@@ -104,14 +107,24 @@ class IngestionService:
     def _count_docx_pages(self, file_path: Path) -> int:
         try:
             import subprocess
+
             _ = subprocess.run(
-                ["libreoffice", "--headless", "--convert-to", "pdf", "--outdir", "/tmp", str(file_path)],
+                [
+                    "libreoffice",
+                    "--headless",
+                    "--convert-to",
+                    "pdf",
+                    "--outdir",
+                    "/tmp",
+                    str(file_path),
+                ],
                 capture_output=True,
-                timeout=60
+                timeout=60,
             )
             pdf_path = Path("/tmp") / (file_path.stem + ".pdf")
             if pdf_path.exists():
                 import fitz
+
                 doc = fitz.open(pdf_path)
                 count = doc.page_count
                 doc.close()

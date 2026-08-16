@@ -1,4 +1,3 @@
-from typing import List
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -12,8 +11,8 @@ from app.domain.audit import AuditEvent, AuditEventType
 from app.domain.document import Document, ProcessingStatus
 from app.domain.packet import Packet
 from app.domain.redaction import RedactionApproval, RedactionCandidate, RedactionStatus
-from app.services.redaction import RedactionApplicationService, RedactionDetectionService
-from app.services.storage import base_pdf_source, redacted_pdf_path_for
+from app.services.superdocs_integration import SuperDocsIntegrationService, get_superdocs_service
+from app.services.superdocs_port import PIICategory
 from app.time import utc_now as _now
 
 router = APIRouter()
@@ -25,7 +24,11 @@ class RedactionApprovalRequest(BaseModel):
 
 
 class ApplyRedactionsRequest(BaseModel):
-    document_ids: List[UUID]
+    document_ids: list[UUID]
+
+
+class DetectRedactionsRequest(BaseModel):
+    categories: list[str] | None = None
 
 
 def _serialize_candidate(candidate: RedactionCandidate, document_name: str | None = None) -> dict:
@@ -50,11 +53,21 @@ def _serialize_candidate(candidate: RedactionCandidate, document_name: str | Non
         "approval": {
             "status": candidate.approval.status.value if candidate.approval else None,
             "approver": candidate.approval.approver if candidate.approval else None,
-            "approved_at": candidate.approval.approved_at.isoformat() if candidate.approval and candidate.approval.approved_at else None,
-            "applied_at": candidate.approval.applied_at.isoformat() if candidate.approval and candidate.approval.applied_at else None,
-            "verified_at": candidate.approval.verified_at.isoformat() if candidate.approval and candidate.approval.verified_at else None,
-            "verification_passed": candidate.approval.verification_passed if candidate.approval else None,
-        } if candidate.approval else None,
+            "approved_at": candidate.approval.approved_at.isoformat()
+            if candidate.approval and candidate.approval.approved_at
+            else None,
+            "applied_at": candidate.approval.applied_at.isoformat()
+            if candidate.approval and candidate.approval.applied_at
+            else None,
+            "verified_at": candidate.approval.verified_at.isoformat()
+            if candidate.approval and candidate.approval.verified_at
+            else None,
+            "verification_passed": candidate.approval.verification_passed
+            if candidate.approval
+            else None,
+        }
+        if candidate.approval
+        else None,
     }
     if document_name is not None:
         data["document_name"] = document_name
@@ -64,8 +77,10 @@ def _serialize_candidate(candidate: RedactionCandidate, document_name: str | Non
 @router.post("/{packet_id}/detect")
 async def detect_redactions(
     packet_id: UUID,
+    request: DetectRedactionsRequest,
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
+    superdocs: SuperDocsIntegrationService = Depends(get_superdocs_service),
 ):
     packet = await session.get(Packet, packet_id)
     if not packet:
@@ -79,10 +94,12 @@ async def detect_redactions(
     )
     documents = result.scalars().all()
 
-    detection_service = RedactionDetectionService()
+    categories = None
+    if request.categories:
+        categories = [PIICategory(c) for c in request.categories]
 
     for document in documents:
-        background_tasks.add_task(detect_document_redactions, detection_service, document.id)
+        background_tasks.add_task(detect_document_redactions, superdocs, document.id, categories)
 
     return {
         "message": f"Redaction detection started for {len(documents)} documents",
@@ -90,14 +107,21 @@ async def detect_redactions(
     }
 
 
-async def detect_document_redactions(detection_service: RedactionDetectionService, document_id: UUID):
+async def detect_document_redactions(
+    superdocs: SuperDocsIntegrationService,
+    document_id: UUID,
+    categories: list[PIICategory] | None = None,
+):
     async with async_session_maker() as bg_session:
         document = await bg_session.get(Document, document_id)
         if not document:
             return
 
-        candidates = await detection_service.create_redaction_candidates(bg_session, document)
-        created, skipped = await detection_service.reconcile_candidates(bg_session, document, candidates)
+        pii_result = await superdocs.detect_pii(bg_session, document, categories)
+        candidates = await superdocs.create_redaction_candidates(
+            bg_session, document, pii_result, categories
+        )
+        created, skipped = await superdocs.reconcile_candidates(bg_session, document, candidates)
         for candidate in created:
             bg_session.add(candidate)
 
@@ -137,7 +161,9 @@ async def get_redaction_candidates(packet_id: UUID, session: AsyncSession = Depe
 
 
 @router.get("/{packet_id}/{document_id}")
-async def get_document_redactions(packet_id: UUID, document_id: UUID, session: AsyncSession = Depends(get_session)):
+async def get_document_redactions(
+    packet_id: UUID, document_id: UUID, session: AsyncSession = Depends(get_session)
+):
     document = await session.get(Document, document_id)
     if not document or document.packet_id != packet_id:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -172,7 +198,9 @@ async def approve_redaction(
         raise HTTPException(status_code=404, detail="Redaction candidate not found")
 
     if candidate.status not in [RedactionStatus.PROPOSED, RedactionStatus.PENDING_APPROVAL]:
-        raise HTTPException(status_code=400, detail="Redaction is not in a state that can be approved")
+        raise HTTPException(
+            status_code=400, detail="Redaction is not in a state that can be approved"
+        )
 
     if request.status == RedactionStatus.APPROVED:
         candidate.status = RedactionStatus.APPROVED
@@ -194,7 +222,9 @@ async def approve_redaction(
     audit_event = AuditEvent(
         packet_id=candidate.document.packet_id if candidate.document else None,
         document_id=candidate.document_id,
-        event_type=AuditEventType.REDACTION_APPROVED if request.status == RedactionStatus.APPROVED else AuditEventType.REDACTION_REJECTED,
+        event_type=AuditEventType.REDACTION_APPROVED
+        if request.status == RedactionStatus.APPROVED
+        else AuditEventType.REDACTION_REJECTED,
         user_id=request.approver,
         event_metadata={"candidate_id": str(candidate.id)},
     )
@@ -219,6 +249,7 @@ async def reject_redaction(
 async def apply_redaction(
     redaction_id: UUID,
     session: AsyncSession = Depends(get_session),
+    superdocs: SuperDocsIntegrationService = Depends(get_superdocs_service),
 ):
     candidate = await session.get(
         RedactionCandidate,
@@ -237,71 +268,49 @@ async def apply_redaction(
     if candidate.status == RedactionStatus.APPLIED:
         raise HTTPException(status_code=400, detail="Redaction already applied")
 
-    base_path = base_pdf_source(candidate.document)
-    if base_path is None:
-        raise HTTPException(status_code=404, detail="No PDF representation available for document")
-
+    # Apply redaction via SuperDocs
     batch = await _appliable_candidates(session, candidate.document_id)
 
-    output_path = redacted_pdf_path_for(candidate.document)
-    application_service = RedactionApplicationService()
-
-    verification_results = application_service.apply_redactions(
-        input_path=base_path,
-        output_path=output_path,
-        candidates=batch,
-    )
-
-    target_result = verification_results.get(str(candidate.id))
-    if not target_result or not target_result.get("applied"):
-        error = target_result.get("error", "Unknown error") if target_result else "Candidate not processed"
+    result = await superdocs.apply_redactions(session, candidate.document, batch)
+    if not result or result.status != "completed":
+        error = result.error if result else "Unknown error"
         candidate.status = RedactionStatus.FAILED
-        session.add(AuditEvent(
-            packet_id=candidate.document.packet_id,
-            document_id=candidate.document_id,
-            event_type=AuditEventType.REDACTION_FAILED,
-            user_id=candidate.approval.approver if candidate.approval else "system",
-            event_metadata={"candidate_id": str(candidate.id), "error": error},
-        ))
+        session.add(
+            AuditEvent(
+                packet_id=candidate.document.packet_id,
+                document_id=candidate.document_id,
+                event_type=AuditEventType.REDACTION_FAILED,
+                user_id=candidate.approval.approver if candidate.approval else "system",
+                event_metadata={"candidate_id": str(candidate.id), "error": error},
+            )
+        )
         await session.commit()
         raise HTTPException(status_code=422, detail=f"Redaction apply failed: {error}")
 
-    candidate.status = RedactionStatus.APPLIED
-    if candidate.approval:
-        candidate.approval.applied_at = _now()
-        candidate.approval.applied_by = candidate.approval.approver
+    # Mark all candidates in batch as applied
+    for c in await _appliable_candidates(session, candidate.document_id):
+        c.status = RedactionStatus.APPLIED
+        if c.approval:
+            c.approval.applied_at = _now()
+            c.approval.applied_by = c.approval.approver
 
-    verification = application_service.verify_redactions(output_path, batch)
-    _record_verification(batch, verification)
-
-    verified = verification.get(str(candidate.id), {}).get("verified", False)
-    session.add(AuditEvent(
-        packet_id=candidate.document.packet_id,
-        document_id=candidate.document_id,
-        event_type=AuditEventType.REDACTION_APPLIED,
-        user_id=candidate.approval.approver if candidate.approval else "system",
-        event_metadata={
-            "candidate_id": str(candidate.id),
-            "verification": verification_results,
-        },
-    ))
-    if verified:
-        session.add(AuditEvent(
+    session.add(
+        AuditEvent(
             packet_id=candidate.document.packet_id,
             document_id=candidate.document_id,
-            event_type=AuditEventType.REDACTION_VERIFIED,
+            event_type=AuditEventType.REDACTION_APPLIED,
             user_id=candidate.approval.approver if candidate.approval else "system",
-            event_metadata={"candidate_id": str(candidate.id)},
-        ))
+            event_metadata={"candidate_id": str(candidate.id), "job_id": result.job_id},
+        )
+    )
 
     await session.commit()
 
     return {
         "message": "Redaction applied",
         "candidate_id": str(candidate.id),
-        "verification": verification_results,
-        "verified": verified,
-        "output_file": str(output_path),
+        "job_id": result.job_id,
+        "status": result.status,
     }
 
 
@@ -310,12 +319,11 @@ async def apply_all_approved_redactions(
     packet_id: UUID,
     request: ApplyRedactionsRequest,
     session: AsyncSession = Depends(get_session),
+    superdocs: SuperDocsIntegrationService = Depends(get_superdocs_service),
 ):
     packet = await session.get(Packet, packet_id)
     if not packet:
         raise HTTPException(status_code=404, detail="Packet not found")
-
-    application_service = RedactionApplicationService()
 
     results = []
 
@@ -328,81 +336,57 @@ async def apply_all_approved_redactions(
         if not batch:
             continue
 
-        base_path = base_pdf_source(document)
-        if base_path is None:
-            results.append({
-                "document_id": str(document_id),
-                "error": "No PDF representation available for document",
-            })
-            continue
-
-        output_path = redacted_pdf_path_for(document)
-
-        verification_results = application_service.apply_redactions(
-            input_path=base_path,
-            output_path=output_path,
-            candidates=batch,
-        )
+        result = await superdocs.apply_redactions(session, document, batch)
 
         failed = []
         for candidate in batch:
-            result = verification_results.get(str(candidate.id))
-            if not result or not result.get("applied"):
+            if result.status != "completed":
                 candidate.status = RedactionStatus.FAILED
-                failed.append({
-                    "candidate_id": str(candidate.id),
-                    "error": result.get("error", "Unknown error") if result else "Candidate not processed",
-                })
+                failed.append(
+                    {
+                        "candidate_id": str(candidate.id),
+                        "error": result.error if result else "Unknown error",
+                    }
+                )
             else:
                 candidate.status = RedactionStatus.APPLIED
                 if candidate.approval:
                     candidate.approval.applied_at = _now()
                     candidate.approval.applied_by = candidate.approval.approver
 
-        verification = application_service.verify_redactions(output_path, batch)
-        _record_verification(batch, verification)
-
         for candidate in batch:
             if candidate.status == RedactionStatus.APPLIED:
-                session.add(AuditEvent(
-                    packet_id=packet_id,
-                    document_id=document_id,
-                    event_type=AuditEventType.REDACTION_APPLIED,
-                    user_id=candidate.approval.approver if candidate.approval else "system",
-                    event_metadata={"candidate_id": str(candidate.id), "verification": verification_results.get(str(candidate.id))},
-                ))
-                if verification.get(str(candidate.id), {}).get("verified"):
-                    session.add(AuditEvent(
+                session.add(
+                    AuditEvent(
                         packet_id=packet_id,
                         document_id=document_id,
-                        event_type=AuditEventType.REDACTION_VERIFIED,
+                        event_type=AuditEventType.REDACTION_APPLIED,
                         user_id=candidate.approval.approver if candidate.approval else "system",
-                        event_metadata={"candidate_id": str(candidate.id)},
-                    ))
-            else:
-                session.add(AuditEvent(
-                    packet_id=packet_id,
-                    document_id=document_id,
-                    event_type=AuditEventType.REDACTION_FAILED,
-                    user_id=candidate.approval.approver if candidate.approval else "system",
-                    event_metadata={"candidate_id": str(candidate.id), "error": "Redaction apply failed"},
-                ))
+                        event_metadata={"candidate_id": str(candidate.id), "job_id": result.job_id},
+                    )
+                )
 
-        results.append({
-            "document_id": str(document_id),
-            "candidates_applied": len([c for c in batch if c.status == RedactionStatus.APPLIED]),
-            "candidates_failed": len(failed),
-            "failures": failed,
-            "verification": verification,
-            "output_file": str(output_path),
-        })
+        results.append(
+            {
+                "document_id": str(document_id),
+                "candidates_applied": len(
+                    [c for c in batch if c.status == RedactionStatus.APPLIED]
+                ),
+                "candidates_failed": len(failed),
+                "failures": failed,
+                "job_id": result.job_id,
+                "status": result.status,
+            }
+        )
 
     await session.commit()
 
     return {"results": results}
 
 
-async def _appliable_candidates(session: AsyncSession, document_id: UUID) -> List[RedactionCandidate]:
+async def _appliable_candidates(
+    session: AsyncSession, document_id: UUID
+) -> list[RedactionCandidate]:
     result = await session.execute(
         select(RedactionCandidate)
         .where(
@@ -412,13 +396,3 @@ async def _appliable_candidates(session: AsyncSession, document_id: UUID) -> Lis
         .options(selectinload(RedactionCandidate.approval))
     )
     return list(result.scalars().all())
-
-
-def _record_verification(batch: List[RedactionCandidate], verification: dict) -> None:
-    for candidate in batch:
-        if not candidate.approval:
-            continue
-        result = verification.get(str(candidate.id), {})
-        candidate.approval.verification_passed = result.get("verified")
-        candidate.approval.verified_at = _now()
-        candidate.approval.verified_by = candidate.approval.approver
