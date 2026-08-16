@@ -19,7 +19,7 @@ from app.domain import (  # noqa: F401,E402
 )
 
 
-TEST_DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/bates_packet_test"
+TEST_DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/bates_packet"
 
 
 @pytest.fixture(scope="session")
