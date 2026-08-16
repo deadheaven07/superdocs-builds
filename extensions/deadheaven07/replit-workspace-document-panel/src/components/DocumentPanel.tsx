@@ -32,7 +32,8 @@ export function DocumentPanel() {
   const [fileLoading, setFileLoading] = useState(false);
 
   const [superDocsState, superDocsActions] = useSuperDocs(apiKey);
-  const { captureHashes, updateCurrentHashes, getChanges } = useFileHashes();
+  const { captureHashes, updateCurrentHashes, getChanges, getBaselineHashes } = useFileHashes();
+  const [regenerateNotice, setRegenerateNotice] = useState<string | null>(null);
   
   // Persist SuperDocs state changes
   useEffect(() => {
@@ -85,6 +86,7 @@ export function DocumentPanel() {
     const files = new Map<string, string>();
     const pathsToRead = Array.from(lastContext.files.keys());
 
+    setRegenerateNotice(null);
     setFileLoading(true);
     try {
       for (const path of pathsToRead) {
@@ -97,15 +99,23 @@ export function DocumentPanel() {
 
     if (files.size === 0) return;
 
-    const context = createGenerationContext(lastContext.documentType as 'readme' | 'spec' | 'user-guide', lastContext.originalInstruction, files);
-    const superDocsInstruction = buildSuperDocsInstruction(context);
+    const result = await superDocsActions.regenerateFromSource(
+      lastContext.originalInstruction,
+      lastContext.documentType,
+      getBaselineHashes(),
+      files,
+      superDocsState.sessionId
+    );
 
     setLastContext({ ...lastContext, files });
-    await captureHashes(files);
 
-    await superDocsActions.generateDocument(superDocsInstruction, lastContext.documentType, superDocsState.sessionId);
-    setActiveTab('review');
-  }, [lastContext, readFile, captureHashes, superDocsActions, superDocsState.sessionId]);
+    if (result.hasChanges) {
+      await captureHashes(files);
+      setActiveTab('review');
+    } else {
+      setRegenerateNotice('No source changes detected - the document is already up to date.');
+    }
+  }, [lastContext, readFile, superDocsActions, getBaselineHashes, superDocsState.sessionId, captureHashes]);
 
   const handleApprove = useCallback(async (approved: boolean, changes: { change_id: string; operation: string; chunk_id?: string; old_html?: string; new_html?: string; ai_explanation: string; insert_after_chunk_id?: string; document_id?: string }[]) => {
     await superDocsActions.approveChanges(approved, changes);
@@ -360,11 +370,20 @@ export function DocumentPanel() {
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
-              Regenerate Document
+              Regenerate from Source
             </button>
-            <p className="text-xs text-gray-500 text-center">
-              Re-reads selected files and regenerates the document from scratch using the same SuperDocs session.
-            </p>
+            {regenerateNotice ? (
+              <div className="flex items-center justify-center gap-2 px-4 py-2 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700" role="status">
+                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                {regenerateNotice}
+              </div>
+            ) : (
+              <p className="text-xs text-gray-500 text-center">
+                Compares current file hashes against the last snapshot and requests granular updates only for changed files, through the same SuperDocs session.
+              </p>
+            )}
           </div>
         )}
       </div>

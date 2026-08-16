@@ -1,270 +1,181 @@
 # SuperDocs API - Bugs, Quirks & Integration Notes
 
-Documenting real-world API behavior discovered during development of the Replit Workspace Document Panel extension.
+Real-world technical hurdles discovered while building the **Replit Workspace Document Panel** extension. Each entry follows the same structure:
+
+- **Symptom** - what you observe
+- **Exact Reproduction Steps** - how to trigger it
+- **Expected vs. Actual Behavior** - what should happen vs. what the API/engine does
+- **Implemented Workaround** - what the extension actually does about it
 
 ---
 
 ## 1. Double-JSON Encoding in `pending_changes`
 
-**Behavior:** The `pending_changes` field in `JobStatus.metadata` is a **double-JSON-encoded string**.
+**Symptom:** `jobStatus.metadata.pending_changes` is a string containing a JSON-encoded object whose `content` field is *itself* a JSON-encoded string. A single `JSON.parse()` yields a string, not an object, and `metadata.pending_changes.changes` is `undefined` at runtime (TypeScript happily compiles because `metadata` is `Record<string, unknown>`).
 
-```json
-{
-  "metadata": {
-    "pending_changes": "{\"batch_id\":\"...\",\"changes\":[{\"change_id\":\"...\"}]}"
-  }
-}
-```
+**Exact Reproduction Steps:**
+1. Call `chatAsync` with `approval_mode: 'ask_every_time'`.
+2. Poll `/v1/jobs/{job_id}` until `status === 'awaiting_approval'`.
+3. Read `jobStatus.metadata.pending_changes`.
+4. Attempt `JSON.parse(pending_changes).changes`.
 
-**Required parsing:** Two-pass JSON decode:
-```typescript
-const outer = JSON.parse(response.metadata.pending_changes);
-const inner = JSON.parse(outer.content); // <-- second parse needed
-```
+**Expected vs. Actual Behavior:**
+- Expected: `pending_changes` is a plain JSON object with a `changes` array.
+- Actual: `pending_changes` is a string like `"{\"batch_id\":\"...\",\"content\":\"{\\\"changes\\\":[...]}\"}"` - the payload is encoded twice.
 
-**Why it matters:** Single `JSON.parse()` returns a string, not an object. The parser in `src/utils/parser.ts` handles both string and object inner content.
+**Implemented Workaround:** `src/utils/parser.ts` (`parseProposedChangeBatch`) performs a two-pass decode: parse the outer JSON, then parse `outer.content` if it is a string (or use it directly if the API one day returns an already-parsed object). Both string and object inner content are handled, and every field is coerced defensively (`String(...)`, `Number(...)`) because the inner shape is untyped.
 
 ---
 
-## 2. `chatAsync` Payload Requirements
+## 2. Large Context Payload Latency Spikes
 
-**Required fields:**
-```typescript
-{
-  message: string;           // The instruction/prompt
-  session_id: string;        // Must reuse existing session for continuity
-  approval_mode: 'ask_every_time' | 'auto_approve' | 'never';
-  model_tier: 'core' | 'premium';
-}
-```
+**Symptom:** Generation jobs take 60s+ (or time out) when selected files exceed a few hundred KB; polling runs for the full 10-minute `MAX_POLLS` window with no result.
 
-**Critical:** Omitting `approval_mode` defaults to `never`, which returns completed document without review. Always use `'ask_every_time'` for review workflow.
+**Exact Reproduction Steps:**
+1. Select a large file set (e.g., a `node_modules`-lite repo with several 100KB+ source files).
+2. Generate a document with the full project context in the instruction.
+3. Watch `pollJob` latencies climb from 1-5s to 10s+.
 
----
+**Expected vs. Actual Behavior:**
+- Expected: generation time scales gracefully with project size.
+- Actual: instruction size is proportional to total context; large instructions measurably increase per-poll latency and total job time, and can push past the job timeout.
 
-## 3. Session Continuity
-
-**Behavior:** `session_id` must be reused across:
-- Initial document upload (`uploadDocument`)
-- All subsequent `chatAsync` calls (regenerations, revisions)
-- `approveChanges` and `continueJob` calls
-- `exportDocument`
-
-**Implementation:** Store `session_id` from initial `uploadDocument` response and persist in `.superdocs-state.json`.
-
-**Gotcha:** Creating a new session for each regeneration loses document history and context.
+**Implemented Workaround:** `buildProjectContext` in `src/services/replit.ts` enforces a **500KB total context cap**. Files that would exceed the limit are skipped and listed in a warning block prepended to the instruction (`[WARNING: N file(s) skipped due to context size limit...]`) so the model knows coverage is partial. Regeneration (see entry 5) further reduces payloads by sending **only changed files** instead of the full project.
 
 ---
 
-## 4. `pending_changes` Field Variability
+## 3. AbortController Threading Edge Cases
 
-**Field location:** `jobStatus.metadata.pending_changes`
+**Symptom:** Cancelling one operation can (a) leave the retry backoff timer running, (b) fail to abort the in-flight `fetch`, or (c) let a *previous* operation's completion callback clobber state set by a newer operation.
 
-**Type variability:**
-- Sometimes `string` (double-JSON)
-- Sometimes `object` (already parsed)
-- Sometimes `undefined` (when `status !== 'awaiting_approval'`)
+**Exact Reproduction Steps:**
+1. Start a generation, then click **Cancel** while `waitForJob` is sleeping between polls.
+2. Start generation A, immediately cancel, then start generation B.
+3. Start generation during a transient network failure (retry backoff active), then cancel.
 
-**Safe access pattern:**
-```typescript
-const pending = jobStatus.metadata?.pending_changes;
-if (pending) {
-  const content = typeof pending === 'string' ? pending : JSON.stringify(pending);
-  const batch = parseProposedChangeBatch(content);
-}
-```
+**Expected vs. Actual Behavior:**
+- Expected: cancel aborts everything synchronously and no stale callbacks fire.
+- Actual: `setTimeout`/`setInterval` sleeps are not cancelled by `AbortSignal` alone; a shared module-level `abortControllerRef` means an older operation's response can overwrite the newer operation's state if the old signal wasn't checked at every await boundary.
 
----
-
-## 4. `approveChanges` Requires Full Change Objects
-
-**Payload:**
-```typescript
-{
-  session_id: string;
-  job_id: string;
-  approved: boolean;
-  changes: ProposedChange[]; // Must include ALL changes from the batch
-}
-```
-
-**Important:** You must send back the **full original `ProposedChange` objects** from the batch. Cannot send just IDs. The API validates the full object structure.
+**Implemented Workaround:**
+- `withRetry` and `waitForJob` register an `abort` listener that clears the sleep timer and rejects with a named `AbortError`.
+- The hook checks `signal.aborted` **after every single await** (`upload`, `chatAsync`, `waitForJob`, poll progress) before mutating state.
+- `AbortError` is caught and suppressed at the top of every action - it never surfaces as a user-facing failure.
+- Each action creates its own `AbortController` and stores it in `abortControllerRef`; `cancel()` aborts the current one.
 
 ---
 
-## 5. `continueJob` Payload
+## 4. Dual-Layer State Merge Race (localStorage vs `.superdocs-state.json`)
 
-**Payload:**
-```typescript
-{
-  job_id: string;
-  continue: boolean;
-}
-```
+**Symptom:** After a browser refresh, the panel restores an *older* session (wrong `sessionId`/`documentId`), or loses file-selection state even though the workspace state file exists.
 
-**Behavior:**
-- `continue: true` → SuperDocs continues generation (may return more changes)
-- `continue: false` → Stops job, marks as completed
+**Exact Reproduction Steps:**
+1. Generate a document (state saved to both layers).
+2. Open a second tab on the same Repl; generate again (both layers update).
+3. Close the second tab, refresh the first.
+4. Alternatively: clear browser data (localStorage gone) but keep the workspace file.
 
-**Session requirement:** Must pass `sessionId` in URL path: `/v1/chat/${sessionId}/continue`
+**Expected vs. Actual Behavior:**
+- Expected: the newest state always wins.
+- Actual: the two stores are written by different code paths (synchronous `localStorage` vs async workspace `writeFile`), so `lastUpdated` timestamps can disagree by milliseconds; with one layer missing, either layer could be stale. Corrupt/partial JSON in one layer previously crashed the whole load.
 
----
-
-## 6. Export Flow
-
-**Two-step process:**
-1. `exportDocument({ session_id, format })` → returns `{ download_url, format, expires_at }`
-2. `downloadExport(downloadUrl)` → returns `Blob`
-
-**Auth:** Download requires `Authorization: Bearer <apiKey>` header on the download URL.
-
-**Expiration:** Download URLs expire (typically 1 hour). Download immediately after generation.
+**Implemented Workaround:**
+- `mergePersistedStates` (pure function in `src/hooks/useStatePersistence.ts`) picks the layer with the **higher `lastUpdated`** when both exist, falls back to whichever layer exists, and otherwise returns the default empty state.
+- Both loaders wrap `JSON.parse` in try/catch and validate with `isValidState`; corrupt payloads degrade to `null` instead of throwing.
+- Covered by `tests/persistence.test.ts` simulating browser refresh, container re-entry (localStorage lost), browser data cleared, and corrupt-payload scenarios.
 
 ---
 
-## 6. Retry Policy Edge Cases
+## 5. Regeneration Must Be a Review Loop, Not a Full Rebuild
 
-**Operations that retry (safe/read):**
-- `initSession` (idempotent-ish)
-- `pollJob` / `waitForJob` (read-only)
-- `downloadExport` (safe)
+**Symptom:** "Regenerate" re-sends the *entire* project context with the full generated prompt; SuperDocs then proposes edits across the whole document, touching sections whose source never changed, and revision prompts grow exponentially across iterations.
 
-**Operations that DO NOT retry (mutations):**
-- `uploadDocument` (creates document)
-- `chatAsync` (starts job)
-- `approveChanges` (modifies document)
-- `continueJob` (modifies job state)
-- `exportDocument` (generates export)
+**Exact Reproduction Steps:**
+1. Generate a README, approve all changes.
+2. Edit one source file.
+3. Click "Regenerate Document".
+4. Inspect the new `ProposedChangeBatch`: changes appear in sections unrelated to the edited file, and the instruction embeds the previous generated prompt.
 
-**Reason:** Retrying mutations can create duplicate documents, jobs, or exports.
+**Expected vs. Actual Behavior:**
+- Expected: only drifted sections are re-proposed; previously approved sections are untouched.
+- Actual: full-context regeneration re-reviews everything and accumulates prior revision text inside the next instruction (instruction bloat).
 
----
-
-## 7. `approval_mode` Values
-
-| Value | Behavior |
-|-------|----------|
-| `ask_every_time` | Returns `awaiting_approval` with `ProposedChangeBatch` after each generation |
-| `auto_approve` | Auto-applies changes, returns `completed` |
-| `never` | Returns `completed` without changes |
-
-**Recommendation:** Always use `ask_every_time` for human-in-the-loop workflows.
+**Implemented Workaround:** `src/services/revision.ts` implements a **hash-diff review loop**:
+1. `computeSourceDiff` compares persisted baseline hashes (`.superdocs-state.json` → `fileHashes`) against current file contents and returns only `changed`/`added`/`removed` files (paths sorted for determinism).
+2. `buildRevisionMessage` sends the **stable original user instruction** + a list of changed files + the **full current content of changed files only**. Unchanged files are never serialized, so the model cannot propose edits on them.
+3. `planRegeneration` short-circuits when hashes are identical: **no chat job is created**, the proposed-changes array is provably empty (zero drift), and approved sections are preserved by construction.
+4. When drift exists, the message goes through `chatAsync` with `approval_mode: 'ask_every_time'`, returning granular `ProposedChange` ops (insert/replace/delete) straight into the Review tab.
+5. Baseline hashes are updated only after a successful export, so the next diff is measured against the last *delivered* state.
 
 ---
 
-## 7. Job Status Values
+## 6. `approval_mode` Default Is `'never'` (Silent No-Review)
 
-| Status | Meaning |
-|--------|---------|
-| `processing` | Job is running |
-| `awaiting_approval` | Changes ready for review (check `metadata.pending_changes`) |
-| `completed` | Job finished successfully |
-| `failed` | Job failed (check `error` field) |
+**Symptom:** A `chatAsync` call returns `status: 'completed'` with no `ProposedChangeBatch`, bypassing the human-in-the-loop review entirely - even though the code "always" passes `ask_every_time`.
 
-**Polling:** Use `waitForJob` with 3s interval, max 200 polls (10 min timeout).
+**Exact Reproduction Steps:**
+1. Call `POST /v1/chat/async` with `{ message, session_id }` only.
+2. Poll the job.
 
----
+**Expected vs. Actual Behavior:**
+- Expected: some default that matches the documented review workflow (or a validation error).
+- Actual: omitting `approval_mode` defaults to `never` - the document is modified with zero user visibility.
 
-## 8. Error Response Format
-
-**Non-2xx responses:**
-```json
-{
-  "error": "Human readable message",
-  "code": "ERROR_CODE"
-}
-```
-
-**Common codes:**
-- `401` - Invalid/expired API key
-- `403` - API key lacks permission
-- `404` - Session/document/job not found
-- `500` - Internal server error (retryable)
-- `503` - Service unavailable (retryable)
+**Implemented Workaround:** Every `chatAsync` call in `useSuperDocs.ts` (`generateDocument`, `regenerateFromSource`) explicitly passes `approval_mode: 'ask_every_time'`; the Review tab is the only path forward to export. Documented in `README.md` under core capabilities.
 
 ---
 
-## 8. CORS & Browser Constraints
+## 7. `approveChanges` Requires Full Change Objects, Not IDs
 
-**Requirement:** `api.superdocs.app` must allow requests from `*.replit.dev` origins.
+**Symptom:** Sending `{ approved: true, changes: ['change_id_1'] }` (or a stripped subset) results in a 4xx validation error, or silently applies only some changes.
 
-**Current status:** Works in Replit browser environment. Local development may need proxy or CORS configuration.
+**Exact Reproduction Steps:**
+1. Receive a batch of proposed changes.
+2. Approve with only the `change_id` values in the `changes` array.
 
----
+**Expected vs. Actual Behavior:**
+- Expected: IDs would be sufficient for an approval API.
+- Actual: the API validates the full `ProposedChange` object structure (`operation`, `chunk_id`, `old_html`/`new_html`, `ai_explanation`, `insert_after_chunk_id`, `document_id`).
 
-## 9. File Size Limits
-
-**Replit workspace API:**
-- Read limit: ~5MB per file
-- Write limit: ~2MB per file
-
-**SuperDocs API:**
-- Document upload: base64 encoded, practical limit ~10MB
-- Large documents may timeout during generation
+**Implemented Workaround:** `ReviewTab` passes the exact parsed objects from the batch to `approveChanges` (no reconstruction); `tests/superdocs.test.ts` locks in the full-object payload shape.
 
 ---
 
-## 9. API Latency Observations
+## 8. Session Continuity Is Mandatory Across Operations
 
-| Operation | Typical Latency | Notes |
-|-----------|----------------|-------|
-| `initSession` | 200-500ms | Fast |
-| `uploadDocument` | 500ms-2s | Depends on document size |
-| `chatAsync` | <100ms | Returns job_id immediately |
-| `pollJob` (first) | 1-5s | First poll often returns quickly |
-| `pollJob` (subsequent) | 2-10s | Generation takes time |
-| `approveChanges` | 2-8s | Applies changes to document |
-| `exportDocument` | 3-10s | PDF/DOCX generation |
-| `downloadExport` | 1-3s | Binary download |
+**Symptom:** Regeneration or edits produce documents with no memory of prior conversation; approvals 404 with "session not found".
 
-**Note:** Generation time scales with document complexity. Long-running jobs (>60s) may need UI timeout handling.
+**Exact Reproduction Steps:**
+1. Generate a document (session A).
+2. Call `chatAsync` without reusing `session_id` (or with a fresh `initSession`).
+3. Call `/v1/chat/{session_id}/approve` with a session the job was not created on.
 
----
+**Expected vs. Actual Behavior:**
+- Expected: sessions are optional/auto-created.
+- Actual: a new session loses document history and context; `approveChanges`/`continueJob` require the *original* session in the URL path.
 
-## 10. TypeScript Type Quirks
-
-**`JobStatus.metadata`** is typed as `Record<string, unknown>` but contains structured data. Cast or use type guards:
-
-```typescript
-interface JobMetadata {
-  pending_changes?: string | ProposedChangeBatch;
-  continue_prompt?: Record<string, unknown>;
-}
-
-const metadata = jobStatus.metadata as JobMetadata;
-```
+**Implemented Workaround:** The `session_id` from `uploadDocument` is threaded through every subsequent call and persisted to both state layers (`sessionId` in `.superdocs-state.json` + localStorage), so refreshes and container re-entries restore the same session.
 
 ---
 
-## 11. Testing Notes
+## 9. Retrying Mutations Creates Duplicate Side Effects
 
-**Mocking fetch:** Tests mock `global.fetch` with vi.fn(). Remember to:
-- Clear mocks in `beforeEach`
-- Mock both success and error responses
-- Test retry logic with network errors
-- Test mutation non-retry behavior
+**Symptom:** After a transient network error, a naive `fetch` retry wrapper produces duplicate documents/jobs/exports (multiple uploads of the same file, doubled export artifacts).
 
-**Key test scenarios:**
-- Double-JSON parsing (string vs object inner content)
-- Retry exhaustion (max retries respected)
-- Non-retriable errors (401/403 not retried)
-- 503 retries
-- Mutation non-retry (upload, chatAsync, approve, continue, export)
+**Exact Reproduction Steps:**
+1. Wrap `uploadDocument`/`exportDocument` in a blanket retry-on-network-error helper.
+2. Induce a network failure at the exact moment of the POST.
+3. Retry.
 
----
+**Expected vs. Actual Behavior:**
+- Expected: idempotent behavior under retry.
+- Actual: `uploadDocument`, `chatAsync`, `approveChanges`, `continueJob`, and `exportDocument` are non-idempotent - each retry creates a new document, job, approval, or export.
 
-## 12. Known Limitations / Future Improvements
-
-1. **No WebSocket/Server-Sent Events** - Must poll for job status
-2. **No Partial Approve** - Must approve/reject entire batch
-3. **No Chunk-Level Diff API** - Changes returned as HTML snippets
-4. **No Document Version History API** - Must manage locally
-5. **Session Expiry** - Sessions may expire after inactivity (TTL unknown)
-6. **No Batch Operations** - Each operation is a separate HTTP request
+**Implemented Workaround:** The client (`src/services/superdocs.ts`) only auto-retries safe/read operations (`initSession`, `pollJob`, `waitForJob`) with exponential backoff (1s → 2s → 4s, max 3). Mutations are never retried; failures surface in the error banner with explicit Retry/Dismiss user actions. Enforced by `tests/revision.test.ts` (retry suite).
 
 ---
 
-## 13. Quick Reference: REST Endpoints
+## Quick Reference: REST Endpoints
 
 | Operation | Endpoint | Method |
 |-----------|----------|--------|
@@ -277,6 +188,4 @@ const metadata = jobStatus.metadata as JobMetadata;
 | Export Document | `/v1/documents/export` | POST |
 | Download Export | `{download_url}` | GET |
 
----
-
-*Last updated: 2024 - Based on SuperDocs API integration for Replit Workspace Document Panel*
+*Last updated: 2026 - Based on SuperDocs API integration for Replit Workspace Document Panel*

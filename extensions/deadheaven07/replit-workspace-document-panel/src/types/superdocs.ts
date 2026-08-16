@@ -8,12 +8,6 @@ export interface DocumentUploadResult {
   focused_document_id?: string;
 }
 
-export interface AttachmentUploadResult {
-  job_id: string;
-  filename: string;
-  status: string;
-}
-
 export interface JobStatus {
   job_id: string;
   status: string;
@@ -74,18 +68,9 @@ export interface ExportDocumentRequest {
   options?: Record<string, unknown>;
 }
 
-export type JobStatusValue = 'processing' | 'awaiting_approval' | 'completed' | 'failed';
-
 export interface SuperDocsConfig {
   baseUrl: string;
   apiKey: string;
-}
-
-export interface UploadDocumentRequest {
-  filename: string;
-  file_base64: string;
-  session_id?: string;
-  return_html?: boolean;
 }
 
 export interface SessionInitRequest {

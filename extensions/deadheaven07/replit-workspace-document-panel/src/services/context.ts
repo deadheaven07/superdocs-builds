@@ -75,33 +75,3 @@ ${context.projectContext}
 
 Please generate a ${context.documentType === 'readme' ? 'README.md' : context.documentType === 'spec' ? 'SPEC.md' : 'USER_GUIDE.md'} based on the above project context and instruction.`;
 }
-
-export function buildRevisionInstruction(
-  context: GenerationContext,
-  changedFiles: string[],
-  previousInstruction?: string
-): string {
-  const baseInstruction = previousInstruction || context.instruction;
-  
-  return `${baseInstruction}
-
----
-
-## Code Changes Detected
-
-The following files have been modified since the last document generation:
-${changedFiles.map(f => `- \`${f}\``).join('\n')}
-
-Please update the ${context.documentType} to reflect these changes. Focus on:
-- Updated API endpoints, function signatures, or interfaces
-- New features or configuration options
-- Removed or deprecated functionality
-- Changes to installation, usage, or configuration steps
-
----
-
-## Project Context (Updated)
-
-${context.projectContext}
-`;
-}

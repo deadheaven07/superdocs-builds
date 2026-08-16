@@ -115,25 +115,38 @@ User Action (DraftTab)
 └──────────────────────────────────────────────────────────────┘
 ```
 
-### 2. Regeneration Flow
+### 2. Regeneration Flow (Hash-Diff Review Loop)
+
+The extension deliberately implements a **thin client** whose whole lifecycle is
+**Generate → Review → Approve → Export → Regenerate from Source**. There is no
+mini-CMS, no background watcher, and no file-diff engine in the UI: regeneration
+is a hash comparison followed by a targeted chat job.
 
 ```
-User clicks "Regenerate Document"
+User clicks "Regenerate from Source"
          │
          ▼
-Re-read all originally selected files from workspace
+Re-read originally selected files from workspace
          │
          ▼
-Rebuild context with CURRENT file contents
+computeSourceDiff(baseline hashes from .superdocs-state.json, current files)
+         │
+         ├── no changes ─────────────────────────────► short-circuit:
+         │                                               • no chat job created
+         │                                               • proposed changes = [] (zero drift)
+         │                                               • approved sections preserved
+         │
+         ▼ (changes exist)
+buildRevisionMessage(original instruction + ONLY changed/added/removed files)
          │
          ▼
-Call generateDocument(same instruction, same session_id)
+chatAsync(message, same session_id, approval_mode='ask_every_time')
          │
          ▼
-SuperDocs returns new ProposedChangeBatch
+SuperDocs returns granular ProposedChange[] (insert/replace/delete) → ReviewTab
          │
          ▼
-User reviews → approves → exports → baseline updated
+User approves/rejects → exports → baseline hashes updated (captureHashes)
 ```
 
 ---
@@ -170,8 +183,8 @@ User reviews → approves → exports → baseline updated
 ### File Hash Baseline (SHA-256)
 
 ```typescript
-// Per-file hash
-const hash = await crypto.subtle.digest('SHA-256', encoder.encode(content))
+// Per-file hash (native crypto.subtle, or pure-JS fallback in non-secure contexts)
+const hash = await sha256(content)
 
 // Change detection
 function detectChangedFiles(prev, curr): ChangeSet {
@@ -263,27 +276,29 @@ Propagation: `DocumentPanel.cancel() → useSuperDocs.cancel() → fetch.abort()
 
 ## Testing Strategy
 
-### Test Coverage (61 tests)
+### Test Coverage (84 tests)
 
 | File | Tests | Focus |
 |------|-------|-------|
-| `superdocs.test.ts` | 10 | Client CRUD, errors |
+| `superdocs.test.ts` | 21 | Client CRUD, errors, **zero-drift fidelity** |
 | `parser.test.ts` | 7 | Double-JSON decoding |
-| `hash.test.ts` | 13 | SHA-256, change detection |
-| `context.test.ts` | 9 | Context building, warnings |
+| `hash.test.ts` | 17 | SHA-256 (+ NIST vectors for fallback), change detection |
+| `context.test.ts` | 6 | Context building, warnings |
 | `replit.test.ts` | 2 | Directory traversal |
-| `revision.test.ts` | 20 | **Regression suite** |
+| `revision.test.ts` | 26 | Diff computation, thin revision messages, retry |
+| `persistence.test.ts` | 7 | Dual-layer merge (refresh / container re-entry) |
 
 ### Critical Regressions Covered
 
 | Bug | Test |
 |-----|------|
-| Instruction accumulation | Stable original instruction used |
-| Empty project context | Regeneration uses CURRENT files |
+| Instruction accumulation | Operative change summary is diff-derived |
+| Zero drift | Identical hashes → 0 proposed changes, no chat job |
 | Session reuse | Same `session_id` across revisions |
 | Retry exhaustion | Max 3 retries respected |
 | Non-retriable errors | 401/403 not retried |
 | Mutation non-retry | Upload/chat/approve called once |
+| State merge races | Refresh + container re-entry simulations |
 
 ### Mock Strategy
 
@@ -310,6 +325,8 @@ src/
 │   ├── DraftTab.tsx         # Generation UI
 │   ├── ReviewTab.tsx        # Changes review
 │   ├── ExportTab.tsx        # PDF/DOCX export
+│   ├── HistoryTab.tsx       # Document version history
+│   ├── TemplateGallery.tsx  # Template / prompt library
 │   └── StatusBadge.tsx      # Progress stepper
 ├── hooks/
 │   ├── useSuperDocs.ts      # Core state machine
@@ -319,7 +336,8 @@ src/
 ├── services/
 │   ├── superdocs.ts         # REST client + retry
 │   ├── replit.ts            # Workspace API
-│   └── context.ts           # Context builder
+│   ├── context.ts           # Initial-generation context builder
+│   └── revision.ts          # Diff computation + thin revision messages
 ├── types/
 │   └── superdocs.ts         # API contracts
 ├── utils/

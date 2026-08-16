@@ -66,6 +66,24 @@ function loadFromLocalStorage(): PersistedState | null {
   }
 }
 
+/**
+ * Pure merge decision for the dual-layer persistence (localStorage +
+ * `.superdocs-state.json`). The most recently updated layer wins; when only
+ * one layer exists it is used as-is; when both are missing the fallback
+ * (default) state is returned. Extracted as a pure function so browser
+ * refresh and container re-entry behavior can be verified offline in tests.
+ */
+export function mergePersistedStates(
+  workspace: PersistedState | null,
+  local: PersistedState | null,
+  fallback: PersistedState = DEFAULT_STATE
+): PersistedState {
+  if (workspace && local) {
+    return workspace.lastUpdated >= local.lastUpdated ? workspace : local;
+  }
+  return workspace ?? local ?? fallback;
+}
+
 async function saveToWorkspace(state: PersistedState): Promise<void> {
   try {
     const content = JSON.stringify(state, null, 2);
@@ -106,15 +124,7 @@ export function useStatePersistence(): readonly [
       const workspaceState = await loadFromWorkspace();
       const localState = loadFromLocalStorage();
 
-      let mergedState = DEFAULT_STATE;
-
-      if (workspaceState && localState) {
-        mergedState = workspaceState.lastUpdated >= localState.lastUpdated ? workspaceState : localState;
-      } else if (workspaceState) {
-        mergedState = workspaceState;
-      } else if (localState) {
-        mergedState = localState;
-      }
+      const mergedState = mergePersistedStates(workspaceState, localState);
 
       if (mounted) {
         setState(mergedState);
@@ -168,64 +178,10 @@ export function useStatePersistence(): readonly [
   return [state, updateState, clearState, helpers] as const;
 }
 
-export function usePersistedSession() {
-  const [state, , , helpers] = useStatePersistence();
-  return {
-    sessionId: state.sessionId,
-    documentId: state.documentId,
-    documentType: state.documentType,
-    setSession: helpers.updateSession,
-  };
-}
-
-export function usePersistedJobState() {
-  const [state, , , helpers] = useStatePersistence();
-  return {
-    jobId: state.jobId,
-    jobStatus: state.jobStatus,
-    proposedChanges: state.proposedChanges,
-    setJobState: helpers.updateJobState,
-  };
-}
-
-export function usePersistedExportState() {
-  const [state, , , helpers] = useStatePersistence();
-  return {
-    exportResult: state.exportResult,
-    setExportState: helpers.updateExportState,
-  };
-}
-
-export function usePersistedCodeDelta() {
-  const [state, , , helpers] = useStatePersistence();
-  return {
-    codeDeltaHash: state.codeDeltaHash,
-    lastDeltaComputed: state.lastDeltaComputed,
-    setCodeDelta: helpers.updateCodeDelta,
-  };
-}
-
-export function usePersistedFileSelection() {
-  const [state, , , helpers] = useStatePersistence();
-  return {
-    selectedPaths: state.selectedPaths,
-    setSelectedPaths: helpers.updateFileSelection,
-  };
-}
-
 export function usePersistedFileHashes() {
   const [state, , , helpers] = useStatePersistence();
   return {
     fileHashes: state.fileHashes,
     setFileHashes: helpers.updateFileHashes,
-  };
-}
-
-export function usePersistedInstruction() {
-  const [state, , , helpers] = useStatePersistence();
-  return {
-    originalInstruction: state.originalInstruction,
-    lastInstruction: state.lastInstruction,
-    setInstruction: helpers.updateInstruction,
   };
 }

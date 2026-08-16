@@ -13,7 +13,9 @@ A Replit extension that adds a document panel to the workspace, allowing users t
 - **Proposed Changes Review**: View and approve/reject AI-proposed changes with diff visualization
 - **Export**: Export finished documents as styled PDF or DOCX
 - **Workspace Integration**: Save exported artifacts directly into the Replit project
-- **Regeneration**: Re-read project files and regenerate documents from scratch using the same SuperDocs session
+- **Regeneration Review Loop**: "Regenerate from Source" diffs current file hashes against the last snapshot, sends **only changed files** through the same SuperDocs session with `ask_every_time` approval, and lands granular proposed changes in the Review tab — with a zero-drift short-circuit when nothing changed
+- **Document Version History**: Browse and revert SuperDocs document versions
+- **Template & Prompt Gallery**: Apply platform templates/prompts with variable injection
 - **Cancellation**: Cancel in-flight operations at any time
 - **Retry & Error Recovery**: Automatic retry for transient failures with user-facing retry/dismiss actions
 - **File Loading Indicator**: Visual feedback during project file reads
@@ -23,8 +25,8 @@ A Replit extension that adds a document panel to the workspace, allowing users t
 | Capability | Implementation |
 |------------|----------------|
 | **Document Generation** | SuperDocs REST API with `approval_mode: 'ask_every_time'`. SuperDocs returns granular `ProposedChange` operations (insert/replace/delete/move). The extension uses a single session for the entire workflow, preserving document context across revisions. |
-| **Dual-Layer State Persistence** | State survives browser tab refresh via two synchronized stores: **localStorage** (instant, per-browser) + **`.superdocs-state.json`** in the Replit workspace (survives browser clear, portable across machines). Persisted fields: `sessionId`, `documentId`, `documentType`, `selectedPaths`, `fileHashes` (SHA-256 baselines), `originalInstruction`, `lastUpdated`, `version`. On load, the extension merges both sources preferring the most recent `lastUpdated`. |
-| **Regeneration from Source** | "Regenerate Document" re-reads all selected files, rebuilds context with current file contents, and regenerates using the same SuperDocs session — preserving conversation history while reflecting latest code changes. |
+| **Dual-Layer State Persistence** | State survives browser tab refresh via two synchronized stores: **localStorage** (instant, per-browser) + **`.superdocs-state.json`** in the Replit workspace (survives browser clear, portable across machines). Persisted fields: `sessionId`, `documentId`, `documentType`, `selectedPaths`, `fileHashes` (SHA-256 baselines), `originalInstruction`, `lastUpdated`, `version`. On load, `mergePersistedStates` picks the most recent `lastUpdated`; corrupt payloads on either layer degrade to the healthy layer. |
+| **Regeneration Review Loop** | "Regenerate from Source" compares current SHA-256 file hashes against the persisted baseline (`src/services/revision.ts`). Identical hashes → **zero drift**: no chat job is created, proposed changes are provably empty, and approved sections are preserved. Otherwise only changed/added/removed files (with full current content) are sent via `chatAsync` with `approval_mode: 'ask_every_time'`, producing granular `ProposedChange` ops in the Review tab. Baseline hashes update only after a successful export. |
 | **Hardcoded Exclusion Lists** | File tree filtering and context inclusion use sensible hardcoded defaults (`.git`, `node_modules`, `dist`, `.env*`, lock files, binary extensions). |
 
 ## Architecture
@@ -148,7 +150,7 @@ The `AbortSignal` reaches the actual HTTP request, so cancelling genuinely abort
 
 ## Revision Handling
 
-The revision workflow uses **regeneration from source** instead of surgical edits. This preserves manual user edits to the document between generations by always regenerating from current project state.
+Revisions are handled as a **hash-diff review loop** (Generate → Review → Approve → Export → Regenerate from Source). Only drifted files are ever sent back to SuperDocs, so previously approved sections are preserved by construction.
 
 ### Workflow
 
@@ -158,22 +160,30 @@ The revision workflow uses **regeneration from source** instead of surgical edit
    - Original user instruction stored separately
    - Document generated via SuperDocs (new session)
 
-2. **Regeneration**
+2. **Regeneration (diff, then send only what changed)**
    - User modifies project code
-   - Clicks "Regenerate Document"
-   - Selected files re-read, current hashes computed
-   - Context rebuilt with **current file contents**
-   - Sent through the **same SuperDocs session** (`sessionId` reused)
+   - Clicks "Regenerate from Source"
+   - Selected files re-read; `computeSourceDiff` compares hashes against the persisted baseline
+   - **No changes** → short-circuit: no chat job, `changes: []`, notice shown ("No source changes detected")
+   - **Changes** → `buildRevisionMessage` sends the **stable original instruction** + changed/added/removed file list + **full current content of changed files only**
+   - Sent through the **same SuperDocs session** (`sessionId` reused) with `approval_mode: 'ask_every_time'`
 
 3. **SuperDocs Returns Granular Operations**
-   - `approval_mode: 'ask_every_time'` returns `ProposedChangeBatch`
-   - Each change has: `operation` (insert/replace/delete/move), `chunk_id`, `old_html`, `new_html`, `ai_explanation`
-   - User reviews and approves/rejects in Review tab
+   - `ProposedChangeBatch` with `operation` (insert/replace/delete/move), `chunk_id`, `old_html`, `new_html`, `ai_explanation`
+   - User reviews and approves/rejects in the Review tab
 
 4. **Apply & Export**
    - Approved operations applied via `/v1/chat/{session_id}/approve`
    - Document regenerated in place (no full replacement)
-   - On successful export, baseline hashes updated to current state
+   - On successful export, baseline hashes updated to current state (`captureHashes`)
+
+### Fidelity & Drift Verification
+
+`tests/superdocs.test.ts` includes an automated zero-drift fidelity suite:
+
+- **Method**: baseline hashes are computed from the current file contents; `planRegeneration` is invoked with byte-identical input. The proposed-changes array is proven empty because the chat job is created **only** from `planRegeneration(...).message` — with no message there can be no `pending_changes`, and no network request is made (asserted via the fetch mock).
+- **Tail behavior**: on zero drift the hook returns `{ hasChanges: false, changes: [] }` **before** `chatAsync`, the UI shows the "No source changes detected" notice, and the previous approved document state is left untouched.
+- **Output stability**: `buildRevisionMessage` is deterministic — repeated builds of the same diff produce byte-identical instructions (paths are sorted; no timestamps or randomness). Verified for both repeated calls and different `Map` insertion orders.
 
 ### Bug Prevented
 
@@ -183,12 +193,12 @@ The revision workflow uses **regeneration from source** instead of surgical edit
 Must NOT become the next revision's base instruction
 
 ✅ Original user instruction (stable)
-    + Current project context
+    + Diff of changed files only
       ↓
-New generation instruction
+New generation instruction (byte-identical for identical diffs)
 ```
 
-This ensures revision prompts remain focused and don't grow exponentially with each iteration.
+This ensures revision prompts remain focused and don't grow exponentially with each iteration, and that unchanged sections are never re-proposed.
 
 ## User Workflow
 
@@ -217,7 +227,7 @@ Export PDF / DOCX
       ↓
 Modify project code
       ↓
-Click "Regenerate Document" → Re-reads files → Regenerates with latest code
+Click "Regenerate from Source" → Hash-diff vs baseline → Sends only changed files → Granular updates
 ```
 
 ## Quick Start
@@ -273,9 +283,9 @@ Click "Regenerate Document" → Re-reads files → Regenerates with latest code
 ### Regeneration After Code Changes
 
 1. **Modify Project Code**: Edit source files in your Repl
-2. **Return to Panel**: The "Regenerate Document" button appears after successful generation
-3. **Click Regenerate**: The extension re-scans selected files and regenerates the document
-4. **Review Diff**: See new proposed changes
+2. **Return to Panel**: The "Regenerate from Source" button appears after successful generation
+3. **Click Regenerate**: The extension re-reads the selected files, compares hashes against the last snapshot, and sends **only the changed files** to SuperDocs for granular updates
+4. **Review Diff**: See new proposed changes in the Review tab (if nothing changed, a "No source changes detected" notice appears instead)
 5. **Approve & Export**: Same workflow as initial generation
 
 ### Error Handling
@@ -323,11 +333,14 @@ extensions/deadheaven07/replit-workspace-document-panel/
 │   │   ├── DraftTab.tsx       # Generation UI
 │   │   ├── ReviewTab.tsx      # Changes review
 │   │   ├── ExportTab.tsx      # Export UI
+│   │   ├── HistoryTab.tsx     # Version history
+│   │   ├── TemplateGallery.tsx # Template/prompt gallery
 │   │   └── StatusBadge.tsx    # Status indicator with retry/dismiss
 │   ├── services/              # Business logic
 │   │   ├── superdocs.ts       # SuperDocs REST client + retry/cancel
 │   │   ├── replit.ts          # Replit workspace API + context builder
-│   │   └── context.ts         # Context builder
+│   │   ├── context.ts         # Initial-generation context builder
+│   │   └── revision.ts        # Hash-diff + thin revision messages
 │   ├── hooks/                 # React hooks
 │   │   ├── useSuperDocs.ts    # SuperDocs state machine
 │   │   ├── useWorkspaceFiles.ts # File operations
@@ -335,18 +348,19 @@ extensions/deadheaven07/replit-workspace-document-panel/
 │   ├── types/                 # TypeScript types
 │   │   └── superdocs.ts       # SuperDocs types
 │   ├── utils/                 # Utilities
-│   │   ├── hash.ts            # SHA-256 hashing
+│   │   ├── hash.ts            # SHA-256 (native + pure-JS fallback)
 │   │   └── parser.ts          # Double-JSON parser
 │   └── styles/
 │       └── index.css          # Global styles
 └── tests/
     ├── setup.ts               # Test mocks
-    ├── superdocs.test.ts      # SuperDocs client tests
+    ├── superdocs.test.ts      # SuperDocs client + zero-drift fidelity tests
     ├── parser.test.ts         # Parser tests
-    ├── hash.test.ts           # Hash tests
+    ├── hash.test.ts           # Hash tests (incl. NIST vectors)
     ├── context.test.ts        # Context builder tests
     ├── replit.test.ts         # Replit adapter tests
-    └── revision.test.ts       # Revision workflow + retry tests
+    ├── revision.test.ts       # Diff + revision message + retry tests
+    └── persistence.test.ts    # Dual-layer merge (refresh/re-entry) tests
 ```
 
 ### Commands
@@ -382,20 +396,23 @@ npm test -- --coverage
 ```
 
 **Current Test Results**:
-- 6 test files
-- **61 tests passing**
+- 7 test files
+- **84 tests passing**
 - TypeScript typecheck: **passing**
 - Production build: **passing**
 
 **Key Regression Coverage**:
-- Revision instruction accumulation (stable original instruction)
+- Zero-drift fidelity (identical hashes → 0 proposed changes, no chat job)
+- Byte-identical revision message determinism
+- Revision change summary immune to instruction accumulation
 - Retry behavior (safe operations retry, mutations don't)
 - Retry exhaustion (max retries respected)
 - Non-retriable errors (401/403/400/404 not retried)
 - 503 service unavailable retries
 - Double-JSON parser
 - Context builder
-- Hash/change detection
+- Hash/change detection (incl. NIST SHA-256 vectors for the pure-JS fallback)
+- Dual-layer persistence merge (browser refresh, container re-entry, corrupt payloads)
 - Replit adapter
 - SuperDocs client
 
@@ -409,7 +426,10 @@ npm test -- --coverage
 ## Engineering Decisions
 
 ### Stable Revision Instructions
-Prevents generated revision prompts from accumulating over multiple revisions. The original user instruction is stored separately and used as the base for every revision.
+Prevents generated revision prompts from accumulating over multiple revisions. The original user instruction is stored separately and used as the base for every regeneration; the change summary is derived purely from the current hash diff, never from a previous revision message.
+
+### Thin Regeneration Review Loop
+Regeneration sends **only changed files** (with full current content) through the same SuperDocs session. Unchanged files are never serialized, so previously approved sections are preserved by construction, and identical hashes short-circuit before any API call (zero drift → zero proposed changes).
 
 ### Mutation-Safe Retries
 Only safe operations (`initSession`, `pollJob`, `waitForJob`) are retried automatically. Mutations (`uploadDocument`, `chatAsync`, `approveChanges`, `continueJob`, `exportDocument`) are never retried to avoid duplicate side effects.
@@ -418,7 +438,7 @@ Only safe operations (`initSession`, `pollJob`, `waitForJob`) are retried automa
 Cancellation uses `AbortController` whose signal reaches the actual `fetch()` call. Cancelling genuinely aborts in-flight HTTP requests, not just UI state.
 
 ### Hash-Based Change Detection
-SHA-256 hashes of selected files are captured at export time. Later revisions compare current hashes against the baseline to detect changed/added/removed files without re-reading unchanged files unnecessarily.
+SHA-256 hashes of selected files are captured at export time. Later revisions compare current hashes against the baseline to detect changed/added/removed files without re-reading unchanged files unnecessarily. A pure-JS SHA-256 fallback keeps hashes byte-identical in non-secure contexts.
 
 ### Explicit Error Recovery
 Users can retry recoverable failures or dismiss errors. No silent failures; all error states are user-visible with recovery actions.
@@ -438,12 +458,12 @@ All reliability changes (retry policy, cancellation, revision stability) are cov
 ## Acceptance Criteria
 
 - ✅ **First-Session UX**: Fresh Repl → select files → generate → edit → approve → export → save
-- ✅ **Regeneration**: Modify code → click regenerate → re-reads files → regenerates from current state
+- ✅ **Regeneration Review Loop**: Modify code → click regenerate → diff-only granular updates with zero-drift short-circuit
 - ✅ **Security**: No API keys in localStorage, git, or logs
 - ✅ **Double-JSON Parse**: Handles SuperDocs `pending_changes` nested JSON correctly
 - ✅ **Retry Policy**: Safe operations retry, mutations don't
 - ✅ **Cancellation**: AbortSignal reaches HTTP layer
 - ✅ **Error Recovery**: Retry/Dismiss UI for recoverable failures
-- ✅ **Revision Stability**: Original instruction preserved across revisions
+- ✅ **Revision Stability**: Original instruction preserved; change summary diff-derived
 - ✅ **State Persistence**: Survives browser tab refresh via localStorage + workspace `.superdocs-state.json`
-- ✅ **Regeneration from Source**: Re-reads files and regenerates with current code
+- ✅ **Zero-Drift Fidelity**: Identical hashes produce zero proposed changes and no chat job (automated test)

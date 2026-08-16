@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { createGenerationContext, buildSuperDocsInstruction, buildRevisionInstruction } from '../src/services/context';
+import { describe, it, expect } from 'vitest';
+import { createGenerationContext, buildSuperDocsInstruction } from '../src/services/context';
 
 describe('context builder', () => {
   const mockFiles = new Map([
@@ -66,37 +66,6 @@ describe('context builder', () => {
       expect(buildSuperDocsInstruction(readmeContext)).toContain('README.md');
       expect(buildSuperDocsInstruction(specContext)).toContain('SPEC.md');
       expect(buildSuperDocsInstruction(guideContext)).toContain('USER_GUIDE.md');
-    });
-  });
-
-  describe('buildRevisionInstruction', () => {
-    it('includes changed files list', () => {
-      const context = createGenerationContext('readme', 'Original instruction', mockFiles);
-      const changedFiles = ['src/main.ts', 'package.json'];
-      
-      const instruction = buildRevisionInstruction(context, changedFiles, 'Original instruction');
-      
-      expect(instruction).toContain('Code Changes Detected');
-      expect(instruction).toContain('src/main.ts');
-      expect(instruction).toContain('package.json');
-    });
-
-    it('includes update guidance', () => {
-      const context = createGenerationContext('readme', 'Original', mockFiles);
-      const instruction = buildRevisionInstruction(context, ['src/main.ts']);
-      
-      expect(instruction).toContain('Updated API endpoints');
-      expect(instruction).toContain('New features');
-      expect(instruction).toContain('Removed or deprecated');
-      expect(instruction).toContain('installation, usage, or configuration');
-    });
-
-    it('includes full project context', () => {
-      const context = createGenerationContext('readme', 'Test', mockFiles);
-      const instruction = buildRevisionInstruction(context, ['src/main.ts']);
-      
-      expect(instruction).toContain('Project Context (Updated)');
-      expect(instruction).toContain('src/main.ts');
     });
   });
 });

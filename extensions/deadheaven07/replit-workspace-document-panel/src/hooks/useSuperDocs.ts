@@ -1,6 +1,8 @@
 import { useState, useCallback, useMemo, useRef } from 'react';
 import { createSuperDocsClient } from '../services/superdocs';
+import { planRegeneration, DocumentType } from '../services/revision';
 import { parseProposedChangeBatch } from '../utils/parser';
+import { FileHashMap } from '../utils/hash';
 import { DocumentUploadResult, ProposedChange, ExportResult, ProposedChangeBatch, SyncHtmlResponse, DocumentVersion, Template, Prompt } from '../types/superdocs';
 
 export type GenerationStep = 
@@ -42,6 +44,13 @@ export interface SuperDocsState {
 
 export interface SuperDocsActions {
   generateDocument: (instruction: string, documentType: string, sessionId?: string) => Promise<void>;
+  regenerateFromSource: (
+    instruction: string,
+    documentType: string,
+    baselineHashes: FileHashMap,
+    currentFiles: Map<string, string>,
+    sessionId?: string
+  ) => Promise<{ hasChanges: boolean; changes: ProposedChange[] }>;
   approveChanges: (approved: boolean, changes: ProposedChange[]) => Promise<void>;
   continueJob: (continueJob: boolean) => Promise<void>;
   exportDocument: (format: 'pdf' | 'docx') => Promise<Blob>;
@@ -140,6 +149,88 @@ const generateDocument = useCallback(async (instruction: string, documentType: s
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') return;
       setError(error instanceof Error ? error.message : 'Unknown error', true);
+    }
+  }, [apiKey, client, updateStep, setError]);
+
+  const regenerateFromSource = useCallback(async (
+    instruction: string,
+    documentType: string,
+    baselineHashes: FileHashMap,
+    currentFiles: Map<string, string>,
+    sessionId?: string
+  ): Promise<{ hasChanges: boolean; changes: ProposedChange[] }> => {
+    if (!apiKey) { setError('SuperDocs API key is required', true); return { hasChanges: false, changes: [] }; }
+    if (!sessionId) { setError('No active SuperDocs session to regenerate against', true); return { hasChanges: false, changes: [] }; }
+
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    const signal = abortController.signal;
+
+    try {
+      const plan = await planRegeneration(
+        baselineHashes,
+        currentFiles,
+        documentType as DocumentType,
+        instruction
+      );
+      if (signal.aborted) return { hasChanges: false, changes: [] };
+
+      // Zero-drift short-circuit: identical hashes produce zero proposed
+      // changes and NO chat job is created. Approved sections from the
+      // previous round are preserved because unchanged source is never sent.
+      if (!plan.hasChanges) {
+        setState(prev => ({
+          ...prev,
+          step: 'completed',
+          progress: 'No source changes detected - document already reflects current code',
+          error: undefined,
+          canRetry: false,
+        }));
+        return { hasChanges: false, changes: [] };
+      }
+
+      setState(prev => ({ ...prev, lastInstruction: plan.message, lastDocumentType: documentType }));
+      updateStep('generating', `Detected ${plan.diff.changed.length + plan.diff.added.length} changed file(s), requesting granular updates...`);
+
+      const jobId = await client.chatAsync({
+        message: plan.message!,
+        session_id: sessionId,
+        approval_mode: 'ask_every_time',
+        model_tier: 'core',
+      }, signal);
+      if (signal.aborted) return { hasChanges: false, changes: [] };
+
+      setState(prev => ({ ...prev, jobId }));
+      updateStep('polling', 'Waiting for SuperDocs to process changes...');
+
+      const jobStatus = await client.waitForJob(jobId, (status) => {
+        if (signal.aborted) return;
+        updateStep('polling', `Processing... (${status.status})`);
+      }, signal);
+      if (signal.aborted) return { hasChanges: false, changes: [] };
+
+      if (jobStatus.status === 'failed') throw new Error(jobStatus.error || 'Job failed');
+
+      if (jobStatus.status === 'awaiting_approval') {
+        const metadata = jobStatus.metadata;
+        if (metadata && metadata.pending_changes) {
+          const proposedChanges = parseProposedChangeBatch(
+            typeof metadata.pending_changes === 'string' ? metadata.pending_changes : JSON.stringify(metadata.pending_changes)
+          );
+          setState(prev => ({ ...prev, proposedChanges }));
+          updateStep('awaiting_approval', `${proposedChanges.changes.length} proposed changes awaiting review`);
+          return { hasChanges: true, changes: proposedChanges.changes };
+        }
+        updateStep('awaiting_approval', 'Awaiting approval (no changes parsed)');
+        return { hasChanges: true, changes: [] };
+      }
+
+      updateStep('completed', 'Regeneration completed - no changes proposed');
+      return { hasChanges: true, changes: [] };
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') return { hasChanges: false, changes: [] };
+      setError(error instanceof Error ? error.message : 'Regeneration failed', true);
+      return { hasChanges: false, changes: [] };
     }
   }, [apiKey, client, updateStep, setError]);
 
@@ -369,5 +460,5 @@ const generateDocument = useCallback(async (instruction: string, documentType: s
     }
   }, [apiKey, client, setError]);
 
-  return [state, { generateDocument, approveChanges, continueJob, exportDocument, cancel, retry, dismissError, reset, syncHtml, loadVersions, loadVersion, revertToVersion, loadTemplates, loadPrompts }];
+  return [state, { generateDocument, regenerateFromSource, approveChanges, continueJob, exportDocument, cancel, retry, dismissError, reset, syncHtml, loadVersions, loadVersion, revertToVersion, loadTemplates, loadPrompts }];
 }

@@ -1,8 +1,82 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createSuperDocsClient, SuperDocsClient } from '../src/services/superdocs';
+import { computeFileHashesAsync } from '../src/utils/hash';
+import { planRegeneration, buildRevisionMessage } from '../src/services/revision';
 
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
+
+describe('Zero-drift fidelity (regeneration from source)', () => {
+  // ---------------------------------------------------------------------
+  // Verification method
+  // ---------------------------------------------------------------------
+  // "Zero drift" means: when the workspace file hashes stored in
+  // `.superdocs-state.json` are identical to the hashes of the current file
+  // contents, the regeneration pipeline MUST produce an empty change set
+  // and MUST NOT create a chat job. A regeneration job is only created from
+  // `planRegeneration(...).message`, so `message === undefined` proves the
+  // proposed-changes list is empty without touching the network.
+  //
+  // Tail behavior: on zero drift the hook short-circuits BEFORE `chatAsync`
+  // and returns `{ hasChanges: false, changes: [] }`; the UI shows
+  // "No source changes detected" and previously approved document sections
+  // are preserved because unchanged source files are never re-sent.
+  // ---------------------------------------------------------------------
+  const files = new Map([
+    ['src/main.ts', 'export function main() { console.log("hello"); }'],
+    ['package.json', '{"name": "test", "version": "1.0.0"}'],
+  ]);
+
+  it('identical hashes => zero proposed changes and no chat job created', async () => {
+    const baseline = await computeFileHashesAsync(files);
+
+    const plan = await planRegeneration(baseline, files, 'readme', 'Original instruction');
+
+    expect(plan.hasChanges).toBe(false);
+    expect(plan.diff.changed).toHaveLength(0);
+    expect(plan.diff.added).toHaveLength(0);
+    expect(plan.diff.removed).toHaveLength(0);
+    expect(plan.message).toBeUndefined();
+
+    // The chat job is created only from `plan.message`, so with no message
+    // there can be no pending_changes and the proposed-changes array is
+    // provably length 0.
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('proposed changes are non-empty ONLY when drift exists', async () => {
+    const baseline = await computeFileHashesAsync(files);
+
+    const changedFiles = new Map(files);
+    changedFiles.set('src/main.ts', 'export function main() { console.log("hello world"); }');
+
+    const plan = await planRegeneration(baseline, changedFiles, 'readme', 'Original instruction');
+
+    expect(plan.hasChanges).toBe(true);
+    expect(plan.diff.changed.map(f => f.path)).toEqual(['src/main.ts']);
+    expect(plan.message).toBeDefined();
+    expect(plan.message).toContain('console.log("hello world")');
+    expect(plan.message).not.toContain('console.log("hello")');
+  });
+
+  it('byte-identical output stability: repeated builds of the same diff produce identical instructions', async () => {
+    const baseline = await computeFileHashesAsync(files);
+
+    const changedFiles = new Map(files);
+    changedFiles.set('src/main.ts', 'export function main() { console.log("hello world"); }');
+
+    const plan = await planRegeneration(baseline, changedFiles, 'readme', 'Original instruction');
+    const rebuilt = buildRevisionMessage('readme', 'Original instruction', plan.diff);
+
+    expect(plan.message).toBe(rebuilt);
+
+    // Repeated invocations are also deterministic (no timestamps, no
+    // randomness, sorted paths) - a regression here would break the
+    // regeneration review loop's stability guarantees.
+    const again = await planRegeneration(baseline, changedFiles, 'readme', 'Original instruction');
+    expect(again.message).toBe(plan.message);
+  });
+});
 
 describe('SuperDocsClient', () => {
   let client: SuperDocsClient;

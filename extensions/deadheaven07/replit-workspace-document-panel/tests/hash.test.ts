@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { sha256, detectChangedFiles, hasChanges, computeFileHashesAsync } from '../src/utils/hash';
+import { describe, it, expect } from 'vitest';
+import { sha256, sha256Fallback, detectChangedFiles, hasChanges, computeFileHashesAsync } from '../src/utils/hash';
 
 describe('hash utilities', () => {
   describe('sha256', () => {
@@ -20,6 +20,28 @@ describe('hash utilities', () => {
       const hash = await sha256('test');
       expect(hash).toHaveLength(64);
       expect(hash).toMatch(/^[a-f0-9]+$/);
+    });
+
+    it('matches NIST SHA-256 test vectors via the pure-JS fallback (non-secure contexts)', () => {
+      // Well-known SHA-256 vectors (FIPS 180-2). The fallback must produce
+      // byte-identical output to crypto.subtle so hashes stay interchangeable
+      // across environments (secure contexts, webviews, jsdom).
+      expect(sha256Fallback('')).toBe('e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855');
+      expect(sha256Fallback('abc')).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
+      expect(sha256Fallback('test')).toBe('9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08');
+    });
+
+    it('fallback and native implementations agree on multibyte and long inputs', async () => {
+      const cases = [
+        'hello world',
+        'Grüße, 世界, 🎉',
+        'x'.repeat(1000),
+        'y'.repeat(100_000),
+      ];
+      for (const input of cases) {
+        const native = await sha256(input);
+        expect(sha256Fallback(input)).toBe(native);
+      }
     });
   });
 

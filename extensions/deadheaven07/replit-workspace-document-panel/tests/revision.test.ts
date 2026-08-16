@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { buildProjectContext } from '../src/services/replit';
-import { buildRevisionInstruction, createGenerationContext } from '../src/services/context';
+import { computeSourceDiff, buildRevisionMessage, planRegeneration, SourceDiff } from '../src/services/revision';
 import { computeFileHashesAsync, detectChangedFiles } from '../src/utils/hash';
 import { createSuperDocsClient, SuperDocsClient } from '../src/services/superdocs';
 
@@ -17,76 +17,153 @@ const mockChangedFiles = new Map([
 ]);
 
 describe('Revision flow regression tests', () => {
-  describe('buildRevisionInstruction with actual project context', () => {
-    it('includes CURRENT project context when files have changed', () => {
-      // Create context with ORIGINAL files
-      const originalContext = createGenerationContext('readme', 'Original instruction', mockFiles);
-      
-      // Simulate file change
-      const changedContext = createGenerationContext('readme', 'Original instruction', mockChangedFiles);
-      
-      // Build revision instruction with CHANGED context (simulating the fix)
-      const revisionInstruction = buildRevisionInstruction(changedContext, ['src/main.ts']);
-      
-      // Verify the revision instruction contains the UPDATED file content
-      expect(revisionInstruction).toContain('Project Context (Updated)');
-      expect(revisionInstruction).toContain('console.log("hello world")'); // NEW content
-      expect(revisionInstruction).not.toContain('console.log("hello")'); // OLD content
+  describe('computeSourceDiff against hash baseline', () => {
+    it('produces an EMPTY diff when hashes are identical (zero drift)', async () => {
+      const baseline = await computeFileHashesAsync(mockFiles);
+
+      const diff = await computeSourceDiff(baseline, mockFiles);
+
+      expect(diff.hasChanges).toBe(false);
+      expect(diff.changed).toHaveLength(0);
+      expect(diff.added).toHaveLength(0);
+      expect(diff.removed).toHaveLength(0);
     });
 
-    it('does NOT use empty project context (regression test for empty projectContext bug)', () => {
-      const context = createGenerationContext('readme', 'Test', mockFiles);
-      
-      // This simulates the OLD buggy behavior
-      const buggyContext = {
-        ...context,
-        projectContext: '', // This was the bug
-      };
-      
-      const buggyInstruction = buildRevisionInstruction(buggyContext, ['src/main.ts']);
-      
-      // The buggy version would have empty project context
-      expect(buggyInstruction).toContain('Project Context (Updated)');
-      // But the project context section would be empty
-      const contextSection = buggyInstruction.split('Project Context (Updated)')[1];
-      expect(contextSection?.trim()).toBe('');
-      
-      // The FIXED version should have actual content
-      const fixedInstruction = buildRevisionInstruction(context, ['src/main.ts']);
-      const fixedContextSection = fixedInstruction.split('Project Context (Updated)')[1];
-      expect(fixedContextSection?.trim()).not.toBe('');
-      expect(fixedContextSection).toContain('src/main.ts');
+    it('detects changed files and includes ONLY their current content', async () => {
+      const baseline = await computeFileHashesAsync(mockFiles);
+
+      const diff = await computeSourceDiff(baseline, mockChangedFiles);
+
+      expect(diff.hasChanges).toBe(true);
+      expect(diff.changed.map(f => f.path)).toEqual(['src/main.ts']);
+      expect(diff.changed[0].content).toContain('console.log("hello world")'); // NEW content
+      expect(diff.changed[0].content).not.toContain('console.log("hello")'); // OLD content
+      expect(diff.added).toHaveLength(0);
+      expect(diff.removed).toHaveLength(0);
     });
 
-    it('does NOT accumulate previous revision instructions (regression test for instruction accumulation bug)', () => {
-      const context = createGenerationContext('readme', 'Original user instruction', mockFiles);
+    it('detects added and removed files', async () => {
+      const baseline = await computeFileHashesAsync(mockFiles);
 
-      // Simulate first revision
-      const firstRevision = buildRevisionInstruction(context, ['src/main.ts'], 'Original user instruction');
+      const withNewFile = new Map([...mockFiles, ['src/new.ts', 'export const x = 1;']]);
+      const withoutMain = new Map([['package.json', mockFiles.get('package.json')!], ['README.md', mockFiles.get('README.md')!]]);
 
-      // Simulate buggy behavior where previous revision instruction is used as "previous instruction"
-      const buggyContext = {
-        ...context,
-        instruction: firstRevision, // This is the bug - using full revision instruction
-      };
-      const buggySecondRevision = buildRevisionInstruction(buggyContext, ['package.json'], firstRevision);
+      const addedDiff = await computeSourceDiff(baseline, withNewFile);
+      expect(addedDiff.added).toEqual(['src/new.ts']);
+      expect(addedDiff.changed).toHaveLength(0);
 
-      // The buggy version would contain the first revision's change list (src/main.ts)
-      expect(buggySecondRevision).toContain('Original user instruction');
-      expect(buggySecondRevision).toContain('Code Changes Detected');
-      expect(buggySecondRevision).toContain('src/main.ts');
-      expect(buggySecondRevision).toContain('package.json');
+      const removedDiff = await computeSourceDiff(baseline, withoutMain);
+      expect(removedDiff.removed).toEqual(['src/main.ts']);
+      expect(removedDiff.changed).toHaveLength(0);
+    });
+  });
 
-      // The FIXED version should only contain the original user instruction, not the full previous revision
-      const fixedSecondRevision = buildRevisionInstruction(context, ['package.json'], 'Original user instruction');
-      expect(fixedSecondRevision).toContain('Original user instruction');
-      expect(fixedSecondRevision).toContain('Code Changes Detected');
-      expect(fixedSecondRevision).toContain('package.json');
-      // Should NOT contain the first revision's change list (src/main.ts in the changes section)
-      // But it WILL contain src/main.ts in the project context (which is correct)
-      const changesSection = fixedSecondRevision.split('Code Changes Detected')[1]?.split('---')[0] || '';
-      expect(changesSection).not.toContain('src/main.ts');
-      expect(changesSection).toContain('package.json');
+  describe('buildRevisionMessage (thin diff instruction)', () => {
+    async function makeDiff(changedFiles: Map<string, string>): Promise<SourceDiff> {
+      const baseline = await computeFileHashesAsync(mockFiles);
+      return computeSourceDiff(baseline, changedFiles);
+    }
+
+    it('does NOT carry over previous revision change lists (regression test for instruction accumulation bug)', async () => {
+      const baseline = await computeFileHashesAsync(mockFiles);
+
+      // First regeneration touched src/main.ts
+      const firstDiff = await computeSourceDiff(baseline, mockChangedFiles);
+      const firstMessage = buildRevisionMessage('readme', 'Original user instruction', firstDiff);
+      expect(firstMessage).toContain('src/main.ts');
+
+      // Snapshot after the first regeneration, then only package.json changes
+      const secondBaseline = await computeFileHashesAsync(mockChangedFiles);
+      const secondFiles = new Map([
+        ['src/main.ts', 'export function main() { console.log("hello world"); }'],
+        ['package.json', '{"name": "test", "version": "2.0.0"}'],
+        ['README.md', '# Test Project\n\nA simple test project.'],
+      ]);
+      const secondDiff = await computeSourceDiff(secondBaseline, secondFiles);
+      expect(secondDiff.changed.map(f => f.path)).toEqual(['package.json']);
+
+      // Old bug: the previous full revision message leaked into the base
+      // instruction of the next regeneration.
+      const leaked = buildRevisionMessage('readme', firstMessage, secondDiff);
+
+      // The OPERATIVE change summary is diff-derived and lists only
+      // package.json - src/main.ts never re-enters the change list.
+      const sections = leaked.split('## Modified Files');
+      const operative = sections[sections.length - 1].split('---')[0];
+      expect(operative).toContain('package.json');
+      expect(operative).not.toContain('src/main.ts');
+    });
+
+    it('contains ONLY the changed file content - never the unchanged files', async () => {
+      const diff = await makeDiff(mockChangedFiles);
+      const message = buildRevisionMessage('readme', 'Original user instruction', diff);
+
+      expect(message).toContain('File: `src/main.ts`');
+      expect(message).toContain('console.log("hello world")'); // NEW content
+      expect(message).not.toContain('console.log("hello")'); // OLD content
+      // Unchanged files are omitted entirely - this is what preserves
+      // approved sections whose source files were not touched.
+      expect(message).not.toContain('File: `package.json`');
+      expect(message).not.toContain('"name": "test"');
+      expect(message).not.toContain('File: `README.md`');
+    });
+
+    it('is byte-identical for identical inputs (deterministic output stability)', async () => {
+      const diff = await makeDiff(mockChangedFiles);
+      const first = buildRevisionMessage('readme', 'Original user instruction', diff);
+      const second = buildRevisionMessage('readme', 'Original user instruction', diff);
+
+      expect(first).toBe(second);
+
+      // Determinism also holds across a different Map insertion order,
+      // because paths are sorted before serialization.
+      const shuffled = new Map([
+        ['README.md', mockFiles.get('README.md')!],
+        ['src/main.ts', 'export function main() { console.log("hello world"); }'],
+        ['package.json', mockFiles.get('package.json')!],
+      ]);
+      const shuffledDiff = await computeSourceDiff(await computeFileHashesAsync(mockFiles), shuffled);
+      expect(buildRevisionMessage('readme', 'Original user instruction', shuffledDiff)).toBe(first);
+    });
+
+    it('lists added and removed files in the change summary', async () => {
+      const baseline = await computeFileHashesAsync(mockFiles);
+      const withNewAndMissing = new Map([
+        ['src/main.ts', 'export function main() { console.log("hello world"); }'],
+        ['package.json', mockFiles.get('package.json')!],
+        ['src/new.ts', 'export const x = 1;'],
+      ]);
+      const diff = await computeSourceDiff(baseline, withNewAndMissing);
+      const message = buildRevisionMessage('readme', 'Original', diff);
+
+      expect(message).toContain('Added Files');
+      expect(message).toContain('src/new.ts');
+      expect(message).toContain('Removed Files');
+      // README.md is missing from current files, so it is only listed as removed
+      // and never serialized as content
+      expect(message).not.toContain('File: `README.md`');
+    });
+  });
+
+  describe('planRegeneration (zero-drift short-circuit)', () => {
+    it('returns hasChanges=false with NO message when source is unchanged - the proposed-changes list is provably empty and no chat job can be created', async () => {
+      const baseline = await computeFileHashesAsync(mockFiles);
+
+      const plan = await planRegeneration(baseline, mockFiles, 'readme', 'Original user instruction');
+
+      expect(plan.hasChanges).toBe(false);
+      expect(plan.message).toBeUndefined();
+      expect(plan.diff.changed).toHaveLength(0);
+    });
+
+    it('builds a message only when changes exist', async () => {
+      const baseline = await computeFileHashesAsync(mockFiles);
+
+      const plan = await planRegeneration(baseline, mockChangedFiles, 'readme', 'Original user instruction');
+
+      expect(plan.hasChanges).toBe(true);
+      expect(plan.message).toBeDefined();
+      expect(plan.diff.changed).toHaveLength(1);
     });
   });
 
