@@ -1,9 +1,3 @@
-interface StatusBadgeProps {
-  step: string;
-  progress?: string;
-  error?: string;
-}
-
 const STEPS = [
   { key: 'uploading', label: 'Upload', icon: 'M4 16l4.586-4.586a2 2 0 012.828 0L16 12l-4.586-4.586a2 2 0 00-2.828 0L10 12l-4.586 4.586a2 2 0 002.828 0L20 12' },
   { key: 'generating', label: 'Generate', icon: 'M10 20l4-16m4 4l4 4-4 4M6 16l4 4 4-4' },

@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { DEFAULT_INSTRUCTIONS } from '../services/context';
 
 interface DraftTabProps {
   onGenerate: (documentType: 'readme' | 'spec' | 'user-guide', instruction: string) => void;
@@ -12,19 +13,14 @@ const DOCUMENT_TYPES: Array<{ id: 'readme' | 'spec' | 'user-guide'; label: strin
   { id: 'user-guide', label: 'User Guide', description: 'Tutorials, workflows, examples, and troubleshooting' },
 ];
 
-const DEFAULT_INSTRUCTIONS: Record<string, string> = {
-  readme: 'Generate a comprehensive README.md for this project. Include project description, features, installation, usage examples, and configuration.',
-  spec: 'Generate a technical specification document. Include architecture overview, component breakdown, data models, API interfaces, and deployment requirements.',
-  'user-guide': 'Generate a user-facing guide. Include getting started tutorial, core concepts, step-by-step workflows, and troubleshooting.',
-};
-
 export function DraftTab({ onGenerate, disabled, fileCount }: DraftTabProps) {
   const [documentType, setDocumentType] = useState<'readme' | 'spec' | 'user-guide'>('readme');
   const [instruction, setInstruction] = useState('');
 
   const handleGenerate = useCallback(() => {
-    const finalInstruction = instruction.trim() || DEFAULT_INSTRUCTIONS[documentType];
-    onGenerate(documentType, finalInstruction);
+    // Pass the raw text; context.ts fills the default instruction when blank,
+    // keeping a single source of truth for default prompts.
+    onGenerate(documentType, instruction.trim());
   }, [documentType, instruction, onGenerate]);
 
   return (

@@ -13,33 +13,33 @@ interface FileTreeProps {
 }
 
 const FILE_ICONS: Record<string, string> = {
-  ts: '����',
-  tsx: '����',
-  js: '����',
-  jsx: '����',
-  py: '����',
-  rs: '����',
-  go: '����',
-  java: '��',
-  json: '����',
-  yaml: '����',
-  yml: '����',
-  toml: '����',
-  md: '����',
-  txt: '����',
-  css: '����',
-  scss: '����',
-  html: '����',
-  sh: '�������',
-  dockerfile: '����',
-  dockerignore: '����',
-  gitignore: '����',
-  env: '����',
+  ts: '🟦',
+  tsx: '⚛️',
+  js: '🟨',
+  jsx: '⚛️',
+  py: '🐍',
+  rs: '🦀',
+  go: '🔵',
+  java: '☕',
+  json: '📋',
+  yaml: '📋',
+  yml: '📋',
+  toml: '📋',
+  md: '📄',
+  txt: '📄',
+  css: '🎨',
+  scss: '🎨',
+  html: '🌐',
+  sh: '💻',
+  dockerfile: '🐳',
+  dockerignore: '🐳',
+  gitignore: '🙈',
+  env: '🔐',
 };
 
 function getFileIcon(filename: string): string {
   const ext = filename.split('.').pop()?.toLowerCase();
-  return ext && FILE_ICONS[ext] ? FILE_ICONS[ext] : '����';
+  return ext && FILE_ICONS[ext] ? FILE_ICONS[ext] : '📄';
 }
 
 function FileTreeNodeComponent({
@@ -122,7 +122,7 @@ function FileTreeNodeComponent({
             aria-label={expanded ? 'Collapse' : 'Expand'}
             aria-expanded={expanded}
           >
-            {expanded ? '��' : '��'}
+            {expanded ? '▾' : '▸'}
           </button>
         )}
         {!hasChildren && <span className="w-5" />}

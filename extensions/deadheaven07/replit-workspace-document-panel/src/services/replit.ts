@@ -1,4 +1,4 @@
-import { init, readFile, writeFile, readDir, createDir } from '@replit/extensions';
+import { readFile, writeFile, createDir } from '@replit/extensions';
 
 export interface ReplitFile {
   path: string;
@@ -113,61 +113,6 @@ export function shouldIgnore(path: string): { ignored: boolean; reason?: string 
   }
 
   return { ignored: false };
-}
-
-async function readDirRecursive(path: string = ''): Promise<FileTreeNode[]> {
-  try {
-    const result = await readDir(path);
-    if (result.error) {
-      console.warn(`Failed to read directory ${path}: ${result.error}`);
-      return [];
-    }
-
-    const nodes: FileTreeNode[] = [];
-
-    for (const child of result.children) {
-      const childPath = path ? `${path}/${child.filename}` : child.filename;
-      const { ignored, reason } = shouldIgnore(childPath);
-
-      if (child.type === 'DIRECTORY') {
-        const children = await readDirRecursive(childPath);
-        nodes.push({
-          name: child.filename,
-          path: childPath,
-          isDirectory: true,
-          children,
-          ignored,
-          ignoreReason: reason,
-        });
-      } else {
-        nodes.push({
-          name: child.filename,
-          path: childPath,
-          isDirectory: false,
-          ignored,
-          ignoreReason: reason,
-        });
-      }
-    }
-
-    return nodes.sort((a, b) => {
-      if (a.isDirectory !== b.isDirectory) {
-        return a.isDirectory ? -1 : 1;
-      }
-      return a.name.localeCompare(b.name);
-    });
-  } catch (error) {
-    console.warn(`Error reading directory ${path}:`, error);
-    return [];
-  }
-}
-
-export async function initializeReplit(): Promise<void> {
-  await init({ timeout: 10000 });
-}
-
-export async function getProjectFileTree(): Promise<FileTreeNode[]> {
-  return readDirRecursive();
 }
 
 export async function readProjectFile(path: string): Promise<string | null> {

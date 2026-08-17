@@ -35,7 +35,8 @@ export function DocumentPanel() {
   const { captureHashes, updateCurrentHashes, getChanges, getBaselineHashes } = useFileHashes();
   const [regenerateNotice, setRegenerateNotice] = useState<string | null>(null);
   
-  // Persist SuperDocs state changes
+  // Persist session + selection state together in a single write per commit,
+  // avoiding redundant full-state writes to the workspace file.
   useEffect(() => {
     updatePersistedState({
       sessionId: superDocsState.sessionId,
@@ -44,13 +45,9 @@ export function DocumentPanel() {
       jobId: superDocsState.jobId,
       proposedChanges: superDocsState.proposedChanges,
       exportResult: superDocsState.exportResult,
+      selectedPaths,
     });
-  }, [superDocsState, updatePersistedState]);
-
-  // Persist selected paths
-  useEffect(() => {
-    updatePersistedState({ selectedPaths });
-  }, [selectedPaths, updatePersistedState]);
+  }, [superDocsState, selectedPaths, updatePersistedState]);
 
   const selectedFilesCount = selectedPaths.length;
 
@@ -73,12 +70,11 @@ export function DocumentPanel() {
     const context = createGenerationContext(documentType, instruction, files);
     const superDocsInstruction = buildSuperDocsInstruction(context);
 
-    setLastContext({ files, documentType, instruction: superDocsInstruction, originalInstruction: instruction });
-    await captureHashes(files);
+    setLastContext({ files, documentType, instruction: superDocsInstruction, originalInstruction: context.instruction });
 
     await superDocsActions.generateDocument(superDocsInstruction, documentType);
     setActiveTab('review');
-  }, [selectedPaths, readFile, superDocsActions, captureHashes]);
+  }, [selectedPaths, readFile, superDocsActions]);
 
   const handleRegenerate = useCallback(async () => {
     if (!lastContext) return;
@@ -110,12 +106,11 @@ export function DocumentPanel() {
     setLastContext({ ...lastContext, files });
 
     if (result.hasChanges) {
-      await captureHashes(files);
       setActiveTab('review');
     } else {
       setRegenerateNotice('No source changes detected - the document is already up to date.');
     }
-  }, [lastContext, readFile, superDocsActions, getBaselineHashes, superDocsState.sessionId, captureHashes]);
+  }, [lastContext, readFile, superDocsActions, getBaselineHashes, superDocsState.sessionId]);
 
   const handleApprove = useCallback(async (approved: boolean, changes: { change_id: string; operation: string; chunk_id?: string; old_html?: string; new_html?: string; ai_explanation: string; insert_after_chunk_id?: string; document_id?: string }[]) => {
     await superDocsActions.approveChanges(approved, changes);

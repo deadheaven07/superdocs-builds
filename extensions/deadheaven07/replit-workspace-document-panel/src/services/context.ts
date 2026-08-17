@@ -7,7 +7,7 @@ export interface GenerationContext {
   selectedPaths: string[];
 }
 
-const DOCUMENT_TYPE_PROMPTS: Record<string, string> = {
+export const DEFAULT_INSTRUCTIONS: Record<string, string> = {
   readme: `Generate a comprehensive README.md for this project. Include:
 - Project title and description
 - Features and capabilities
@@ -43,7 +43,7 @@ export function createGenerationContext(
   instruction: string,
   selectedFiles: Map<string, string>
 ): GenerationContext {
-  const basePrompt = DOCUMENT_TYPE_PROMPTS[documentType] || DOCUMENT_TYPE_PROMPTS.readme;
+  const basePrompt = DEFAULT_INSTRUCTIONS[documentType] || DEFAULT_INSTRUCTIONS.readme;
   const { context: projectContext, skippedFiles } = buildProjectContext(selectedFiles, documentType);
   
   let finalInstruction = instruction.trim() || basePrompt;

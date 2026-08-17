@@ -1,13 +1,5 @@
 import { ProposedChangeBatch, ProposedChange } from '../types/superdocs';
 
-interface ReviewTabProps {
-  proposedChanges: ProposedChangeBatch | undefined;
-  onApprove: (approved: boolean, changes: ProposedChange[]) => void;
-  onContinue: (continueJob: boolean) => void;
-  disabled: boolean;
-  step: string;
-}
-
 const OPERATION_STYLES: Record<string, { bg: string; text: string; border: string; label: string }> = {
   replace: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', label: 'Replace' },
   insert: { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-200', label: 'Insert' },
