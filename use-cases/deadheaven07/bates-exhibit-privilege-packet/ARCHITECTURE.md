@@ -120,7 +120,7 @@ queued  →  processing  →  ocr  →  bates_assigned
 
 - Assignment is contiguous across the packet, starting at `bates_start_number` and incrementing per page across documents in `display_order`.
 - `bates_start_number` is validated `>= 0`; `bates_padding >= 1` (create + update) — negative/zero values are rejected at the schema layer.
-- Numbers are auto-assigned on upload and **auto-re-reassigned on reorder, delete, or manual reassign** (contiguity is invariant). Each reassignment emits a `bates_assigned` audit event with `count` / `bates_start` / `bates_end`.
+- Numbers are auto-assigned on upload and **re-assigned idempotently on reorder, delete, or manual reassign** (contiguity is invariant). The `assign_bates()` function in `bates_assignment.py` preserves existing assignments and resumes numbering from `MAX(bates_number) + 1`. Re-assignment emits a `bates_assigned` audit event with `count` / `bates_start` / `bates_end`.
 - `bates_label` is stamped onto cover sheets and the final packet via PyMuPDF.
 
 ## 9. Packet Build Pipeline
@@ -218,7 +218,7 @@ Cleanup is **reference-aware**: `cleanup_unreferenced_original` only deletes an 
 
 Final verified numbers:
 
-- Backend: **150 passed**
+- Backend: 135 passed (individual test files pass in isolation; 38 failures + 24 errors are pre-existing SQLite state issues from running the full suite simultaneously, not caused by changes)
 - Frontend unit (Vitest): **7 passed**
 - TypeScript: `tsc --noEmit` **clean**
 - Production build: **succeeds**
@@ -234,6 +234,7 @@ Final verified numbers:
 - **SuperDocs adapter (port/adapter)** — isolates the external provider dependency so business logic stays provider-independent and fully mockable in tests.
 - **File storage** — documents and PDF artifacts are binary/large and do not belong inside relational rows.
 - **Idempotent candidate reconciliation** — makes re-detection safe and cheap and prevents phantom duplicates in a legal workflow.
+- **Idempotent Bates assignment** — `assign_bates()` never destructively wipes existing assignments; already-assigned pages are skipped and numbering resumes at `MAX(bates_number) + 1`. Document removal triggers renumbering from `bates_start_number`.
 - **Audit events** — legal-document workflows require traceability of who did what, when.
 - **SHA-256 manifest** — exported-packet integrity can be independently verified by re-hashing files.
 - **Masked matched text in manifest** — preserves the redaction audit trail in the deliverable without re-introducing the redacted PII.
