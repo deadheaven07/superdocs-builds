@@ -211,14 +211,19 @@ Cleanup is **reference-aware**: `cleanup_unreferenced_original` only deletes an 
 
 ## 17. Testing Architecture
 
-- **Unit tests**: domain, services (redaction detection, Bates, ingestion, packet builder, SuperDocs adapter + integration — adapter mocked). 69 pre-existing + new cases.
-- **API-level tests**: exercise the real FastAPI routers through an `ASGITransport` client against an isolated PostgreSQL test DB + temp `STORAGE_ROOT`, with the SuperDocs service dependency overridden to a mocked adapter. 56 tests across `test_api_privilege`, `test_api_redactions`, `test_api_uploads`, `test_api_audit_events`, `test_api_pipeline_pii`, `test_api_review`.
-- **H-1 unit suite**: 25 parametrized detection tests for account-number patterns and false-positive guards.
+- **Unit tests**: domain, services (redaction detection, Bates, ingestion, packet builder, SuperDocs adapter + integration — adapter mocked).
+- **API-level tests**: exercise the real FastAPI routers through an `ASGITransport` client against an isolated PostgreSQL test DB + temp `STORAGE_ROOT`, with the SuperDocs service dependency overridden to a mocked adapter.
+- **H-1 unit suite**: parametrized detection tests for account-number patterns and false-positive guards.
+- **Offline evidence suites**: self-contained tests that prove hard claims without DB or network:
+  - `test_evidence_zero_double_stamping.py` — 7 tests proving `assign_bates()` produces zero duplicate `(document_id, page_number)` pairs across repeated calls.
+  - `test_evidence_crash_recovery.py` — 7 tests simulating crashes at specific pages, resuming, and proving contiguous no-gap no-double-stamp recovery.
+  - `test_evidence_redaction_residue.py` — 12 tests (offline, no DB) proving the byte scrubber removes matched text from PDFs and the verifier confirms absence.
+  - `test_evidence_manifest_reconciliation.py` — 7 tests proving every SHA-256 in `manifest.json` matches the actual file on disk after a packet build.
 - **Live E2E**: `live_e2e_phase13.py` runs the full workflow against a running server with the real SuperDocs API.
 
 Final verified numbers:
 
-- Backend: **197 passed** (deterministic; test order independence verified in forward and reverse alpha order)
+- Backend: **230 passed** (deterministic; test order independence verified)
 - Frontend unit (Vitest): **7 passed**
 - TypeScript: `tsc --noEmit` **clean**
 - Production build: **succeeds**
@@ -252,3 +257,39 @@ Final verified numbers:
 - Replace per-cover `Generated:` timestamps with a build identifier if bit-stable rebuilds are ever required.
 - Add ESLint configuration (or remove the dead `lint` script) to enable static frontend linting.
 - Optionally wire a real background job queue if processing volume exceeds `BackgroundTasks`.
+
+## 21. Known Limitations and Trade-offs
+
+Honest accounting of what this system does not do, what degrades gracefully, and what was explicitly punted.
+
+### SuperDocs Dependency
+
+- **No API key = no AI review.** Without `SUPERDOCS_API_KEY`, the system works fully for everything except SuperDocs-powered AI review and SuperDocs-native redaction sync. Local fallback detection provides deterministic PII detection via regex. The system was designed this way intentionally — the SuperDocs adapter is a port/adapter, not a hard dependency.
+- **SuperDocs errors are opaque.** The adapter translates upstream failures to generic messages (4xx → same code, 5xx → 502, timeout → 504). Raw provider bodies and keys are never surfaced. This means debugging SuperDocs-side issues requires looking at SuperDocs logs, not this system's logs.
+- **Session reuse is best-effort.** If a document is re-uploaded to SuperDocs with a new session ID (e.g. after a full reprocess), the old session is orphaned on the SuperDocs side. This system does not clean up SuperDocs-side sessions.
+- **SuperDocs re-export is non-blocking.** If the final packet cannot be re-exported through SuperDocs (network failure, quota), the local artifact is the deliverable. The manifest records `superdocs_job_id` when available but does not require it.
+
+### Storage and Deployment
+
+- **Local filesystem only.** `STORAGE_ROOT` is a local path. There is no S3/GCS/Azure Blob abstraction. For production deployment behind a load balancer, you need shared storage (NFS, EFS, or similar). This was a deliberate simplicity trade-off.
+- **Single-process background tasks.** Background work (document processing, PII detection) uses FastAPI `BackgroundTasks`, which runs in-process. There is no job queue (Celery, RQ, etc.). For high-volume deployments, this will become a bottleneck. `BackgroundTasks` is fine for the expected load of a legal exhibit workflow (tens to low hundreds of documents per packet).
+- **No concurrent packet builds on the same packet.** The `build_packet` method acquires no lock. If two concurrent requests build the same packet, the second will overwrite the first's output. This is acceptable because packet builds are triggered by a single user action and take seconds.
+- **Rebuilds are not bit-stable.** Cover sheets include a `Generated: <timestamp>` field, so each rebuild produces different bytes. The manifest SHA changes on every build. The system re-verifies SHAs after build. If bit-stable rebuilds are needed (e.g. for cryptographic verification across time), the timestamp would need to be replaced with a build identifier.
+
+### Bates Numbering
+
+- **Contiguous-only.** Bates numbers are always assigned as a contiguous range starting from `bates_start_number`. There is no support for custom per-document prefixes (e.g. `PLAINTIFF-001` for one document and `DEFENDANT-001` for another). The prefix is per-packet, not per-document.
+- **No gap-fill without full re-assign.** If a document is deleted, the system renumbers all remaining documents from `bates_start_number`. There is no "fill the gap" mode that renumbers only the deleted document's pages. This is a deliberate choice to guarantee contiguity.
+- **Page-level granularity.** Each page gets a unique Bates number. There is no concept of a "Bates range per document" that could be manually overridden. The range is always derived from the contiguous assignment.
+
+### Redaction
+
+- **Regex-based detection, not NLP.** The local fallback detection engine uses compiled regex patterns. It detects SSNs, emails, phone numbers, account numbers, and a two-word name heuristic. It does not detect addresses, dates of birth, or other PII categories that require NLP. The SuperDocs intelligence layer provides richer detection when available.
+- **No OCR-based redaction detection.** The coordinate fallback for scanned/image PDFs works only when the candidate's coordinates are known (provided by the detection layer). The byte scrubber does not perform its own OCR to find text to redact.
+- **Redaction is not reversible.** Once `apply_redactions` runs, the source PDF bytes are replaced. The original (pre-redaction) PDF is preserved in `originals/` but the working copy is overwritten. There is no "undo redaction" flow.
+
+### Testing
+
+- **Tests require PostgreSQL.** The full test suite (230 tests) requires a running PostgreSQL instance at `postgresql+asyncpg://deadheaven07@localhost:5432/bates_packet_test`. The 12 offline evidence tests (`test_evidence_redaction_residue.py`) run without any external dependencies. The 9 journal-level crash recovery tests (`test_crash_recovery.py`) also run offline.
+- **No load/performance testing.** All tests verify correctness, not performance. There are no benchmarks for large packets (100+ documents), high-concurrency uploads, or memory usage under load.
+- **SuperDocs is mocked in all tests.** The real SuperDocs API is only exercised by `live_e2e_phase13.py`, which requires a live API key. All other tests use `FakeSuperDocsService`.

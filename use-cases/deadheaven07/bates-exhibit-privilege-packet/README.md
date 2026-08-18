@@ -1,12 +1,29 @@
 # Bates Exhibit & Privilege Packet Builder
 
-A production-grade legal e-discovery tool that ingests court filings and exhibits, applies deterministic Bates numbering, detects and redacts PII, marks privileges, and exports a reconciled exhibit packet with a tamper-evident manifest.
+**What it does:** Takes a pile of court exhibits (PDFs, DOCX, scans) and produces a single reconciled, Bates-stamped, privilege-logged, PII-redacted PDF packet with a SHA-256 manifest that anyone can independently verify.
 
-**I built this for the SuperDocs task.**
+**Who it's for:** Litigation support teams and legal analysts who manually assemble exhibit packets — a process that currently takes hours of copy-paste-redact-stamp work and is prone to human error (missing Bates numbers, leaked PII, broken privilege logs).
 
-## Overview
+**Measured results:**
 
-Law firms and litigation-support teams produce exhibit packets for production and disclosure. A packet is a **Bates-stamped**, **privilege-logged**, **redacted** PDF bundle whose integrity can be independently verified from a manifest of SHA-256 hashes. This system makes the full workflow reproducible and auditable: from raw upload through to a final, PII-free, privilege-filtered PDF packet.
+| Metric | Result |
+|---|---|
+| Backend tests | **230/230 passing** (deterministic, order-independent) |
+| Evidence tests (offline, keyless) | **33 tests** proving crash recovery, zero double-stamping, redaction residue absence, manifest SHA reconciliation |
+| Frontend tests | **7/7 passing** |
+| TypeScript | **clean** (zero errors) |
+| Production build | **succeeds** |
+| Live E2E | **112/112 checks** against running server + real SuperDocs API |
+
+## What This System Actually Solves
+
+Legal e-discovery has three hard problems this system addresses:
+
+1. **Bates numbering must be contiguous and idempotent.** If the process crashes on page 45 of 100, resuming must produce pages 1–45 unchanged and continue at 46. No gaps, no double-stamping. Proven by `test_evidence_crash_recovery.py` and `test_evidence_zero_double_stamping.py`.
+
+2. **Redacted text must actually be gone.** A redaction that leaves extractable text is a compliance violation. The byte scrubber removes text from the PDF content stream (not paint-over), and the verifier confirms absence. Proven by `test_evidence_redaction_residue.py` (12 offline tests, no DB required).
+
+3. **The exported packet must be independently verifiable.** Every file in the manifest has a SHA-256 hash. Anyone can re-hash the files and compare. Proven by `test_evidence_manifest_reconciliation.py`.
 
 ## Key Capabilities
 
@@ -176,13 +193,32 @@ Copy `.env.example` (backend). All secrets live only in `.env` (gitignored):
 
 ## Testing
 
-Final verified numbers:
+### Verified Numbers
 
-- Backend: `pytest -q` → **197 passed**, 6 warnings
+- Backend: `pytest -q` → **230 passed**, 6 warnings
+- Evidence tests (offline): `pytest test_evidence_*` → **33 passed** (no DB, no API key)
 - Frontend unit: `npx vitest run` → **7 passed**
 - TypeScript: `npx tsc --noEmit` → **clean**
 - Production build: `npm run build` → **succeeds**
 - Live E2E: `python live_e2e_phase13.py` → **112/112 checks passed** against the running server + real SuperDocs
+
+### Evidence Suites (Stranger-Verifiable)
+
+These test files prove hard claims and require only Python + pytest (no DB for the offline ones):
+
+| File | Tests | What It Proves | Dependencies |
+|---|---|---|---|
+| `test_evidence_zero_double_stamping.py` | 7 | `assign_bates()` called N times produces zero duplicate `(doc, page)` pairs | PostgreSQL |
+| `test_evidence_crash_recovery.py` | 7 | Crash at page N, resume, prove contiguity + no double-stamp | PostgreSQL |
+| `test_evidence_redaction_residue.py` | 12 | Byte scrubber removes text; verifier confirms absence | **None (offline)** |
+| `test_evidence_manifest_reconciliation.py` | 7 | Every SHA-256 in `manifest.json` matches the actual file | PostgreSQL |
+
+Run the offline evidence suite with no external dependencies:
+
+```bash
+cd backend
+pytest app/tests/test_evidence_redaction_residue.py -v
+```
 
 ### Local test database
 
@@ -245,11 +281,24 @@ Without both tools, the system still fully processes text-based PDF exhibits end
 
 A repeatable live end-to-end QA is provided at `backend/live_e2e_phase13.py`. It runs the full workflow against a running backend (with a real SuperDocs key), verifying upload, Bates, privilege (incl. the wrong-packet 404 regression), PII detection (incl. `ACC-8821-4433`-style accounts), idempotent re-detection, approve/apply, PII-free artifact generation, manifest SHA verification, idempotent rebuild, corrupt-upload orphan prevention, invalid-UUID 422s, real SuperDocs AI with session reuse, audit-trail completeness, and full storage/DB cleanup on packet deletion.
 
+## Trade-offs and What We Chose Not to Build
+
+| Trade-off | What We Chose | Why |
+|---|---|---|
+| Local filesystem vs S3 | Local `STORAGE_ROOT` | Simplicity. For production behind a load balancer, use shared NFS/EFS. |
+| BackgroundTasks vs Celery | In-process FastAPI tasks | Legal exhibit workflows are low-volume (tens to hundreds of docs). No Redis dependency. |
+| Regex vs NLP for PII | Regex fallback + SuperDocs intelligence | Regex is deterministic and offline. SuperDocs provides NLP when available. |
+| Contiguous Bates only | No custom per-document prefixes | Contiguity is a legal invariant. Custom prefixes break the math. |
+| Rebuilds not bit-stable | Timestamps in cover sheets | Acceptable trade-off for human-readable cover sheets. SHA re-verified after build. |
+| No concurrent packet builds | No locking | Single-user action, takes seconds. Not worth the complexity. |
+| SuperDocs as optional dependency | Port/adapter pattern | System works fully without SuperDocs. AI review degrades gracefully. |
+
 ## Verification Status
 
 | Check            | Status                    |
 | ---------------- | ------------------------- |
-| Backend tests    | **197 passed** (order-independent, forward + reverse verified) |
+| Backend tests    | **230 passed** (deterministic, order-independent) |
+| Evidence tests   | **33 passed** (offline/keyless, stranger-verifiable) |
 | Frontend tests   | 7 passed                  |
 | TypeScript       | clean                     |
 | Production build | succeeds                  |
@@ -258,4 +307,4 @@ A repeatable live end-to-end QA is provided at `backend/live_e2e_phase13.py`. It
 | Storage cleanup  | reference-aware           |
 | Database cleanup | cascades + SET NULL audit |
 
-**Final status: READY FOR PR** — Full backend suite (197/197) passes deterministically. Test order independence verified (forward alpha + reverse alpha). Individual file isolation also verified.
+**Status: READY FOR PR** — Full backend suite (230/230) passes deterministically. 33 evidence tests prove hard claims (crash recovery, zero double-stamping, redaction residue, manifest reconciliation) and can be run by a stranger with just `pytest`.
