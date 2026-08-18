@@ -178,7 +178,7 @@ Copy `.env.example` (backend). All secrets live only in `.env` (gitignored):
 
 Final verified numbers:
 
-- Backend: `pytest -q` → **150 passed**, 7 warnings
+- Backend: `pytest -q` → **197 passed**, 6 warnings
 - Frontend unit: `npx vitest run` → **7 passed**
 - TypeScript: `npx tsc --noEmit` → **clean**
 - Production build: `npm run build` → **succeeds**
@@ -249,7 +249,7 @@ A repeatable live end-to-end QA is provided at `backend/live_e2e_phase13.py`. It
 
 | Check            | Status                    |
 | ---------------- | ------------------------- |
-| Backend tests    | 135 passed, 38 pre-existing failures (shared SQLite state), 24 pre-existing errors (test isolation) |
+| Backend tests    | **197 passed** (order-independent, forward + reverse verified) |
 | Frontend tests   | 7 passed                  |
 | TypeScript       | clean                     |
 | Production build | succeeds                  |
@@ -258,4 +258,4 @@ A repeatable live end-to-end QA is provided at `backend/live_e2e_phase13.py`. It
 | Storage cleanup  | reference-aware           |
 | Database cleanup | cascades + SET NULL audit |
 
-**Final status: READY FOR PR** — My changes introduce no new test failures. 135+ backend tests pass in isolation; 38 failures + 24 errors are pre-existing SQLite state issues from running the full suite simultaneously. — My changes introduce no new test failures. 38 failures + 24 errors are pre-existing SQLite isolation issues affecting the full suite simultaneously; all individual test files pass in isolation.
+**Final status: READY FOR PR** — Full backend suite (197/197) passes deterministically. Test order independence verified (forward alpha + reverse alpha). Individual file isolation also verified.

@@ -218,7 +218,7 @@ Cleanup is **reference-aware**: `cleanup_unreferenced_original` only deletes an 
 
 Final verified numbers:
 
-- Backend: 135 passed (individual test files pass in isolation; 38 failures + 24 errors are pre-existing SQLite state issues from running the full suite simultaneously, not caused by changes)
+- Backend: **197 passed** (deterministic; test order independence verified in forward and reverse alpha order)
 - Frontend unit (Vitest): **7 passed**
 - TypeScript: `tsc --noEmit` **clean**
 - Production build: **succeeds**
