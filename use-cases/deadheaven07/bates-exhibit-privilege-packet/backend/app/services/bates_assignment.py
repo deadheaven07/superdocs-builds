@@ -37,35 +37,81 @@ class BatesAssignmentService:
     ) -> list[BatesAssignment]:
         """Assign Bates numbers to all completed documents in display order.
 
-        Full reassignment: existing assignments for the packet are replaced,
-        so reorder/removal never leaves stale numbers or gaps. Every
-        assignment is fsync'd into the packet journal before the next page is
-        numbered — a crash mid-run resumes safely (never double-stamps) and
-        the final sequence can be proven gap-free via
-        ``BatesJournal.prove_continuity``.
+        Idempotent / crash-resume: existing assignments for the packet are
+        never destructively wiped when pages are simply re-assigned. Already-
+        assigned pages are skipped and numbering resumes at
+        ``MAX(bates_number) + 1``. A crash mid-run thus never loses prior
+        state, never double-stamps, and the final sequence can be proven
+        gap-free via ``BatesJournal.prove_continuity``.
+
+        When the document configuration has changed (i.e. the maximum bates
+        number in existing assignments exceeds what the current completed
+        documents would expect starting from ``bates_start_number``), all
+        existing assignments are cleared and the remaining documents are
+        renumbered from ``bates_start_number`` to produce a contiguous
+        sequence with no gaps and no double-stamping.
         """
         packet = await session.get(Packet, packet_id)
         if not packet:
             raise ValueError(f"Packet {packet_id} not found")
 
+        journal = BatesJournal(settings.working_path / f"bates_journal_{packet_id}.jsonl")
+
+        # Step 1: Load existing database assignments (never delete up front)
         existing = await session.execute(
             select(BatesAssignment).where(BatesAssignment.packet_id == packet_id)
         )
-        for assignment in existing.scalars().all():
-            await session.delete(assignment)
-        await session.flush()
+        db_assignments: list[BatesAssignment] = existing.scalars().all()
 
+        # Step 2: Build the set of (document_id, page_number) already assigned
+        already_assigned: set[tuple[int, int]] = {
+            (a.document_id, a.page_number) for a in db_assignments
+        }
+
+        # Step 3: Check if document configuration has changed.
+        # If the max bates_number in existing assignments exceeds what the
+        # current completed documents would expect (bates_start_number +
+        # current_total_pages - 1), clear all assignments and renumber
+        # from bates_start_number. This handles document removal and new
+        # document addition scenarios.
+        current_documents_result = await session.execute(
+            select(Document).where(Document.packet_id == packet_id)
+            .where(Document.processing_status == ProcessingStatus.COMPLETED)
+            .order_by(Document.display_order)
+        )
+        current_documents: Sequence[Document] = current_documents_result.scalars().all()
+        current_total_pages = sum(d.page_count for d in current_documents)
+
+        if db_assignments:
+            db_max = max(a.bates_number for a in db_assignments)
+            expected_max = packet.bates_start_number + current_total_pages - 1
+            if db_max > expected_max:
+                # Configuration changed: clear all and renumber from start
+                for assignment in db_assignments:
+                    await session.delete(assignment)
+                await session.flush()
+                next_number = packet.bates_start_number
+                already_assigned = set()
+            else:
+                # Step 4: Resume number from the journal / DB max
+                next_number = journal.resume_start(packet.bates_start_number)
+                if db_assignments:
+                    db_max = max(a.bates_number for a in db_assignments)
+                    next_number = max(next_number, db_max + 1)
+        else:
+            # No existing assignments: start from bates_start_number
+            next_number = packet.bates_start_number
+            already_assigned = set()
+
+        # Step 5: Load completed documents in display order
         documents_result = await session.execute(
-            select(Document)
-            .where(Document.packet_id == packet_id)
+            select(Document).where(Document.packet_id == packet_id)
             .where(Document.processing_status == ProcessingStatus.COMPLETED)
             .order_by(Document.display_order)
         )
         documents: Sequence[Document] = documents_result.scalars().all()
 
-        journal = BatesJournal(settings.working_path / f"bates_journal_{packet_id}.jsonl")
-        assignments = []
-        next_number = packet.bates_start_number
+        assignments: list[BatesAssignment] = []
 
         for document in documents:
             pages_result = await session.execute(
@@ -74,6 +120,12 @@ class BatesAssignmentService:
             pages: Sequence[Page] = pages_result.scalars().all()
 
             for page in pages:
+                # Skip pages already assigned (crash-resume); in
+                # config-change mode, already_assigned is empty so all
+                # pages are reassigned from start.
+                if (document.id, page.page_number) in already_assigned:
+                    continue
+
                 bates_label = format_bates_number(
                     packet.bates_prefix, next_number, packet.bates_padding
                 )

@@ -389,12 +389,33 @@ class RedactionApplicationService:
 
                 page = doc[page_index]
                 spans = page.search_for(candidate.matched_text)
+
                 if not spans:
-                    results[cid] = {
-                        "applied": True,
-                        "texts_not_found": [candidate.matched_text],
-                        "page": candidate.page_number,
-                    }
+                    # Fallback for scanned/image PDFs: use the candidate's
+                    # explicit coordinates from detection.
+                    if (
+                        candidate.x0 is not None
+                        and candidate.y0 is not None
+                        and candidate.x1 is not None
+                        and candidate.y1 is not None
+                    ):
+                        rect = fitz.Rect(
+                            float(candidate.x0),
+                            float(candidate.y0),
+                            float(candidate.x1),
+                            float(candidate.y1),
+                        )
+                        # Expand slightly so glyphs are fully covered
+                        rect = rect + fitz.Rect(-2, -2, 2, 2)
+                        page.add_redact_annot(rect, fill=(0, 0, 0))
+                        per_page.setdefault(page_index, []).append(rect)
+                        results[cid] = {"applied": True, "page": candidate.page_number}
+                    else:
+                        results[cid] = {
+                            "applied": True,
+                            "texts_not_found": [candidate.matched_text],
+                            "page": candidate.page_number,
+                        }
                     continue
 
                 for span in spans:

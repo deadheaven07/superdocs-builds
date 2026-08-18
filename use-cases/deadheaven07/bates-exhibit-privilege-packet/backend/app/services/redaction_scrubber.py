@@ -39,6 +39,11 @@ class RedactionByteScrubber:
 
     Always scrubs from the pristine base so re-application is deterministic
     (re-running with the same candidate set produces byte-identical output).
+
+    Fallback for scanned/image PDFs: when ``page.search_for()`` returns no
+    results (text is part of an embedded image), the candidate's explicit
+    ``x0/y0/x1/y1`` coordinates from detection are used to create a redaction
+    annot that permanently covers the pixel area.
     """
 
     def scrub(
@@ -65,11 +70,36 @@ class RedactionByteScrubber:
                         f"{candidate.matched_text} (page {candidate.page_number} out of range)"
                     )
                     continue
+
+                # Try search_for first (selectable text PDFs)
                 page = doc[page_index]
                 rects = page.search_for(candidate.matched_text)
+
                 if not rects:
-                    result.texts_not_found.append(candidate.matched_text)
+                    # Fallback for scanned/image PDFs: use the candidate's
+                    # explicit coordinates from detection. The candidate's
+                    # x0/y0/x1/y1 are in PDF page coordinate space.
+                    if (
+                        candidate.x0 is not None
+                        and candidate.y0 is not None
+                        and candidate.x1 is not None
+                        and candidate.y1 is not None
+                    ):
+                        rect = fitz.Rect(
+                            float(candidate.x0),
+                            float(candidate.y0),
+                            float(candidate.x1),
+                            float(candidate.y1),
+                        )
+                        # Expand slightly so glyphs are fully covered
+                        rect = rect + fitz.Rect(-2, -2, 2, 2)
+                        page.add_redact_annot(rect, fill=(0, 0, 0))
+                        result.rects_applied += 1
+                        matched_ids.add(candidate.matched_text)
+                    else:
+                        result.texts_not_found.append(candidate.matched_text)
                     continue
+
                 for rect in rects:
                     page.add_redact_annot(rect, fill=(0, 0, 0))
                     result.rects_applied += 1
