@@ -133,7 +133,7 @@ class FakeSuperDocsService:
             html=None,
         )
 
-    async def detect_pii(self, session, document, categories=None):
+    async def detect_pii(self, session, document, categories=None, siblings=None):
         from app.domain.document import DocumentType
         from app.services.superdocs_port import PIICategory, PIIDetectionResult, PIIEntity
 

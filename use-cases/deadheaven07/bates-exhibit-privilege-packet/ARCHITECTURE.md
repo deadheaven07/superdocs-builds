@@ -204,6 +204,37 @@ SuperDocs REST API
 - **Error mapping** (`_translate_superdocs_error`): upstream 4xx → same code with a generic message, 5xx → 502, `httpx` timeouts/network errors → 504, other → 500. Provider bodies and keys are never leaked.
 - **Failure recovery**: if analysis cannot start, the document is reverted to `completed` and an `ai_analysis_failed` audit event is recorded, so the document is never left stuck in `ai_analysis`.
 
+## 11b. SuperDocs Integration Audit (2026-08-19)
+
+### Surface Coverage
+
+| Surface | SuperDocs Integration | Evidence |
+|---|---|---|
+| **API** | `SuperDocsRESTAdapter` implements `SuperDocsPort` with httpx + tenacity retry. All REST endpoints (`/v1/chat/async`, `/v1/jobs/{id}`, `/v1/chat/{session}/approve`, `/v1/chat/{session}/continue`, `/v1/documents/export`) are called through the adapter. | `test_superdocs_adapter.py`, `test_superdocs_integration_evidence.py` |
+| **Search** | Intentionally **local-only**. Deterministic DB search across content, filenames, descriptions, and Bates labels. No SuperDocs search API integration — local search is faster, deterministic, and supports page-level Bates snippets. | `test_api_search.py` |
+| **Review/HITL** | Intelligence layer sends `approval_mode="ask_every_time"` — every finding surfaces as a native SuperDocs `pending_change` awaiting human approval. Batch approval syncs back via `adapter.approve_changes()`. | `test_superdocs_integration_evidence.py::test_analyze_document_delegates_to_adapter_chat` |
+| **Multi-document** | Intelligence prompt is enriched with sibling document manifest when available, giving SuperDocs context about the litigation packet set. | `test_superdocs_integration_evidence.py::test_sibling_documents_enrich_instruction` |
+| **Export** | Deterministic local build (PyMuPDF). Re-import of scrubbed artifacts back to SuperDocs via `adapter.scrub_and_reimport()`. | `test_packet_builder.py` |
+
+### Architectural Gaps Found & Fixed
+
+1. **Individual redaction approval did not sync to SuperDocs** — batch approval path synced via `sync_approval()`, but individual `_decide_redaction()` did not. Fixed: added `sync_approval()` call with provenance tracking.
+
+2. **Privilege human decisions did not sync back to SuperDocs** — `analyze_privilege()` called SuperDocs, but `mark_privilege()` stored locally only. Fixed: added `sync_approval()` call when `superdocs_change_id` is present.
+
+3. **Multi-document context absent from intelligence prompt** — SuperDocs processed each document blind to the packet's other documents. Fixed: added `sibling_documents` parameter to `analyze_document()` that appends a packet manifest to the instruction.
+
+### Provenance Tracking
+
+All AI proposals carry `proposed_by` set to either `"superdocs"` or `"local_fallback"`. All audit events for AI actions include `intelligence_source` or `superdocs_synced` metadata. The `FallbackDetectionService` explicitly labels all local detections `PROVENANCE_LOCAL_FALLBACK`.
+
+### Invariants Preserved
+
+- AI proposes → Human decides → System proves: all redaction candidates require human approval before byte modification
+- Redaction state machine (PROPOSED → PENDING_APPROVAL → APPROVED → APPLIED → VERIFIED) unchanged
+- Bates numbering, byte scrubbing, SHA-256 manifest integrity: all untouched
+- Local fallback is explicitly labeled, never silently substituted
+
 ## 12. Audit Architecture
 
 Every lifecycle event is stored as an `AuditEvent` row (`event_type`, `user_id`, `event_metadata` JSON, `packet_id`, optional `document_id`, timestamp). `event_metadata` is persisted via the correct SQLAlchemy mapped column (`event_metadata`), so metadata is never silently NULL.

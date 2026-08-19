@@ -13,9 +13,15 @@ from app.domain.document import Document
 from app.domain.packet import Packet
 from app.domain.privilege import PrivilegeCategory, PrivilegeDecision, PrivilegeStatus
 from app.services.superdocs_integration import SuperDocsIntegrationService, get_superdocs_service
+from app.services.superdocs_intelligence import SuperDocsIntelligenceService
 from app.time import utc_now
 
 router = APIRouter()
+
+
+def _new_intelligence() -> "SuperDocsIntelligenceService":
+    from app.services.superdocs_intelligence import new_intelligence_service
+    return new_intelligence_service()
 
 
 class PrivilegeDecisionRequest(BaseModel):
@@ -166,6 +172,31 @@ async def mark_privilege(
         )
         session.add(decision)
 
+    synced = False
+    if decision.superdocs_change_id:
+        superdocs = _new_intelligence()
+        try:
+            syncer = getattr(superdocs, "sync_approval", None)
+            if syncer is not None:
+                approved = request.status != PrivilegeStatus.PRIVILEGED
+                await syncer(
+                    document=document,
+                    job_id=f"privilege:{document_id}",
+                    approved=approved,
+                    changes=[{"change_id": decision.superdocs_change_id, "operation": "replace"}],
+                )
+                synced = True
+        except Exception as exc:  # noqa: BLE001
+            session.add(
+                AuditEvent(
+                    packet_id=packet_id,
+                    document_id=document_id,
+                    event_type=AuditEventType.AI_ANALYSIS_FAILED,
+                    user_id="system",
+                    event_metadata={"error": str(exc), "step": "privilege_sync"},
+                )
+            )
+
     audit_event = AuditEvent(
         packet_id=packet_id,
         document_id=document_id,
@@ -176,6 +207,7 @@ async def mark_privilege(
             "status": request.status.value,
             "category": request.category.value if request.category else None,
             "reason": request.reason,
+            "superdocs_synced": synced,
         },
     )
     session.add(audit_event)

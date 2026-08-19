@@ -269,3 +269,31 @@ but proposals are labeled `kind="other"`.
 ### 2024-01-13: Optional Type Annotation in superdocs_port.py
 `Optional[float]` was used without importing `Optional` from `typing`.
 Fixed by adding `from __future__ import annotations` and `from typing import Optional`.
+
+### 2026-08-19: Individual Redaction Approval Did Not Sync to SuperDocs
+**Status:** Fixed  
+The batch approval path (`approve_redaction_batch`) synced back to SuperDocs via
+`sync_approval()`, but the individual `_decide_redaction()` path did not. When a
+user approved one redaction at a time, SuperDocs never learned about the decision.
+
+**Fix:** Added `sync_approval()` call in `_decide_redaction()` when
+`superdocs_change_id` is present, with provenance tracking in the audit event.
+
+### 2026-08-19: Privilege Human Decisions Did Not Sync Back to SuperDocs
+**Status:** Fixed  
+`analyze_privilege()` called SuperDocs to get proposals, but `mark_privilege()`
+stored the human decision locally only. SuperDocs never learned whether the human
+agreed with the AI's privilege assessment.
+
+**Fix:** Added `sync_approval()` call in `mark_privilege()` when
+`superdocs_change_id` is present.
+
+### 2026-08-19: Multi-Document Context Absent from Intelligence Prompt
+**Status:** Fixed  
+SuperDocs processed each document blind to the packet's other documents. A document
+that was clearly an exhibit in a litigation set received the same analysis as a
+standalone file.
+
+**Fix:** Added `sibling_documents` parameter to `analyze_document()`. When siblings
+are provided, the instruction is enriched with a packet manifest listing other
+documents in the set.

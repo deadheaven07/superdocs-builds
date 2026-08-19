@@ -189,6 +189,7 @@ class SuperDocsIntelligenceService:
         session: AsyncSession,
         document: Document,
         instruction: str = PII_ANALYSIS_INSTRUCTION,
+        sibling_documents: list[Document] | None = None,
     ) -> IntelligenceAnalysis:
         """Run the intelligence pass over one document.
 
@@ -197,13 +198,33 @@ class SuperDocsIntelligenceService:
         polls it to ``awaiting_approval``, and materializes every native
         ``pending_change`` into DB proposal rows (redaction candidates and,
         at most, one privilege proposal).
+
+        When *sibling_documents* is provided the instruction is augmented
+        with a brief packet manifest so SuperDocs understands the document
+        is part of a litigation exhibit set.
         """
         if not document.superdocs_session_id:
             await self._ensure_uploaded(session, document)
             await session.refresh(document)
 
+        effective_instruction = instruction
+        if sibling_documents:
+            manifest_lines = [
+                f"- {s.display_order}. {s.original_filename} ({s.page_count} pages)"
+                for s in sibling_documents
+            ]
+            effective_instruction += (
+                "\n\nThis document is one exhibit in a Bates-stamped litigation packet "
+                "containing the following documents:\n"
+                + "\n".join(manifest_lines)
+                + "\nUse this context when assessing privilege: documents that share "
+                "overlapping content with other exhibits in the same packet are more "
+                "likely to be work product or exhibits that have been produced to a "
+                "third party."
+            )
+
         job_id = await self.adapter.chat_async(
-            message=instruction,
+            message=effective_instruction,
             session_id=document.superdocs_session_id,
             approval_mode="ask_every_time",
             model_tier="core",
@@ -364,11 +385,12 @@ class SuperDocsIntelligenceService:
         self,
         session: AsyncSession,
         document: Document,
-        categories: list["PIICategory"] | None = None,
-    ) -> "PIIDetectionResult":
+        categories: list[PIICategory] | None = None,
+        siblings: list[Document] | None = None,
+    ) -> PIIDetectionResult:
         """PRIMARY PII detection: async chat + ask_every_time, where every
         finding is a native pending_change awaiting human approval."""
-        analysis = await self.analyze_document(session, document)
+        analysis = await self.analyze_document(session, document, sibling_documents=siblings)
         _REVERSE_CATEGORY = {
             RedactionCategory.SSN: PIICategory.SSN,
             RedactionCategory.EMAIL: PIICategory.EMAIL,

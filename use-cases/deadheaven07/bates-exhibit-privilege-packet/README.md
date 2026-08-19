@@ -8,9 +8,10 @@
 
 | Metric | Result |
 |---|---|
-| Backend tests | **253/253 passing** (deterministic, order-independent) |
+| Backend tests | **257/257 passing** (deterministic, order-independent) |
 | Evidence tests (offline, keyless) | **33 tests** proving crash recovery, zero double-stamping, redaction residue absence, manifest SHA reconciliation |
 | Content description tests | **17 tests** proving descriptions come from content, not filenames |
+| Integration evidence tests | **4 tests** proving the SuperDocs adapter is actually called when available |
 | Frontend tests | **7/7 passing** |
 | TypeScript | **clean** (zero errors) |
 | Production build | **succeeds** |

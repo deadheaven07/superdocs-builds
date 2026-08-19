@@ -168,8 +168,25 @@ async def run_intelligence_pass(document_id: UUID):
         if not document:
             return
 
+        siblings = []
         try:
-            pii_result = await detection.detect_pii_in_document(bg_session, document.id)
+            siblings_result = await bg_session.execute(
+                select(Document)
+                .where(
+                    Document.packet_id == document.packet_id,
+                    Document.id != document.id,
+                    Document.processing_status == ProcessingStatus.COMPLETED,
+                )
+                .order_by(Document.display_order)
+            )
+            siblings = list(siblings_result.scalars().all())
+        except Exception:  # noqa: BLE001
+            pass
+
+        try:
+            pii_result = await detection.detect_pii_in_document(
+                bg_session, document.id, siblings=siblings
+            )
         except Exception as e:  # noqa: BLE001
             bg_session.add(
                 AuditEvent(
@@ -319,6 +336,38 @@ async def _decide_redaction(
         )
         session.add(approval)
 
+    synced = False
+    if candidate.superdocs_change_id and candidate.document:
+        superdocs = _new_intelligence()
+        try:
+            syncer = getattr(superdocs, "sync_approval", None)
+            if syncer is not None:
+                await syncer(
+                    document=candidate.document,
+                    job_id=f"single:{candidate.document_id}",
+                    approved=request.status == RedactionStatus.APPROVED,
+                    changes=[
+                        {
+                            "change_id": candidate.superdocs_change_id,
+                            "operation": "replace",
+                        }
+                    ],
+                )
+                synced = True
+        except Exception as exc:  # noqa: BLE001
+            session.add(
+                AuditEvent(
+                    packet_id=candidate.document.packet_id if candidate.document else None,
+                    document_id=candidate.document_id,
+                    event_type=AuditEventType.AI_ANALYSIS_FAILED,
+                    user_id="system",
+                    event_metadata={
+                        "error": str(exc),
+                        "step": "single_approval_sync",
+                    },
+                )
+            )
+
     session.add(
         AuditEvent(
             packet_id=candidate.document.packet_id if candidate.document else None,
@@ -330,6 +379,7 @@ async def _decide_redaction(
             event_metadata={
                 "candidate_id": str(candidate.id),
                 "superdocs_change_id": candidate.superdocs_change_id,
+                "superdocs_synced": synced,
             },
         )
     )

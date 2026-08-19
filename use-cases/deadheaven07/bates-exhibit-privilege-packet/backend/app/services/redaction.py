@@ -170,6 +170,7 @@ class RedactionDetectionService:
         session: AsyncSession,
         document_id: str,
         categories: list[PIICategory] | None = None,
+        siblings: list[Document] | None = None,
     ) -> PIIDetectionResult:
         document = await session.get(Document, document_id)
         if not document:
@@ -178,7 +179,7 @@ class RedactionDetectionService:
         service = await self._get_superdocs()
         if service is not None:
             try:
-                return await service.detect_pii(session, document, categories)
+                return await service.detect_pii(session, document, categories, siblings=siblings)
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     f"SuperDocs detection unavailable for {document.id} "

@@ -160,7 +160,7 @@ function AiChangesPanel({ packetId, selectedDoc }: { packetId: string; selectedD
 
       {!jobId ? (
         <div className="space-y-3">
-          <label className="block text-sm font-medium text-gray-700">Instruction for SuperDocs AI</label>
+          <label className="block text-sm font-medium text-gray-700">Instruction for AI Analysis</label>
           <textarea
             value={instruction}
             onChange={(e) => setInstruction(e.target.value)}
@@ -466,6 +466,16 @@ function RedactionsPanel({ packetId, candidates }: { packetId: string; candidate
                   <span className={clsx("px-1.5 py-0.5 rounded", redactionStatusColors[candidate.status] ?? "bg-gray-100 text-gray-700")}>
                     {candidate.status.replace("_", " ")}
                   </span>
+                  {candidate.proposed_by && (
+                    <span className={clsx(
+                      "px-1.5 py-0.5 rounded text-[10px] font-medium",
+                      candidate.proposed_by === "superdocs"
+                        ? "bg-blue-50 text-blue-700"
+                        : "bg-amber-50 text-amber-700"
+                    )}>
+                      {candidate.proposed_by === "superdocs" ? "SuperDocs AI" : "Local Fallback"}
+                    </span>
+                  )}
                   {candidate.approval?.approver && <span>by {candidate.approval.approver}</span>}
                 </div>
                 {(candidate.context_before || candidate.context_after) && (
