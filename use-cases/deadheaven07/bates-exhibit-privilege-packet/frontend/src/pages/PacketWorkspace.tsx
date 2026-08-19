@@ -14,7 +14,7 @@ import {
 } from "@/hooks/useDocuments";
 import { useProcessingStatus, useStartProcessing, useRetryDocument } from "@/hooks/useProcessing";
 import { useAssignBates, useBatesPreview } from "@/hooks/useBates";
-import { useBuildPacket, useDownloadPacket, useValidatePacket, useManifest } from "@/hooks/useExports";
+import { useBuildPacket, useDownloadPacket, useValidatePacket, useVerifyPacket, useManifest } from "@/hooks/useExports";
 import {
   useDetectRedactions, useRedactionCandidates, useApproveRedaction,
   useApplyRedaction, useApplyAllRedactions,
@@ -583,6 +583,7 @@ export function PacketWorkspace() {
   const assignBates = useAssignBates();
   const buildPacket = useBuildPacket();
   const validatePacket = useValidatePacket();
+  const verifyPacket = useVerifyPacket();
   const downloadPacket = useDownloadPacket(packetId);
   const detectRedactions = useDetectRedactions();
   const downloadDocument = useDownloadDocument(packetId);
@@ -666,6 +667,27 @@ export function PacketWorkspace() {
       toast({ title: "Export started", description: "Packet download initiated." });
     } catch (err: any) {
       toast({ title: "Export failed", description: err?.message, variant: "destructive" });
+    }
+  };
+
+  const handleVerify = async () => {
+    try {
+      const result = await verifyPacket.mutateAsync(packetId);
+      const failed = result.checks.filter((c: any) => !c.passed);
+      if (result.status === "VERIFIED") {
+        toast({
+          title: "Packet verified",
+          description: `All ${result.checks.length} checks passed. ${result.exhibits} exhibits, ${result.page_count} pages.`,
+        });
+      } else {
+        toast({
+          title: "Verification failed",
+          description: `${failed.length} check(s) failed: ${failed.map((c: any) => c.name).join(", ")}`,
+          variant: "destructive",
+        });
+      }
+    } catch (err: any) {
+      toast({ title: "Verification failed", description: err?.message, variant: "destructive" });
     }
   };
 
@@ -769,6 +791,10 @@ export function PacketWorkspace() {
               {buildPacket.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
               Build Packet
             </Button>
+            <Button variant="outline" className="gap-1" onClick={handleVerify} disabled={verifyPacket.isPending}>
+              {verifyPacket.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              Verify
+            </Button>
             <Button className="gap-1" onClick={handleExport} disabled={downloadPacket.isPending}>
               {downloadPacket.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
               Export
@@ -828,6 +854,9 @@ export function PacketWorkspace() {
                           </div>
                           {doc.bates_range && (
                             <p className="text-xs text-primary-600 mt-1 font-mono">{doc.bates_range}</p>
+                          )}
+                          {doc.description && (
+                            <p className="text-xs text-gray-600 mt-1 truncate" title={doc.description}>{doc.description}</p>
                           )}
                         </div>
                       </div>

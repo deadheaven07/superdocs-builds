@@ -34,6 +34,16 @@ export function useValidatePacket() {
   });
 }
 
+export function useVerifyPacket() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (packetId: string) => exportsApi.verify(packetId),
+    onSuccess: (_, packetId) => {
+      queryClient.invalidateQueries({ queryKey: ['exports', 'verify', packetId] });
+    },
+  });
+}
+
 export function useDownloadPacket(packetId: string) {
   return useMutation({
     mutationFn: () => exportsApi.download(packetId),

@@ -82,6 +82,7 @@ export interface DocumentListResponse {
   display_order: number;
   bates_range: string | null;
   privilege_status: string;
+  description: string | null;
   is_searchable: boolean;
   uploaded_at: string;
 }
@@ -312,6 +313,22 @@ export interface ValidationResponse {
   bates_range: string | null;
 }
 
+export interface VerifyResponse {
+  status: 'VERIFIED' | 'FAILED' | 'NOT_BUILT';
+  packet_id: string;
+  page_count: number;
+  bates_start: string | null;
+  bates_end: string | null;
+  exhibits: number;
+  checks: VerifyCheck[];
+}
+
+export interface VerifyCheck {
+  name: string;
+  passed: boolean;
+  detail: string;
+}
+
 export interface ManifestResponse {
   id: string;
   packet_id: string;
@@ -357,6 +374,7 @@ export interface Exhibit {
 
 export interface SearchSnippet {
   page_number: number;
+  bates_label: string | null;
   snippet: string;
 }
 

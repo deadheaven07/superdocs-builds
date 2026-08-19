@@ -99,6 +99,23 @@ queued  →  processing  →  ocr  →  bates_assigned
 - DOCX whose conversion tool (LibreOffice) is unavailable becomes `failed` with a "LibreOffice unavailable" message (never falsely `completed`).
 - AI analysis failure reverts the document to `completed` (see §11) so it is never stuck in `ai_analysis`.
 
+### Content-Derived Exhibit Descriptions
+
+Exhibit descriptions are generated from document CONTENT, not filenames:
+
+1. After text extraction (OCR or native PDF), the first meaningful paragraph is extracted
+2. Headers, page numbers, boilerplate ("intentionally left blank"), and confidential markers are skipped
+3. If SuperDocs is available, an AI summary is generated
+4. Graceful fallback: deterministic local summary when AI is unavailable
+5. Filename is used ONLY as a last resort when no content is available
+
+The `description_generator.py` service provides:
+- `generate_description(text, filename)` → `DescriptionResult` with provenance tracking
+- `generate_description_from_text(text)` → content-only extraction
+- `generate_description_from_filename(filename)` → fallback only
+
+Each result includes `source` (provenance: `content_summary`, `filename_fallback`, `fallback_empty`) and `confidence` score.
+
 ## 6. Redaction Architecture
 
 - **Detection** (`RedactionDetectionService.detect_in_pdf`) runs per-page text extraction (PyMuPDF words → line spans) and applies pattern lists for SSN, EMAIL, PHONE, ACCOUNT_NUMBER (including alphanumeric `ACCT`/`ACCOUNT`/`ACC` variants), MEDICAL_TERM, plus a two-word Title-Cased NAME heuristic. Coordinates are resolved back to PDF rectangles.
@@ -137,6 +154,29 @@ queued  →  processing  →  ocr  →  bates_assigned
 8. Persist a `Manifest` + `ManifestEntry` rows, emit a `packet_built` audit event, commit.
 
 Rebuilds delete the existing manifest/working output and replace it. See the README caveat about per-cover `Generated:` timestamps, which means rebuild byte output is not bit-stable but is always manifest-consistent.
+
+### Packet Verification
+
+`POST /exports/{packet_id}/verify` runs a comprehensive verification of the built packet:
+
+- **Artifact checks**: verifies all expected files exist (final_packet.pdf, exhibit_index.pdf, privilege_log.pdf, manifest.json, individual exhibit PDFs)
+- **Bates contiguity**: confirms Bates numbers are contiguous from start to end with no gaps or duplicates
+- **Page count verification**: opens each exhibit PDF and verifies page counts match manifest entries
+- **SHA-256 verification**: recomputes hash of final_packet.pdf and compares to manifest
+- **Reconciliation**: verifies total pages matches sum of Bates page assignments
+- **Audit trail**: records `packet_validated` event with verification result
+
+Returns structured response:
+```json
+{
+  "status": "VERIFIED" | "FAILED" | "NOT_BUILT",
+  "checks": [{"name": "check_name", "passed": true, "detail": "..."}],
+  "page_count": 42,
+  "bates_start": "CASE-0001",
+  "bates_end": "CASE-0042",
+  "exhibits": 8
+}
+```
 
 ## 10. Manifest and Integrity
 
@@ -191,8 +231,25 @@ Cleanup is **reference-aware**: `cleanup_unreferenced_original` only deletes an 
 - **Hooks**: React hooks wrap each service for data fetching and mutation (React Query for caching).
 - **Types**: `src/types/api.ts` models the API payloads shared with the backend.
 - State is local to hooks + React Query; there is no global store beyond the minimal `useToast` hook.
+- **Verify button**: toolbar includes Build → Verify → Export workflow with structured verification results.
 
-## 15. Error Handling
+## 15. Search Architecture
+
+`GET /api/search/{packet_id}?q=<query>` searches across:
+
+1. **Document filenames** — matches against `original_filename`
+2. **Document descriptions** — matches against content-derived descriptions
+3. **Page content** — searches `extracted_text` from OCR or native PDF extraction, returns page-level results with Bates numbers
+4. **Bates labels** — direct lookup by Bates number
+
+Results include:
+- `matched_fields`: which fields matched (`filename`, `description`, `content`, `bates_label`)
+- `snippets`: page-level context with Bates labels and text excerpts
+- `description`: content-derived exhibit description
+
+`GET /api/search/{packet_id}/bates/{bates_number}` provides direct Bates lookup.
+
+## 16. Error Handling
 
 - **Validation**: Pydantic schema validation returns `422` for bad input (e.g., invalid UUID, negative Bates start).
 - **4xx**: missing/misrouted resources return controlled `404`/`400` (e.g., wrong-packet privilege, non-approved apply, reason required).
@@ -211,7 +268,7 @@ Cleanup is **reference-aware**: `cleanup_unreferenced_original` only deletes an 
 
 ## 17. Testing Architecture
 
-- **Unit tests**: domain, services (redaction detection, Bates, ingestion, packet builder, SuperDocs adapter + integration — adapter mocked).
+- **Unit tests**: domain, services (redaction detection, Bates, ingestion, packet builder, SuperDocs adapter + integration — adapter mocked), content-derived descriptions.
 - **API-level tests**: exercise the real FastAPI routers through an `ASGITransport` client against an isolated PostgreSQL test DB + temp `STORAGE_ROOT`, with the SuperDocs service dependency overridden to a mocked adapter.
 - **H-1 unit suite**: parametrized detection tests for account-number patterns and false-positive guards.
 - **Offline evidence suites**: self-contained tests that prove hard claims without DB or network:
@@ -219,11 +276,13 @@ Cleanup is **reference-aware**: `cleanup_unreferenced_original` only deletes an 
   - `test_evidence_crash_recovery.py` — 7 tests simulating crashes at specific pages, resuming, and proving contiguous no-gap no-double-stamp recovery.
   - `test_evidence_redaction_residue.py` — 12 tests (offline, no DB) proving the byte scrubber removes matched text from PDFs and the verifier confirms absence.
   - `test_evidence_manifest_reconciliation.py` — 7 tests proving every SHA-256 in `manifest.json` matches the actual file on disk after a packet build.
+- **Content description tests**: 17 tests proving descriptions come from content, not filenames, with proper fallback behavior.
+- **Packet verification tests**: 5 tests proving the verify endpoint returns structured results and records audit events.
 - **Live E2E**: `live_e2e_phase13.py` runs the full workflow against a running server with the real SuperDocs API.
 
 Final verified numbers:
 
-- Backend: **230 passed** (deterministic; test order independence verified)
+- Backend: **253 passed** (deterministic; test order independence verified)
 - Frontend unit (Vitest): **7 passed**
 - TypeScript: `tsc --noEmit` **clean**
 - Production build: **succeeds**
@@ -243,6 +302,8 @@ Final verified numbers:
 - **Audit events** — legal-document workflows require traceability of who did what, when.
 - **SHA-256 manifest** — exported-packet integrity can be independently verified by re-hashing files.
 - **Masked matched text in manifest** — preserves the redaction audit trail in the deliverable without re-introducing the redacted PII.
+- **Content-derived descriptions** — exhibit descriptions must come from document content, not filenames, to be useful in legal workflows. The generator extracts meaningful paragraphs and skips boilerplate, with filename as a last-resort fallback only.
+- **Packet verification** — before export, a structured verification step confirms all artifacts exist, Bates are contiguous, page counts match, and SHAs are valid. This catches build failures early and provides audit evidence.
 
 ## 19. Operational Considerations
 

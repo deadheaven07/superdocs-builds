@@ -12,6 +12,7 @@ from app.database import async_session_maker
 from app.domain.audit import AuditEvent, AuditEventType
 from app.domain.document import Document, ProcessingStatus
 from app.domain.page import Page
+from app.services.description_generator import generate_description
 from app.services.ingestion import IngestionService
 from app.time import utc_now
 
@@ -65,6 +66,7 @@ async def process_document(document_id: str):
 
             page_count = 0
             extracted_text = ""
+            per_page_texts: list[str] = []
             is_searchable = False
 
             if document.document_type.value in ("pdf", "scanned_pdf"):
@@ -79,10 +81,14 @@ async def process_document(document_id: str):
 
                         images = convert_from_path(original_path, dpi=300)
                         text_parts = []
+                        per_page_texts = []
                         for i, image in enumerate(images):
                             text = pytesseract.image_to_string(image, lang=settings.tesseract_lang)
                             if text.strip():
                                 text_parts.append(f"[Page {i + 1}]\n{text}")
+                                per_page_texts.append(text)
+                            else:
+                                per_page_texts.append("")
                         extracted_text = "\n\n".join(text_parts)
                         is_searchable = len(extracted_text.strip()) > 0
 
@@ -104,15 +110,17 @@ async def process_document(document_id: str):
                     except Exception as e:
                         logger.warning(f"OCR unavailable for scanned PDF {document.id}: {e}")
                         extracted_text = ""
+                        per_page_texts = []
                         is_searchable = False
                 else:
                     with pdfplumber.open(original_path) as pdf:
                         text_parts = []
+                        per_page_texts = []
                         for page in pdf.pages:
-                            text = page.extract_text()
-                            if text:
-                                text_parts.append(text)
-                        extracted_text = "\n\n".join(text_parts)
+                            text = page.extract_text() or ""
+                            text_parts.append(text)
+                            per_page_texts.append(text)
+                        extracted_text = "\n\n".join(t for t in text_parts if t)
                         is_searchable = len(extracted_text.strip()) > 0
 
             elif document.document_type.value == "docx":
@@ -121,6 +129,7 @@ async def process_document(document_id: str):
                 doc = DocxDocument(original_path)
                 text_parts = [para.text for para in doc.paragraphs if para.text.strip()]
                 extracted_text = "\n\n".join(text_parts)
+                per_page_texts = [extracted_text]
                 is_searchable = len(extracted_text.strip()) > 0
 
                 converted = IngestionService().convert_to_pdf(original_path, document.document_type)
@@ -141,12 +150,22 @@ async def process_document(document_id: str):
                 except Exception as e:
                     logger.warning(f"OCR unavailable for image {document.id}: {e}")
                     extracted_text = ""
+                per_page_texts = [extracted_text] if extracted_text else [""]
                 is_searchable = len(extracted_text.strip()) > 0
                 page_count = 1
 
                 converted = IngestionService().convert_to_pdf(original_path, document.document_type)
                 if converted is not None:
                     document.processed_sha256 = calculate_sha256(converted)
+
+            desc_result = generate_description(
+                text=extracted_text,
+                filename=document.original_filename,
+            )
+            if desc_result.description and not document.description:
+                document.description = desc_result.description
+                document.description_source = desc_result.source
+                document.description_generated_at = utc_now()
 
             document.page_count = page_count
             document.is_searchable = is_searchable
@@ -167,11 +186,17 @@ async def process_document(document_id: str):
                     await session.delete(page)
 
                 for page_num in range(1, page_count + 1):
+                    page_idx = page_num - 1
+                    page_text = (
+                        per_page_texts[page_idx]
+                        if page_idx < len(per_page_texts) and per_page_texts[page_idx]
+                        else extracted_text[:1000000] if extracted_text else None
+                    )
                     page = Page(
                         document_id=document.id,
                         page_number=page_num,
                         has_text=is_searchable,
-                        extracted_text=extracted_text[:1000000] if extracted_text else None,
+                        extracted_text=page_text[:1000000] if page_text else None,
                     )
                     session.add(page)
 

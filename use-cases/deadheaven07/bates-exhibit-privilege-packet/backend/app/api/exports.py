@@ -1,15 +1,22 @@
 from uuid import UUID
 
+import fitz
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
+from app.config import get_settings
 from app.database import get_session
 from app.domain.audit import AuditEvent, AuditEventType
+from app.domain.bates import BatesAssignment
+from app.domain.document import Document
 from app.domain.manifest import Manifest, ManifestEntry
 from app.domain.packet import Packet
+from app.domain.redaction import RedactionStatus
 from app.services.packet_builder import PacketBuilderService, get_packet_builder
+from app.services.reconciliation import verify_reconciliation
 
 router = APIRouter()
 
@@ -246,3 +253,187 @@ async def list_exhibits(packet_id: UUID, session: AsyncSession = Depends(get_ses
         )
 
     return {"exhibits": exhibits}
+
+
+@router.post("/{packet_id}/verify")
+async def verify_packet(
+    packet_id: UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    settings = get_settings()
+    checks: list[dict] = []
+
+    def add_check(name: str, passed: bool, detail: str = "") -> None:
+        checks.append({"name": name, "passed": passed, "detail": detail})
+
+    packet = await session.get(Packet, packet_id)
+    if not packet:
+        raise HTTPException(status_code=404, detail="Packet not found")
+
+    manifest_result = await session.execute(
+        select(Manifest)
+        .where(Manifest.packet_id == packet_id)
+        .options(selectinload(Manifest.entries))
+    )
+    manifest = manifest_result.scalars().first()
+    if not manifest:
+        return {
+            "status": "NOT_BUILT",
+            "checks": [{"name": "manifest_exists", "passed": False, "detail": "No manifest found"}],
+        }
+
+    bates_result = await session.execute(
+        select(BatesAssignment)
+        .where(BatesAssignment.packet_id == packet_id)
+        .order_by(BatesAssignment.bates_number)
+    )
+    bates_list = list(bates_result.scalars().all())
+
+    docs_result = await session.execute(
+        select(Document)
+        .where(Document.packet_id == packet_id)
+        .order_by(Document.display_order)
+    )
+    documents = list(docs_result.scalars().all())
+
+    final_packet_path = settings.final_path / manifest.final_packet_path if manifest.final_packet_path else None
+
+    add_check(
+        "manifest_exists",
+        True,
+        f"Manifest with {len(manifest.entries)} entries",
+    )
+
+    all_artifacts_exist = True
+    if final_packet_path and final_packet_path.exists():
+        add_check("final_packet_exists", True, str(final_packet_path))
+    else:
+        add_check("final_packet_exists", False, "final_packet.pdf missing")
+        all_artifacts_exist = False
+
+    exhibits_dir = settings.final_path / str(packet_id) / "exhibits"
+    for entry in manifest.entries:
+        exhibit_path = settings.final_path / entry.final_file_path if entry.final_file_path else None
+        if exhibit_path and exhibit_path.exists():
+            add_check(f"exhibit_{entry.exhibit_identifier}_exists", True)
+        else:
+            add_check(f"exhibit_{entry.exhibit_identifier}_exists", False, "file missing")
+            all_artifacts_exist = False
+
+    index_path = settings.final_path / str(packet_id) / "exhibit_index.pdf"
+    add_check("exhibit_index_exists", index_path.exists())
+    log_path = settings.final_path / str(packet_id) / "privilege_log.pdf"
+    add_check("privilege_log_exists", log_path.exists())
+    manifest_json_path = settings.final_path / str(packet_id) / "manifest.json"
+    add_check("manifest_json_exists", manifest_json_path.exists())
+
+    if bates_list:
+        numbers = [ba.bates_number for ba in bates_list]
+        expected = list(range(packet.bates_start_number, packet.bates_start_number + len(numbers)))
+        add_check(
+            "bates_contiguous",
+            numbers == expected,
+            f"Expected {expected[:3]}...{expected[-3:]}, got {numbers[:3]}...{numbers[-3:]}" if len(expected) > 6 else f"Expected {expected}, got {numbers}",
+        )
+        add_check(
+            "bates_no_duplicates",
+            len(numbers) == len(set(numbers)),
+            f"{len(numbers)} assignments, {len(set(numbers))} unique",
+        )
+    else:
+        add_check("bates_contiguous", False, "No Bates assignments")
+        add_check("bates_no_duplicates", False, "No Bates assignments")
+
+    if manifest.final_packet_sha256 and final_packet_path and final_packet_path.exists():
+        import hashlib
+
+        sha256 = hashlib.sha256()
+        with open(final_packet_path, "rb") as f:
+            for chunk in iter(lambda: f.read(8192), b""):
+                sha256.update(chunk)
+        actual_hash = sha256.hexdigest()
+        add_check(
+            "final_packet_hash",
+            actual_hash == manifest.final_packet_sha256,
+            f"expected {manifest.final_packet_sha256[:16]}..., got {actual_hash[:16]}...",
+        )
+    elif final_packet_path and final_packet_path.exists():
+        add_check("final_packet_hash", True, "No hash recorded; file exists")
+
+    if manifest.entries:
+        entry_errors = []
+        for entry in manifest.entries:
+            if not entry.final_file_path:
+                entry_errors.append(f"{entry.exhibit_identifier}: no file path")
+                continue
+            exhibit_path = settings.final_path / entry.final_file_path
+            if not exhibit_path.exists():
+                entry_errors.append(f"{entry.exhibit_identifier}: file missing")
+                continue
+            try:
+                doc = fitz.open(exhibit_path)
+                actual_pages = len(doc)
+                doc.close()
+            except Exception:
+                entry_errors.append(f"{entry.exhibit_identifier}: cannot read PDF")
+                continue
+            if actual_pages != entry.page_count:
+                entry_errors.append(
+                    f"{entry.exhibit_identifier}: expected {entry.page_count} pages, got {actual_pages}"
+                )
+        add_check(
+            "page_counts_match",
+            len(entry_errors) == 0,
+            "; ".join(entry_errors) if entry_errors else "All exhibits verified",
+        )
+    else:
+        add_check("page_counts_match", False, "No manifest entries")
+
+    if manifest.entries:
+        recon = verify_reconciliation(
+            manifest_entries=[
+                {
+                    "exhibit_identifier": e.exhibit_identifier,
+                    "bates_start": e.bates_start,
+                    "bates_end": e.bates_end,
+                    "page_count": e.page_count,
+                }
+                for e in manifest.entries
+            ],
+            total_packet_pages=manifest.total_pages,
+            packet_prefix=packet.bates_prefix,
+        )
+        add_check(
+            "reconciliation",
+            recon.is_valid,
+            f"total={manifest.total_pages}, bates_pages={recon.sum_bates_pages}",
+        )
+    else:
+        add_check("reconciliation", False, "No entries to reconcile")
+
+    all_passed = all(c["passed"] for c in checks)
+    status = "VERIFIED" if all_passed else "FAILED"
+
+    session.add(
+        AuditEvent(
+            packet_id=packet_id,
+            event_type=AuditEventType.PACKET_VALIDATED,
+            user_id="system",
+            event_metadata={
+                "verification_result": status,
+                "checks_passed": sum(1 for c in checks if c["passed"]),
+                "checks_failed": sum(1 for c in checks if not c["passed"]),
+            },
+        )
+    )
+    await session.commit()
+
+    return {
+        "status": status,
+        "packet_id": str(packet_id),
+        "page_count": manifest.total_pages,
+        "bates_start": manifest.bates_start,
+        "bates_end": manifest.bates_end,
+        "exhibits": len(manifest.entries),
+        "checks": checks,
+    }

@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_session
 from app.domain.bates import BatesAssignment
@@ -11,6 +12,12 @@ from app.domain.packet import Packet
 from app.domain.page import Page
 
 router = APIRouter()
+
+
+def _bates_for_page(bates_map: dict, doc_id, page_num: int) -> str | None:
+    key = (str(doc_id), page_num)
+    assignment = bates_map.get(key)
+    return assignment.bates_label if assignment else None
 
 
 @router.get("/{packet_id}")
@@ -25,14 +32,24 @@ async def search_packet(packet_id: UUID, q: str, session: AsyncSession = Depends
 
     pattern = f"%{query}%"
 
+    bates_result = await session.execute(
+        select(BatesAssignment).where(BatesAssignment.packet_id == packet_id)
+    )
+    bates_assignments = bates_result.scalars().all()
+    bates_map = {
+        (str(ba.document_id), ba.page_number): ba for ba in bates_assignments
+    }
+
     doc_results = await session.execute(
-        select(Document).where(
+        select(Document)
+        .where(
             Document.packet_id == packet_id,
             or_(
                 Document.original_filename.ilike(pattern),
                 Document.description.ilike(pattern),
             ),
         )
+        .options(selectinload(Document.bates_assignments))
     )
     matched_docs = doc_results.scalars().all()
 
@@ -55,7 +72,8 @@ async def search_packet(packet_id: UUID, q: str, session: AsyncSession = Depends
     bates_matches = bates_results.scalars().all()
 
     results = []
-    seen_documents = set()
+    seen_documents: set = set()
+    seen_page_keys: set = set()
 
     for document in matched_docs:
         matched_fields = []
@@ -63,6 +81,14 @@ async def search_packet(packet_id: UUID, q: str, session: AsyncSession = Depends
             matched_fields.append("filename")
         if document.description and query.lower() in document.description.lower():
             matched_fields.append("description")
+        doc_bates = sorted(
+            document.bates_assignments, key=lambda b: b.bates_number
+        ) if document.bates_assignments else []
+        bates_range = (
+            f"{doc_bates[0].bates_label} - {doc_bates[-1].bates_label}"
+            if doc_bates
+            else None
+        )
         results.append(
             {
                 "document_id": str(document.id),
@@ -70,50 +96,100 @@ async def search_packet(packet_id: UUID, q: str, session: AsyncSession = Depends
                 "document_type": document.document_type.value,
                 "page_count": document.page_count,
                 "status": document.processing_status.value,
+                "bates_range": bates_range,
+                "description": document.description,
                 "matched_fields": matched_fields,
                 "snippets": [],
             }
         )
-        seen_documents.add(document.id)
+        seen_documents.add(str(document.id))
 
     for page, document in page_matches:
-        if document.id in seen_documents:
-            continue
-        seen_documents.add(document.id)
+        doc_id_str = str(document.id)
+        page_key = (doc_id_str, page.page_number)
         text = page.extracted_text or ""
         lower = text.lower()
         idx = lower.find(query.lower())
+        if idx < 0:
+            continue
         start = max(0, idx - 100)
         snippet = text[start : idx + len(query) + 100]
-        results.append(
-            {
-                "document_id": str(document.id),
-                "document_name": document.original_filename,
-                "document_type": document.document_type.value,
-                "page_count": document.page_count,
-                "status": document.processing_status.value,
-                "matched_fields": ["content"],
-                "snippets": [{"page_number": page.page_number, "snippet": snippet}],
-            }
-        )
+        bates_label = _bates_for_page(bates_map, document.id, page.page_number)
+
+        if doc_id_str in seen_documents:
+            for r in results:
+                if r["document_id"] == doc_id_str:
+                    r["snippets"].append(
+                        {
+                            "page_number": page.page_number,
+                            "bates_label": bates_label,
+                            "snippet": snippet,
+                        }
+                    )
+                    break
+        elif page_key not in seen_page_keys:
+            seen_page_keys.add(page_key)
+            doc_bates = sorted(
+                document.bates_assignments, key=lambda b: b.bates_number
+            ) if document.bates_assignments else []
+            bates_range = (
+                f"{doc_bates[0].bates_label} - {doc_bates[-1].bates_label}"
+                if doc_bates
+                else None
+            )
+            results.append(
+                {
+                    "document_id": doc_id_str,
+                    "document_name": document.original_filename,
+                    "document_type": document.document_type.value,
+                    "page_count": document.page_count,
+                    "status": document.processing_status.value,
+                    "bates_range": bates_range,
+                    "description": document.description,
+                    "matched_fields": ["content"],
+                    "snippets": [
+                        {
+                            "page_number": page.page_number,
+                            "bates_label": bates_label,
+                            "snippet": snippet,
+                        }
+                    ],
+                }
+            )
+            seen_documents.add(doc_id_str)
 
     for ba in bates_matches:
-        if ba.document_id in seen_documents:
+        doc_id_str = str(ba.document_id)
+        if doc_id_str in seen_documents:
             continue
-        seen_documents.add(ba.document_id)
+        seen_documents.add(doc_id_str)
         document = await session.get(Document, ba.document_id)
         if not document:
             continue
+        doc_bates = sorted(
+            document.bates_assignments, key=lambda b: b.bates_number
+        ) if document.bates_assignments else []
+        bates_range = (
+            f"{doc_bates[0].bates_label} - {doc_bates[-1].bates_label}"
+            if doc_bates
+            else None
+        )
         results.append(
             {
-                "document_id": str(document.id),
+                "document_id": doc_id_str,
                 "document_name": document.original_filename,
                 "document_type": document.document_type.value,
                 "page_count": document.page_count,
                 "status": document.processing_status.value,
+                "bates_range": bates_range,
+                "description": document.description,
                 "matched_fields": ["bates_label"],
                 "snippets": [
-                    {"page_number": ba.page_number, "snippet": f"Bates number {ba.bates_label}"}
+                    {
+                        "page_number": ba.page_number,
+                        "bates_label": ba.bates_label,
+                        "snippet": f"Bates number {ba.bates_label}",
+                    }
                 ],
             }
         )

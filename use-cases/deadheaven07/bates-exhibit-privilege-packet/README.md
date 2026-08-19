@@ -8,8 +8,9 @@
 
 | Metric | Result |
 |---|---|
-| Backend tests | **230/230 passing** (deterministic, order-independent) |
+| Backend tests | **253/253 passing** (deterministic, order-independent) |
 | Evidence tests (offline, keyless) | **33 tests** proving crash recovery, zero double-stamping, redaction residue absence, manifest SHA reconciliation |
+| Content description tests | **17 tests** proving descriptions come from content, not filenames |
 | Frontend tests | **7/7 passing** |
 | TypeScript | **clean** (zero errors) |
 | Production build | **succeeds** |
@@ -29,12 +30,15 @@ Legal e-discovery has three hard problems this system addresses:
 
 - **Packet management** — create, rename, list, reorder, and delete exhibit packets.
 - **Document ingestion** — accepts PDF, DOCX (via LibreOffice), scanned PDFs and images (via PDF images), with OCR fallback.
+- **Content-derived descriptions** — exhibit descriptions are generated from document content (OCR/native text), not filenames. Filenames are used only as a last-resort fallback.
 - **Bates numbering** — contiguous assignment per page, auto on upload, manual assign, and automatic re-stamping on reorder.
 - **PII redaction** — detects SSNs, phone numbers, emails, names, account numbers (including alphanumeric `ACC-8821-4433`-style values) and medical terms.
 - **Redaction workflow** — detect → propose → review/approve → apply → verify that redacted text is actually gone.
 - **Privilege marking** — mark documents `privileged` / `not_privileged`, with reason/category, override, and a machine + human-readable privilege log.
 - **AI review** — delegates to the SuperDocs API for drafting/review; sessions are reused per document and failures leave the document in a recoverable state.
 - **Packet build** — cover sheets, stamps, exhibit-index PDF, privilege log, and a `manifest.json` with SHA-256 hashes for the final packet, every exhibit, and every source entry.
+- **Packet verification** — structured verification checks artifacts, Bates contiguity, page counts, SHA-256 hashes, and reconciliation before export.
+- **Content search** — search across document content, filenames, descriptions, and Bates labels with page-level results and snippets.
 - **Validation & integrity** — validation pass before build; manifest SHAs are re-checked at build time.
 - **Export** — final packet, per-exhibit PDFs, privilege log, and manifest for download.
 - **Audit trail** — every significant lifecycle event (upload, processing, Bates, redaction, privilege, validate, build, AI) is recorded with metadata.
@@ -55,10 +59,11 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full architecture.
 ## Core Workflow
 
 ```
-Upload → Validate → Process (OCR/text) → Bates assignment
-    → Detect PII → Review/Approve → Apply redactions → Verify redaction
+Upload → Validate → Process (OCR/text) → Generate content-derived descriptions
+    → Bates assignment → Detect PII → Review/Approve → Apply redactions → Verify redaction
     → Privilege review → AI review (SuperDocs, session reuse)
     → Validate → Build (covers + stamps + index + privilege log + manifest)
+    → Verify (artifacts, Bates, page counts, SHA-256, reconciliation)
     → Manifest/SHA verification → Export
 ```
 
@@ -195,8 +200,9 @@ Copy `.env.example` (backend). All secrets live only in `.env` (gitignored):
 
 ### Verified Numbers
 
-- Backend: `pytest -q` → **230 passed**, 6 warnings
+- Backend: `pytest -q` → **253 passed**, 7 warnings
 - Evidence tests (offline): `pytest test_evidence_*` → **33 passed** (no DB, no API key)
+- Content description tests: `pytest test_content_descriptions` → **17 passed** (no DB)
 - Frontend unit: `npx vitest run` → **7 passed**
 - TypeScript: `npx tsc --noEmit` → **clean**
 - Production build: `npm run build` → **succeeds**
@@ -297,8 +303,9 @@ A repeatable live end-to-end QA is provided at `backend/live_e2e_phase13.py`. It
 
 | Check            | Status                    |
 | ---------------- | ------------------------- |
-| Backend tests    | **230 passed** (deterministic, order-independent) |
+| Backend tests    | **253 passed** (deterministic, order-independent) |
 | Evidence tests   | **33 passed** (offline/keyless, stranger-verifiable) |
+| Content description tests | **17 passed** (proves descriptions from content) |
 | Frontend tests   | 7 passed                  |
 | TypeScript       | clean                     |
 | Production build | succeeds                  |
@@ -307,4 +314,4 @@ A repeatable live end-to-end QA is provided at `backend/live_e2e_phase13.py`. It
 | Storage cleanup  | reference-aware           |
 | Database cleanup | cascades + SET NULL audit |
 
-**Status: READY FOR PR** — Full backend suite (230/230) passes deterministically. 33 evidence tests prove hard claims (crash recovery, zero double-stamping, redaction residue, manifest reconciliation) and can be run by a stranger with just `pytest`.
+**Status: READY FOR PR** — Full backend suite (253/253) passes deterministically. 33 evidence tests prove hard claims (crash recovery, zero double-stamping, redaction residue, manifest reconciliation) and can be run by a stranger with just `pytest`. 17 content description tests prove exhibit descriptions come from document content, not filenames.

@@ -190,6 +190,54 @@ any post-build tampering.
 
 ---
 
+### APP-DESC-01: Content-Derived Exhibit Descriptions
+**Status:** Fully implemented and tested  
+**Origin:** Assignment requirement  
+**Impact:** Exhibit descriptions now come from document content, not filenames
+
+Previously, exhibit descriptions were derived from filenames (e.g.,
+`04_privileged_email.pdf` → "04 privileged email"). This violated the
+assignment requirement that descriptions must come from document content.
+
+**Fix:** Added `description_generator.py` that extracts meaningful paragraphs
+from OCR/native text, skipping boilerplate. Filenames are used only as a
+last-resort fallback when no content is available.
+
+**Verified by:** `test_content_descriptions.py` (17 tests)
+
+---
+
+### APP-SEARCH-01: Content Search with Bates Labels
+**Status:** Fully implemented  
+**Origin:** Assignment requirement  
+**Impact:** Search now returns page-level results with Bates numbers
+
+The search endpoint now searches across document content (extracted text),
+returns page-level results with Bates labels, and includes content-derived
+descriptions in search results.
+
+**Files affected:** `search.py`
+
+---
+
+### APP-VERIFY-01: Packet Verification Endpoint
+**Status:** Fully implemented and tested  
+**Origin:** Assignment requirement  
+**Impact:** Structured verification before export
+
+Added `POST /exports/{packet_id}/verify` that checks:
+- All artifacts exist (final_packet.pdf, exhibits, index, log, manifest)
+- Bates numbers are contiguous with no duplicates
+- Page counts match manifest entries
+- SHA-256 hashes are valid
+- Reconciliation passes (total pages = sum of Bates assignments)
+
+Returns structured response with per-check pass/fail and audit trail.
+
+**Verified by:** `test_verify_packet.py` (5 tests)
+
+---
+
 ## Latency Behavior Summary
 
 | Operation | Typical Latency | Worst Case | Notes |
