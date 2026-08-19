@@ -1,0 +1,34 @@
+[
+  {
+    "document_id": "6a3f61fa-2f82-4bb8-a48c-e1c974230e24",
+    "document_filename": "custody_test.pdf",
+    "page": 1,
+    "bates_label": "CASE-000001",
+    "proposal": {
+      "candidate_id": "bc7c80bc-5616-406a-b4a5-3d9d0f5e3d74",
+      "matched_text": "***",
+      "category": "ssn",
+      "proposed_by": "local_fallback",
+      "proposed_at": "2026-08-19T05:19:08.766899+00:00",
+      "superdocs_change_id": null
+    },
+    "human_decision": {
+      "status": "approved",
+      "approver": "evaluator@test.com",
+      "approved_at": "2026-08-19T05:19:08.800608+00:00"
+    },
+    "application": {
+      "applied_at": null,
+      "applied_by": null
+    },
+    "verification": {
+      "bc7c80bc-5616-406a-b4a5-3d9d0f5e3d74": {
+        "verified": true,
+        "text_still_present": false
+      }
+    },
+    "final_artifact": {
+      "sha256": "fad39cd47d808b86d27a53e88a08781a80386774b574418eb9cd5b0218578ee5"
+    }
+  }
+]
