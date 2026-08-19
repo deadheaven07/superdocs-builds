@@ -219,6 +219,7 @@ async def list_documents(packet_id: UUID, session: AsyncSession = Depends(get_se
             else "pending",
             "is_searchable": doc.is_searchable,
             "description": doc.description,
+            "description_source": doc.description_source,
             "uploaded_at": doc.uploaded_at.isoformat() if doc.uploaded_at else None,
         }
         for doc in documents

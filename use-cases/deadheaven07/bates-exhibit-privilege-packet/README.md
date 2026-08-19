@@ -8,8 +8,9 @@
 
 | Metric | Result |
 |---|---|
-| Backend tests | **257/257 passing** (deterministic, order-independent) |
+| Backend tests | **260/260 passing** (deterministic, order-independent) |
 | Evidence tests (offline, keyless) | **33 tests** proving crash recovery, zero double-stamping, redaction residue absence, manifest SHA reconciliation |
+| Trust boundary tests | **10 tests** proving PROPOSED→APPLIED blocked, REJECTED text survives, double-application prevented, idempotent scrub |
 | Content description tests | **17 tests** proving descriptions come from content, not filenames |
 | Integration evidence tests | **4 tests** proving the SuperDocs adapter is actually called when available |
 | Frontend tests | **7/7 passing** |
@@ -26,6 +27,30 @@ Legal e-discovery has three hard problems this system addresses:
 2. **Redacted text must actually be gone.** A redaction that leaves extractable text is a compliance violation. The byte scrubber removes text from the PDF content stream (not paint-over), and the verifier confirms absence. Proven by `test_evidence_redaction_residue.py` (12 offline tests, no DB required).
 
 3. **The exported packet must be independently verifiable.** Every file in the manifest has a SHA-256 hash. Anyone can re-hash the files and compare. Proven by `test_evidence_manifest_reconciliation.py`.
+
+## Trust Model
+
+```
+    SUPERDOCS (AI proposes)
+         │
+         │  PII detection, privilege analysis
+         │  approval_mode="ask_every_time"
+         ▼
+    HUMAN REVIEW (human approves)
+         │
+         │  Approve / Reject each proposal
+         │  Record approver + timestamp
+         ▼
+    DETERMINISTIC CORE (system proves)
+         │
+         │  Byte-scrub → Verify text gone
+         │  Bates → Contiguous, crash-recoverable
+         │  Manifest → SHA-256 for every artifact
+         ▼
+    VERIFIED PACKET
+```
+
+**AI must never auto-redact. Every redaction requires human approval. The system proves what happened via byte-level verification and SHA-256 manifests.**
 
 ## Key Capabilities
 
@@ -60,13 +85,20 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full architecture.
 ## Core Workflow
 
 ```
-Upload → Validate → Process (OCR/text) → Generate content-derived descriptions
-    → Bates assignment → Detect PII → Review/Approve → Apply redactions → Verify redaction
-    → Privilege review → AI review (SuperDocs, session reuse)
-    → Validate → Build (covers + stamps + index + privilege log + manifest)
-    → Verify (artifacts, Bates, page counts, SHA-256, reconciliation)
-    → Manifest/SHA verification → Export
+INGEST → Validate → Process (OCR/text extraction)
+    → CONTENT UNDERSTANDING (content-derived descriptions)
+    → SUPERDOCS INTELLIGENCE (PII detection + privilege analysis via async chat)
+    → SEARCH (content, filenames, descriptions, Bates labels)
+    → REVIEW (human examines AI proposals)
+    → APPROVAL (human approves/rejects each redaction + privilege decision)
+    → REDACTION (byte-scrub approved candidates, verify text is gone)
+    → BATES (contiguous numbering, crash-recoverable)
+    → BUILD (covers + stamps + index + privilege log + manifest)
+    → VERIFY (artifacts, Bates, page counts, SHA-256, reconciliation)
+    → EXPORT
 ```
+
+**Core principle: AI proposes. Human approves. System proves.**
 
 ## Tech Stack
 

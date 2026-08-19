@@ -4,7 +4,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import {
   Upload, Download, ArrowUpDown, Search, Shield, Eye, FileText, Plus,
-  Loader2, AlertCircle, CheckCircle2, RefreshCw, Send, Check, X, XCircle,
+  Loader2, AlertCircle, AlertTriangle, CheckCircle2, RefreshCw, Send, Check, X, XCircle,
   ArrowUp, ArrowDown, Trash2,
 } from "lucide-react";
 import { clsx } from "clsx";
@@ -576,6 +576,7 @@ export function PacketWorkspace() {
   const { packetId = "" } = useParams();
   const [activeTab, setActiveTab] = useState("documents");
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
+  const [verifyResult, setVerifyResult] = useState<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
@@ -683,20 +684,22 @@ export function PacketWorkspace() {
   const handleVerify = async () => {
     try {
       const result = await verifyPacket.mutateAsync(packetId);
-      const failed = result.checks.filter((c: any) => !c.passed);
+      setVerifyResult(result);
       if (result.status === "VERIFIED") {
         toast({
           title: "Packet verified",
-          description: `All ${result.checks.length} checks passed. ${result.exhibits} exhibits, ${result.page_count} pages.`,
+          description: `All ${result.checks.length} checks passed.`,
         });
       } else {
+        const failed = result.checks.filter((c: any) => !c.passed);
         toast({
           title: "Verification failed",
-          description: `${failed.length} check(s) failed: ${failed.map((c: any) => c.name).join(", ")}`,
+          description: `${failed.length} check(s) failed.`,
           variant: "destructive",
         });
       }
     } catch (err: any) {
+      setVerifyResult(null);
       toast({ title: "Verification failed", description: err?.message, variant: "destructive" });
     }
   };
@@ -813,6 +816,74 @@ export function PacketWorkspace() {
         </div>
       </div>
 
+      {verifyResult && (
+        <div className={clsx(
+          "border-b px-6 py-4",
+          verifyResult.status === "VERIFIED"
+            ? "bg-green-50 border-green-200"
+            : verifyResult.status === "NOT_BUILT"
+              ? "bg-yellow-50 border-yellow-200"
+              : "bg-red-50 border-red-200"
+        )}>
+          <div className="flex items-start gap-4 max-w-5xl">
+            <div className="flex-shrink-0 mt-0.5">
+              {verifyResult.status === "VERIFIED" ? (
+                <CheckCircle2 className="h-6 w-6 text-green-600" />
+              ) : verifyResult.status === "NOT_BUILT" ? (
+                <AlertTriangle className="h-6 w-6 text-yellow-600" />
+              ) : (
+                <XCircle className="h-6 w-6 text-red-600" />
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-baseline gap-3">
+                <h3 className={clsx(
+                  "text-lg font-semibold",
+                  verifyResult.status === "VERIFIED" ? "text-green-900" :
+                  verifyResult.status === "NOT_BUILT" ? "text-yellow-900" : "text-red-900"
+                )}>
+                  {verifyResult.status === "VERIFIED" ? "PACKET VERIFIED" :
+                   verifyResult.status === "NOT_BUILT" ? "NOT YET BUILT" : "VERIFICATION FAILED"}
+                </h3>
+                {verifyResult.bates_start && verifyResult.bates_end && (
+                  <span className="text-sm text-gray-600 font-mono">
+                    {verifyResult.bates_start} → {verifyResult.bates_end}
+                  </span>
+                )}
+              </div>
+              <div className="mt-1 text-sm text-gray-600">
+                {verifyResult.page_count} pages · {verifyResult.exhibits} exhibits
+              </div>
+              <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-1.5">
+                {verifyResult.checks.map((check: any) => (
+                  <div key={check.name} className="flex items-center gap-2 text-sm">
+                    {check.passed ? (
+                      <CheckCircle2 className="h-4 w-4 text-green-600 flex-shrink-0" />
+                    ) : (
+                      <XCircle className="h-4 w-4 text-red-600 flex-shrink-0" />
+                    )}
+                    <span className={clsx("truncate", check.passed ? "text-gray-700" : "text-red-700 font-medium")}>
+                      {check.name.replace(/_/g, " ")}
+                    </span>
+                    {check.detail && !check.passed && (
+                      <span className="text-xs text-red-500 truncate hidden lg:inline" title={check.detail}>
+                        ({check.detail})
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <button
+              onClick={() => setVerifyResult(null)}
+              className="flex-shrink-0 text-gray-400 hover:text-gray-600"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="flex-1 flex overflow-hidden">
         <aside className="w-72 border-r border-gray-200 bg-white flex flex-col overflow-hidden">
           <div className="p-3 border-b border-gray-200">
@@ -866,7 +937,19 @@ export function PacketWorkspace() {
                             <p className="text-xs text-primary-600 mt-1 font-mono">{doc.bates_range}</p>
                           )}
                           {doc.description && (
-                            <p className="text-xs text-gray-600 mt-1 truncate" title={doc.description}>{doc.description}</p>
+                            <div className="mt-1">
+                              <p className="text-xs text-gray-600 truncate" title={doc.description}>{doc.description}</p>
+                              {doc.description_source && (
+                                <span className={clsx(
+                                  "inline-block mt-0.5 px-1 py-0.5 rounded text-[10px] font-medium",
+                                  doc.description_source === "content_summary"
+                                    ? "bg-blue-50 text-blue-700"
+                                    : "bg-gray-100 text-gray-600"
+                                )}>
+                                  {doc.description_source === "content_summary" ? "Content-derived" : "Filename-based"}
+                                </span>
+                              )}
+                            </div>
                           )}
                         </div>
                       </div>

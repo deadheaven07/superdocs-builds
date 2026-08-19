@@ -83,6 +83,7 @@ export interface DocumentListResponse {
   bates_range: string | null;
   privilege_status: string;
   description: string | null;
+  description_source: string | null;
   is_searchable: boolean;
   uploaded_at: string;
 }
