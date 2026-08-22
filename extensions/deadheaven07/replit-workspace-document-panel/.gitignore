@@ -1,28 +1,7 @@
-# Dependencies
-node_modules/
-
-# Build output
-dist/
-
-# Environment
+node_modules
+dist
+*.vsix
 .env
-.env.local
-.env.*.local
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Test output
-coverage/
-test-results/
-
-# Logs
 *.log
-npm-debug.log*
+.DS_Store
+*.tsbuildinfo

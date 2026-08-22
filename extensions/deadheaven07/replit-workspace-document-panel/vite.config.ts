@@ -8,10 +8,19 @@ export default defineConfig({
     sourcemap: true,
     rollupOptions: {
       input: 'index.html',
+      external: ['@replit/extensions', '@replit/extensions-react'],
+      output: {
+        globals: {
+          '@replit/extensions': 'replitExtensions',
+          '@replit/extensions-react': 'replitExtensionsReact',
+        },
+      },
     },
   },
   server: {
     port: 5173,
+    host: true,
+    allowedHosts: true,
   },
   test: {
     environment: 'jsdom',

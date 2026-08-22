@@ -1,9 +1,12 @@
+import { HandshakeProvider } from '@replit/extensions-react';
 import { DocumentPanel } from './components/DocumentPanel';
 
 export function App() {
   return (
-    <div className="h-full w-full">
-      <DocumentPanel />
-    </div>
+    <HandshakeProvider>
+      <div className="h-full w-full">
+        <DocumentPanel />
+      </div>
+    </HandshakeProvider>
   );
 }

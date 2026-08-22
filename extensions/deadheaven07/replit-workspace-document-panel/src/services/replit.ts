@@ -122,7 +122,7 @@ export async function readProjectFile(path: string): Promise<string | null> {
       console.warn(`Failed to read file ${path}: ${result.error}`);
       return null;
     }
-    return result.content;
+    return result.content ?? null;
   } catch (error) {
     console.warn(`Error reading file ${path}:`, error);
     return null;

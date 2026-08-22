@@ -1,469 +1,184 @@
 # Replit Workspace Document Panel
 
-A Replit extension that adds a document panel to the workspace, allowing users to generate, edit, and export README, specification, and user guide documents using the SuperDocs AI platform.
+A Replit extension that provides a document panel for generating, reviewing, and exporting documentation (README, SPEC, User Guide) using SuperDocs AI directly inside your Replit workspace.
 
-> **I built this for the SuperDocs task.**
+## What it does
 
-## Features
+This extension adds a panel to your Replit workspace that enables you to:
 
-- **Project File Discovery**: Recursively scans the Replit workspace, filtering out dependencies, build artifacts, and binary files
-- **Smart File Selection**: Interactive file tree with checkboxes and search for selecting relevant source/config/documentation files
-- **Document Generation**: Generate README, Technical Specification, or User Guide documents through SuperDocs AI
-- **Edit Workflow**: Send natural language instructions to SuperDocs for iterative document refinement
-- **Proposed Changes Review**: View and approve/reject AI-proposed changes with diff visualization
-- **Export**: Export finished documents as styled PDF or DOCX
-- **Workspace Integration**: Save exported artifacts directly into the Replit project
-- **Regeneration Review Loop**: "Regenerate from Source" diffs current file hashes against the last snapshot, sends **only changed files** through the same SuperDocs session with `ask_every_time` approval, and lands granular proposed changes in the Review tab — with a zero-drift short-circuit when nothing changed
-- **Document Version History**: Browse and revert SuperDocs document versions
-- **Template & Prompt Gallery**: Apply platform templates/prompts with variable injection
-- **Cancellation**: Cancel in-flight operations at any time
-- **Retry & Error Recovery**: Automatic retry for transient failures with user-facing retry/dismiss actions
-- **File Loading Indicator**: Visual feedback during project file reads
+- **Browse project files** - Recursive file tree with search, multi-select, and smart ignore rules (excludes node_modules, .env, lockfiles, binaries)
+- **Generate documentation** - Create README, SPEC, or User Guide from selected source files using SuperDocs AI
+- **Review AI changes** - Human-in-the-loop approval flow with diff view (insert/replace/delete operations)
+- **Export to PDF/DOCX** - One-click export with overwrite protection, saved directly to your workspace
+- **Regenerate from source** - Hash-diff based regeneration that only sends changed files to SuperDocs, preserving approved sections
+- **Version history** - Browse, preview, and revert to previous document versions
+- **Template gallery** - Apply SuperDocs templates and prompts with variable injection
 
-## Core Capabilities
-
-| Capability | Implementation |
-|------------|----------------|
-| **Document Generation** | SuperDocs REST API with `approval_mode: 'ask_every_time'`. SuperDocs returns granular `ProposedChange` operations (insert/replace/delete/move). The extension uses a single session for the entire workflow, preserving document context across revisions. |
-| **Dual-Layer State Persistence** | State survives browser tab refresh via two synchronized stores: **localStorage** (instant, per-browser) + **`.superdocs-state.json`** in the Replit workspace (survives browser clear, portable across machines). Persisted fields: `sessionId`, `documentId`, `documentType`, `selectedPaths`, `fileHashes` (SHA-256 baselines), `originalInstruction`, `lastUpdated`, `version`. On load, `mergePersistedStates` picks the most recent `lastUpdated`; corrupt payloads on either layer degrade to the healthy layer. |
-| **Regeneration Review Loop** | "Regenerate from Source" compares current SHA-256 file hashes against the persisted baseline (`src/services/revision.ts`). Identical hashes → **zero drift**: no chat job is created, proposed changes are provably empty, and approved sections are preserved. Otherwise only changed/added/removed files (with full current content) are sent via `chatAsync` with `approval_mode: 'ask_every_time'`, producing granular `ProposedChange` ops in the Review tab. Baseline hashes update only after a successful export. |
-| **Hardcoded Exclusion Lists** | File tree filtering and context inclusion use sensible hardcoded defaults (`.git`, `node_modules`, `dist`, `.env*`, lock files, binary extensions). |
-
-## Architecture
-
-```mermaid
-flowchart TD
-    subgraph Replit_Workspace["Replit Workspace"]
-        ProjectFiles["Project Files / File Tree"]
-    end
-
-    subgraph React_UI["React UI Layer"]
-        DocumentPanel["DocumentPanel"]
-        FileTree["FileTree"]
-        DraftTab["DraftTab"]
-        ReviewTab["ReviewTab"]
-        ExportTab["ExportTab"]
-        StatusBadge["StatusBadge"]
-    end
-
-    subgraph Workspace_Services["Workspace Services"]
-        ReplitAccess["Replit File Access"]
-        ContextGen["Project Context Generation"]
-        SHA256["SHA-256 File Hashing"]
-    end
-
-    subgraph UseSuperDocs_Hook["useSuperDocs Hook"]
-        GenState["Generation State"]
-        Cancellation["Cancellation"]
-        Retry["Retry"]
-        ErrorRecovery["Error Recovery"]
-    end
-
-    subgraph SuperDocs_Client["SuperDocs Client"]
-        Session["Session Init"]
-        Upload["Document Upload"]
-        Chat["Chat / Generation"]
-        Polling["Job Polling"]
-        Approval["Approval / Rejection"]
-        Continue["Continuation"]
-        Export["PDF / DOCX Export"]
-    end
-
-    SuperDocs_API["SuperDocs API"]
-
-    ProjectFiles --> React_UI
-    React_UI --> Workspace_Services
-    Workspace_Services --> UseSuperDocs_Hook
-    UseSuperDocs_Hook --> SuperDocs_Client
-    SuperDocs_Client --> SuperDocs_API
-```
-
-### Layer Responsibilities
-
-| Layer | Responsibilities |
-|-------|------------------|
-| **React Components** | Presentation, user interaction, tab navigation, form handling |
-| **`useSuperDocs` Hook** | Operation lifecycle, state machine, cancellation, retry, error recovery |
-| **`superdocs.ts` Client** | API requests, retry policy, AbortSignal propagation, response parsing |
-| **Replit Services** | Workspace file access (`readDir`, `readFile`, `writeFile`, `createDir`) |
-| **Context Utilities** | Project context and SuperDocs instruction construction |
-| **Hash Utilities** | SHA-256 hashing, change detection between revisions |
-
-## SuperDocs Integration
-
-This extension uses the **SuperDocs REST API** with the following endpoints:
-
-| Operation | Endpoint | Method |
-|-----------|----------|--------|
-| Session Init | `/v1/sessions/init` | POST |
-| Upload Document | `/v1/documents/upload-base64` | POST |
-| Chat/Edit Instruction | `/v1/chat/async` | POST |
-| Poll Job Status | `/v1/jobs/{job_id}` | GET |
-| Approve Changes | `/v1/chat/{session_id}/approve` | POST |
-| Continue Job | `/v1/chat/{session_id}/continue` | POST |
-| Export Document | `/v1/documents/export` | POST |
-
-**Important**: SuperDocs returns proposed changes as a **double-JSON-encoded string** that requires two parse passes. This is handled automatically by `src/utils/parser.ts`.
-
-## Reliability and Failure Handling
-
-### Safe Retry Policy
-
-The client implements a deliberate retry policy: only safe/read-oriented operations are retried automatically. Mutation operations are **not** retried to avoid duplicate jobs, duplicate uploads, or unintended side effects.
-
-| Operation | Retries | Reason |
-|-----------|---------|--------|
-| `initSession` | Yes (3×) | Idempotent-ish; safe to retry |
-| `pollJob` | Yes (3×) | Read-only; transient failures common |
-| `waitForJob` | Yes (3×) | Wraps `pollJob` |
-| `uploadDocument` | No | Mutation — would create duplicate documents |
-| `chatAsync` | No | Mutation — would create duplicate generation jobs |
-| `approveChanges` | No | Mutation — non-idempotent approval |
-| `continueJob` | No | Mutation — non-idempotent continuation |
-| `exportDocument` | No | Mutation — would create duplicate exports |
-
-**Retry Behavior**:
-- Exponential backoff: 1s → 2s → 4s (configurable via `RetryConfig`)
-- Retries only on network errors, timeouts, and 502/503/504 responses
-- Never retries on 401, 403, 400, 404
-- Test retry config injectable via constructor (`createSuperDocsClient(apiKey, baseUrl, { maxRetries, retryDelayMs })`)
-
-### Cancellation
-
-Cancellation is implemented with `AbortController` and propagated through the entire request chain:
+## How it works
 
 ```
-DocumentPanel → useSuperDocs → SuperDocsClient → fetch()
+Project Files → Select Context → SuperDocs Upload → Chat/Generation → Proposed Changes → Review & Approve → Export → Workspace
+                    ↓                                                                    ↑
+              SHA-256 Baseline ──────────────────────────────────────────────────────────┘
+                    (stored in .superdocs-state.json + localStorage)
 ```
 
-The `AbortSignal` reaches the actual HTTP request, so cancelling genuinely aborts in-flight network calls rather than merely updating UI state. `AbortError` is caught and suppressed — it does not appear as a user-facing failure.
+### Regeneration Flow (Zero-Drift)
 
-### Error Recovery
+1. Initial generation captures SHA-256 hashes of selected files
+2. On code changes, "Regenerate from Source" computes diff against baseline
+3. Only changed/added/removed files are sent to SuperDocs with original instruction
+4. SuperDocs returns granular proposed changes (not full rewrite)
+5. Previously approved sections whose source files are unchanged are never re-proposed
 
-| UI Element | Behavior |
-|------------|----------|
-| **Error Banner** | Shows error message with "Retry" and "Dismiss" buttons |
-| **Retry** | Re-runs the last generation with the same instruction |
-| **Dismiss** | Clears error and returns to idle state |
-| **Cancel Button** | Visible during any processing state; aborts current operation |
-| **File Loading Indicator** | Spinner + "Reading project files..." during batch file reads |
+## Prerequisites
 
-## Revision Handling
+- A Replit account with a project/repl
+- SuperDocs API key (get one at https://use.superdocs.app)
+- Node.js 18+ (for local development)
 
-Revisions are handled as a **hash-diff review loop** (Generate → Review → Approve → Export → Regenerate from Source). Only drifted files are ever sent back to SuperDocs, so previously approved sections are preserved by construction.
+## Installation
 
-### Workflow
+### In Replit (Recommended)
 
-1. **Initial Generation**
-   - Selected project files are read
-   - SHA-256 hashes captured as baseline (persisted to localStorage + `.superdocs-state.json`)
-   - Original user instruction stored separately
-   - Document generated via SuperDocs (new session)
-
-2. **Regeneration (diff, then send only what changed)**
-   - User modifies project code
-   - Clicks "Regenerate from Source"
-   - Selected files re-read; `computeSourceDiff` compares hashes against the persisted baseline
-   - **No changes** → short-circuit: no chat job, `changes: []`, notice shown ("No source changes detected")
-   - **Changes** → `buildRevisionMessage` sends the **stable original instruction** + changed/added/removed file list + **full current content of changed files only**
-   - Sent through the **same SuperDocs session** (`sessionId` reused) with `approval_mode: 'ask_every_time'`
-
-3. **SuperDocs Returns Granular Operations**
-   - `ProposedChangeBatch` with `operation` (insert/replace/delete/move), `chunk_id`, `old_html`, `new_html`, `ai_explanation`
-   - User reviews and approves/rejects in the Review tab
-
-4. **Apply & Export**
-   - Approved operations applied via `/v1/chat/{session_id}/approve`
-   - Document regenerated in place (no full replacement)
-   - On successful export, baseline hashes updated to current state (`captureHashes`)
-
-### Fidelity & Drift Verification
-
-`tests/superdocs.test.ts` includes an automated zero-drift fidelity suite:
-
-- **Method**: baseline hashes are computed from the current file contents; `planRegeneration` is invoked with byte-identical input. The proposed-changes array is proven empty because the chat job is created **only** from `planRegeneration(...).message` — with no message there can be no `pending_changes`, and no network request is made (asserted via the fetch mock).
-- **Tail behavior**: on zero drift the hook returns `{ hasChanges: false, changes: [] }` **before** `chatAsync`, the UI shows the "No source changes detected" notice, and the previous approved document state is left untouched.
-- **Output stability**: `buildRevisionMessage` is deterministic — repeated builds of the same diff produce byte-identical instructions (paths are sorted; no timestamps or randomness). Verified for both repeated calls and different `Map` insertion orders.
-
-### Bug Prevented
-
-```text
-❌ Previous revision instruction (full generated prompt)
-      ↓
-Must NOT become the next revision's base instruction
-
-✅ Original user instruction (stable)
-    + Diff of changed files only
-      ↓
-New generation instruction (byte-identical for identical diffs)
-```
-
-This ensures revision prompts remain focused and don't grow exponentially with each iteration, and that unchanged sections are never re-proposed.
-
-## User Workflow
-
-```text
-Replit Workspace
-      ↓
-Browse / Search project files
-      ↓
-Select relevant files
-      ↓
-Read project files (with loading indicator)
-      ↓
-Build project context
-      ↓
-SuperDocs
-      ↓
-Generate document
-      ↓
-Review proposed changes
-      ↓
-Approve / Reject
-      ↓
-Continue processing when required
-      ↓
-Export PDF / DOCX
-      ↓
-Modify project code
-      ↓
-Click "Regenerate from Source" → Hash-diff vs baseline → Sends only changed files → Granular updates
-```
-
-## Quick Start
-
-### Prerequisites
-
-- A Replit account
-- A SuperDocs API key (get one at [use.superdocs.app](https://use.superdocs.app))
-
-### Installation
-
-1. **From Replit Extension Store** (when published):
-   - Open any Repl
-   - Click the Extensions panel (sidebar)
-   - Search for "SuperDocs Document Panel"
-   - Click Install
-
-2. **For Development**:
+1. Open your Repl
+2. Open the Extensions panel (puzzle piece icon in sidebar)
+3. Search for "SuperDocs Document Panel" or install from local build:
    ```bash
-   cd extensions/deadheaven07/replit-workspace-document-panel
+   # In your Repl's shell
+   git clone <this-repo>
+   cd superdocs-builds/extensions/deadheaven07/replit-workspace-document-panel
    npm install
-   npm run dev
+   npm run build
    ```
-   Then open the Repl in Replit and the extension will load automatically.
+4. Click "Install" on the extension
 
-### Configuration
+### Local Development
 
-1. Open the SuperDocs panel in Replit
-2. Click "Set API Key"
-3. Enter your SuperDocs API key (stored in memory only, never persisted)
-4. The key is never saved to localStorage, sessionStorage, or committed to git
+```bash
+cd extensions/deadheaven07/replit-workspace-document-panel
+npm install
+npm run dev    # Starts Vite dev server on port 5173
+```
+
+Then in your Repl, use the "Local Extension" feature to load from `http://localhost:5173`.
 
 ## Usage
 
-### First-Time Document Generation
+1. **Open the panel** - Click the SuperDocs icon in the Replit sidebar
+2. **Select files** - Check boxes in the file tree to include files as context
+3. **Choose document type** - Switch to Draft tab, pick README/SPEC/User Guide
+4. **Generate** - Click "Generate Document" (enter API key on first use)
+5. **Review** - Switch to Review tab, see proposed changes with diffs
+6. **Approve** - Click "Approve Changes" or "Reject"
+7. **Export** - Switch to Export tab, choose PDF or DOCX, set destination path
+8. **Regenerate** - After code changes, click "Regenerate from Source" to update only affected sections
 
-1. **Open the Panel**: Click "SuperDocs" in the Replit sidebar
-2. **Select Files**: Check the files you want to include in the document context
-   - The file tree excludes `node_modules`, `.git`, `dist`, `build`, `.env*`, lock files, and binaries
-   - Ignored files are shown in gray with a reason
-   - Use the search box to filter files by name
-3. **Choose Document Type**:
-   - **README** - Project overview, installation, usage, configuration
-   - **SPEC** - Architecture, components, APIs, data models, deployment
-   - **User Guide** - Tutorials, workflows, examples, troubleshooting
-4. **Enter Instruction** (optional): Customize the generation prompt
-5. **Click "Generate Document"**: Uploads context to SuperDocs and starts generation
-6. **Review Proposed Changes**: SuperDocs returns proposed edits for your approval
-7. **Approve/Reject**: Click "Approve All" or "Reject All" (or "Continue" if prompted)
-8. **Export**: Choose PDF or DOCX, set destination path (e.g., `docs/README.pdf`)
-9. **Save**: Click "Export & Save" to write the artifact to your Replit workspace
+## SuperDocs API Key
 
-### Regeneration After Code Changes
+Enter your API key in the panel header when prompted. The key is:
+- Stored only in React memory (not persisted)
+- Never written to localStorage, workspace files, or logs
+- Sent directly to `api.superdocs.app` via CORS
 
-1. **Modify Project Code**: Edit source files in your Repl
-2. **Return to Panel**: The "Regenerate from Source" button appears after successful generation
-3. **Click Regenerate**: The extension re-reads the selected files, compares hashes against the last snapshot, and sends **only the changed files** to SuperDocs for granular updates
-4. **Review Diff**: See new proposed changes in the Review tab (if nothing changed, a "No source changes detected" notice appears instead)
-5. **Approve & Export**: Same workflow as initial generation
+## Configuration
 
-### Error Handling
+No configuration files needed. The extension uses:
+- `.superdocs-state.json` in workspace root (session state, file hashes)
+- Browser localStorage (fallback for session persistence)
 
-- **Transient Failure**: If a network error or 503 occurs during polling, the client retries automatically (up to 3×). If all retries fail, the error banner appears with "Retry" and "Dismiss".
-- **Cancel**: Click "Cancel" at any time during generation, polling, approval, or export to abort the in-flight request.
+## Project Structure
 
-## File Selection Strategy
+```
+src/
+├── main.tsx                 # React 18 bootstrap
+├── App.tsx                  # Root wrapper
+├── components/
+│   ├── DocumentPanel.tsx    # Root orchestrator (tabs, state)
+│   ├── FileTree.tsx         # Recursive file browser with search
+│   ├── DraftTab.tsx         # Generation UI (doc type, instruction)
+│   ├── ReviewTab.tsx        # Proposed changes diff view
+│   ├── ExportTab.tsx        # PDF/DOCX export with overwrite check
+│   ├── HistoryTab.tsx       # Version history browser
+│   ├── TemplateGallery.tsx  # Templates & prompts with variables
+│   └── StatusBadge.tsx      # Progress stepper
+├── hooks/
+│   ├── useSuperDocs.ts      # Core state machine (generate, approve, export)
+│   ├── useFileHashes.ts     # SHA-256 baseline capture & diff
+│   ├── useStatePersistence.ts # Dual-layer persistence (localStorage + workspace)
+│   └── useWorkspaceFiles.ts   # Replit filesystem API wrapper
+├── services/
+│   ├── superdocs.ts         # SuperDocs REST client with retry policy
+│   ├── replit.ts            # Workspace context building & file I/O
+│   ├── context.ts           # Initial-generation context builder
+│   └── revision.ts          # Diff computation & thin revision messages
+├── types/
+│   ├── superdocs.ts         # SuperDocs API contracts
+│   └── replit-extensions.d.ts # @replit/extensions type declarations
+└── utils/
+    ├── hash.ts              # SHA-256 + change detection
+    └── parser.ts            # Double-JSON decoder for pending_changes
+```
 
-| Category | Action |
-|----------|--------|
-| `.git`, `node_modules`, `dist`, `build`, `.cache`, `.vercel`, `.netlify`, `coverage`, `.next`, `.turbo`, `vendor`, `target`, `__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `venv`, `.venv`, `env`, `.env` | Excluded entirely |
-| `.env*`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `Cargo.lock`, `go.sum`, `composer.lock`, `poetry.lock`, `Pipfile.lock` | Excluded (secrets/dependencies) |
-| Binary files (images, fonts, PDFs, archives, executables, compiled artifacts) | Excluded |
-| All other files | Included, user-selectable |
+## Testing
+
+```bash
+npm test        # Run all 84 unit tests
+npm run lint    # ESLint check
+```
+
+Tests cover:
+- Double-JSON parsing (SuperDocs quirk)
+- SHA-256 hashing (with NIST test vectors)
+- Change detection (added/changed/removed files)
+- Context building (500KB cap, warnings)
+- Persistence merge (browser refresh, container re-entry)
+- Revision flow (zero-drift, instruction stability, session reuse)
+- SuperDocs client (retry policy, mutation safety, error handling)
+
+## SuperDocs API Integration
+
+### Endpoints Used
+
+| Operation | Endpoint | Method | Retries |
+|-----------|----------|--------|---------|
+| Init Session | `/v1/sessions/init` | POST | 3× |
+| Upload Document | `/v1/documents/upload-base64` | POST | 0 (mutation) |
+| Chat/Edit | `/v1/chat/async` | POST | 0 (mutation) |
+| Poll Job | `/v1/jobs/{jobId}` | GET | 3× |
+| Approve Changes | `/v1/chat/{sessionId}/approve` | POST | 0 (mutation) |
+| Continue Job | `/v1/chat/{sessionId}/continue` | POST | 0 (mutation) |
+| Export Document | `/v1/documents/export` | POST | 0 (mutation) |
+| Download Export | `{download_url}` | GET | 0 |
+| Sync HTML | `/v1/documents/sync-html` | POST | 0 (mutation) |
+| Versions | `/v1/documents/{id}/versions` | GET | 3× |
+| Revert | `/v1/documents/{id}/versions/{v}/revert` | POST | 0 |
+| Templates | `/v1/templates` | GET | 3× |
+| Prompts | `/v1/prompts` | GET | 3× |
+
+### Critical Implementation Details
+
+- **Double-JSON decoding**: `pending_changes` is double-encoded; parser handles both string and object inner content
+- **Mutation-safe retries**: Only safe reads (init, poll) retry; mutations never retry
+- **Session continuity**: Same `session_id` reused across generate/regenerate/approve/export
+- **Approval mode**: Always `ask_every_time` to enforce human review
 
 ## Security
 
-- **API Key Handling**: Stored in React memory only, never in localStorage/sessionStorage
-- **No Secret Leakage**: Key never appears in logs, error messages, or git history
-- **User Consent**: Replit prompts for file write consent on first use
-- **CORS**: Direct browser calls to `api.superdocs.app` (requires CORS support)
-
-## Development
-
-### Project Structure
-
-```
-extensions/deadheaven07/replit-workspace-document-panel/
-├── .replit                    # Replit extension config
-├── package.json               # Dependencies & scripts
-├── tsconfig.json              # TypeScript config
-├── vite.config.ts             # Vite config
-├── index.html                 # Entry HTML
-├── .env.example               # API key placeholder
-├── .gitignore                 # Git ignores
-├── README.md                  # This file
-├── BUGS_AND_QUIRKS.md         # SuperDocs API behavioral quirks
-├── src/
-│   ├── main.tsx               # React entry point
-│   ├── App.tsx                # Root component
-│   ├── components/            # UI components
-│   │   ├── DocumentPanel.tsx  # Main panel orchestration
-│   │   ├── FileTree.tsx       # File browser with search
-│   │   ├── DraftTab.tsx       # Generation UI
-│   │   ├── ReviewTab.tsx      # Changes review
-│   │   ├── ExportTab.tsx      # Export UI
-│   │   ├── HistoryTab.tsx     # Version history
-│   │   ├── TemplateGallery.tsx # Template/prompt gallery
-│   │   └── StatusBadge.tsx    # Status indicator with retry/dismiss
-│   ├── services/              # Business logic
-│   │   ├── superdocs.ts       # SuperDocs REST client + retry/cancel
-│   │   ├── replit.ts          # Replit workspace API + context builder
-│   │   ├── context.ts         # Initial-generation context builder
-│   │   └── revision.ts        # Hash-diff + thin revision messages
-│   ├── hooks/                 # React hooks
-│   │   ├── useSuperDocs.ts    # SuperDocs state machine
-│   │   ├── useWorkspaceFiles.ts # File operations
-│   │   └── useFileHashes.ts   # Change detection
-│   ├── types/                 # TypeScript types
-│   │   └── superdocs.ts       # SuperDocs types
-│   ├── utils/                 # Utilities
-│   │   ├── hash.ts            # SHA-256 (native + pure-JS fallback)
-│   │   └── parser.ts          # Double-JSON parser
-│   └── styles/
-│       └── index.css          # Global styles
-└── tests/
-    ├── setup.ts               # Test mocks
-    ├── superdocs.test.ts      # SuperDocs client + zero-drift fidelity tests
-    ├── parser.test.ts         # Parser tests
-    ├── hash.test.ts           # Hash tests (incl. NIST vectors)
-    ├── context.test.ts        # Context builder tests
-    ├── replit.test.ts         # Replit adapter tests
-    ├── revision.test.ts       # Diff + revision message + retry tests
-    └── persistence.test.ts    # Dual-layer merge (refresh/re-entry) tests
-```
-
-### Commands
-
-```bash
-# Install dependencies
-npm install
-
-# Start dev server (with HMR)
-npm run dev
-
-# Run tests
-npm test
-
-# Type-check
-npm run typecheck
-
-# Production build
-npm run build
-
-# Preview build
-npm run preview
-```
-
-### Testing
-
-```bash
-# Run all tests
-npm test
-
-# Run with coverage
-npm test -- --coverage
-```
-
-**Current Test Results**:
-- 7 test files
-- **84 tests passing**
-- TypeScript typecheck: **passing**
-- Production build: **passing**
-
-**Key Regression Coverage**:
-- Zero-drift fidelity (identical hashes → 0 proposed changes, no chat job)
-- Byte-identical revision message determinism
-- Revision change summary immune to instruction accumulation
-- Retry behavior (safe operations retry, mutations don't)
-- Retry exhaustion (max retries respected)
-- Non-retriable errors (401/403/400/404 not retried)
-- 503 service unavailable retries
-- Double-JSON parser
-- Context builder
-- Hash/change detection (incl. NIST SHA-256 vectors for the pure-JS fallback)
-- Dual-layer persistence merge (browser refresh, container re-entry, corrupt payloads)
-- Replit adapter
-- SuperDocs client
-
-### Local Development in Replit
-
-1. Fork this repository
-2. Import into Replit
-3. Run `npm run dev` in the Shell
-4. The extension loads automatically in the Repl's sidebar
-
-## Engineering Decisions
-
-### Stable Revision Instructions
-Prevents generated revision prompts from accumulating over multiple revisions. The original user instruction is stored separately and used as the base for every regeneration; the change summary is derived purely from the current hash diff, never from a previous revision message.
-
-### Thin Regeneration Review Loop
-Regeneration sends **only changed files** (with full current content) through the same SuperDocs session. Unchanged files are never serialized, so previously approved sections are preserved by construction, and identical hashes short-circuit before any API call (zero drift → zero proposed changes).
-
-### Mutation-Safe Retries
-Only safe operations (`initSession`, `pollJob`, `waitForJob`) are retried automatically. Mutations (`uploadDocument`, `chatAsync`, `approveChanges`, `continueJob`, `exportDocument`) are never retried to avoid duplicate side effects.
-
-### AbortSignal Propagation
-Cancellation uses `AbortController` whose signal reaches the actual `fetch()` call. Cancelling genuinely aborts in-flight HTTP requests, not just UI state.
-
-### Hash-Based Change Detection
-SHA-256 hashes of selected files are captured at export time. Later revisions compare current hashes against the baseline to detect changed/added/removed files without re-reading unchanged files unnecessarily. A pure-JS SHA-256 fallback keeps hashes byte-identical in non-secure contexts.
-
-### Explicit Error Recovery
-Users can retry recoverable failures or dismiss errors. No silent failures; all error states are user-visible with recovery actions.
-
-### Regression Testing
-All reliability changes (retry policy, cancellation, revision stability) are covered by automated tests to prevent regressions.
+- API key never persisted (React state only)
+- `.env*` files excluded from file tree and context
+- 500KB context cap prevents accidental large uploads
+- Export download uses short-lived URLs with Bearer auth
+- No secrets in generated documents (source files filtered)
 
 ## Known Limitations
 
-1. **CORS Dependency**: Requires `api.superdocs.app` to allow requests from `*.replit.dev` origins
-2. **File Size Limits**: Replit workspace API limits reads to ~5MB and writes to ~2MB
-3. **No Background Polling**: Polling runs in the panel; closing the panel stops long-running jobs
-4. **Single User**: Extension runs in the context of the current Replit user
+1. Requires `api.superdocs.app` CORS to allow `*.replit.dev`
+2. Replit API file size limits (~5MB read / ~2MB write)
+3. Polling stops when panel closed (no background workers)
+4. Runs as current Replit user (no service account)
+5. Large projects may hit context cap (warning injected into instruction)
 
-> **Note**: Session persistence is implemented via dual-layer storage (localStorage + `.superdocs-state.json`). Page refresh restores `sessionId`, `documentId`, file selections, and hash baselines.
+## License
 
-## Acceptance Criteria
-
-- ✅ **First-Session UX**: Fresh Repl → select files → generate → edit → approve → export → save
-- ✅ **Regeneration Review Loop**: Modify code → click regenerate → diff-only granular updates with zero-drift short-circuit
-- ✅ **Security**: No API keys in localStorage, git, or logs
-- ✅ **Double-JSON Parse**: Handles SuperDocs `pending_changes` nested JSON correctly
-- ✅ **Retry Policy**: Safe operations retry, mutations don't
-- ✅ **Cancellation**: AbortSignal reaches HTTP layer
-- ✅ **Error Recovery**: Retry/Dismiss UI for recoverable failures
-- ✅ **Revision Stability**: Original instruction preserved; change summary diff-derived
-- ✅ **State Persistence**: Survives browser tab refresh via localStorage + workspace `.superdocs-state.json`
-- ✅ **Zero-Drift Fidelity**: Identical hashes produce zero proposed changes and no chat job (automated test)
+MIT - see [LICENSE](../../../LICENSE) for details.
