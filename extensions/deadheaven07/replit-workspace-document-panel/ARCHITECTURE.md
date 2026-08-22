@@ -283,7 +283,7 @@ In addition to the interactive React sidebar panel, the system exposes a decoupl
 
 ## Testing Strategy
 
-### Test Coverage (92 tests)
+### Test Coverage (101 tests across 11 test suites)
 
 | File | Tests | Focus |
 |------|-------|-------|
@@ -295,6 +295,8 @@ In addition to the interactive React sidebar panel, the system exposes a decoupl
 | `revision.test.ts` | 28 | Diff computation, thin revision messages, telemetry |
 | `review.test.tsx` | 3 | Granular cherry-picking, selection toggle, batch actions |
 | `headless.test.ts` | 3 | **Behavior #4 machine drivability**, programmatic gating |
+| `history.test.tsx` | 3 | SuperDocs v2 version history & snapshot reverts |
+| `templates.test.tsx` | 6 | Template variable injection & prompt customizers |
 | `persistence.test.ts` | 7 | Dual-layer merge (refresh / container re-entry) |
 
 ---

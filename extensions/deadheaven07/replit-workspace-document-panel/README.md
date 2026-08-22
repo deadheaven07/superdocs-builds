@@ -87,33 +87,60 @@ No configuration files needed. The extension uses:
 - `.superdocs-state.json` in workspace root (session state, file hashes)
 - Browser localStorage (fallback for session persistence)
 
+## Visual Panel Layout (Replit Workspace)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 📄 SuperDocs Document Panel                                [API Key: Set]   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ [ Files ] [ Draft ] [ Review (3) ] [ Export ] [ History ] [ Templates ]     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ ⚡ Source Drift Detected: 1 file modified since last generation.             │
+│    [ Regenerate (Zero-Drift: 98.4% payload saved) ]                         │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ 3 Proposed Changes                    [ Select All ] [ Deselect All ]       │
+│                                                                             │
+│ [x] [ Replace ] src/server.ts: Updated auth middleware route                │
+│     - Removed: app.use('/v1/old-auth', legacyAuth)                          │
+│     + Added:   app.use('/v1/auth', modernBearerAuth)                        │
+│                                                                             │
+│ [x] [ Insert  ] README.md: Added API Reference Section                      │
+│     + Added:   ## Authentication & Token Lifecycles                         │
+│                                                                             │
+│ [ ] [ Delete  ] docs/config.md: Excluded deprecated flags                   │
+│                                                                             │
+│ [ Approve Selected (2) ]                     [ Reject All ]                 │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
 ## Project Structure
 
 ```
 src/
 ├── main.tsx                 # React 18 bootstrap
-├── App.tsx                  # Root wrapper
+├── App.tsx                  # Root wrapper with HandshakeProvider
 ├── components/
-│   ├── DocumentPanel.tsx    # Root orchestrator (tabs, state)
+│   ├── DocumentPanel.tsx    # Root orchestrator with real-time drift detection
 │   ├── FileTree.tsx         # Recursive file browser with search
 │   ├── DraftTab.tsx         # Generation UI (doc type, instruction)
-│   ├── ReviewTab.tsx        # Proposed changes diff view
+│   ├── ReviewTab.tsx        # Granular cherry-picking diff review
 │   ├── ExportTab.tsx        # PDF/DOCX export with overwrite check
-│   ├── HistoryTab.tsx       # Version history browser
-│   ├── TemplateGallery.tsx  # Templates & prompts with variables
-│   └── StatusBadge.tsx      # Progress stepper
+│   ├── HistoryTab.tsx       # SuperDocs v2 version history browser & revert
+│   ├── TemplateGallery.tsx  # Templates & prompts with variable injection
+│   └── StatusBadge.tsx      # Progress stepper & session telemetry
 ├── hooks/
-│   ├── useSuperDocs.ts      # Core state machine (generate, approve, export)
-│   ├── useFileHashes.ts     # SHA-256 baseline capture & diff
+│   ├── useSuperDocs.ts      # Core state machine (generate, approve, export, v2)
+│   ├── useFileHashes.ts     # SHA-256 baseline capture & drift detection
 │   ├── useStatePersistence.ts # Dual-layer persistence (localStorage + workspace)
 │   └── useWorkspaceFiles.ts   # Replit filesystem API wrapper
 ├── services/
 │   ├── superdocs.ts         # SuperDocs REST client with retry policy
 │   ├── replit.ts            # Workspace context building & file I/O
 │   ├── context.ts           # Initial-generation context builder
-│   └── revision.ts          # Diff computation & thin revision messages
+│   ├── revision.ts          # Diff computation & thin revision messages
+│   └── headless.ts          # Machine-drivable headless pipeline (Behavior #4)
 ├── types/
-│   ├── superdocs.ts         # SuperDocs API contracts
+│   ├── superdocs.ts         # SuperDocs API contracts & v2 interfaces
 │   └── replit-extensions.d.ts # @replit/extensions type declarations
 └── utils/
     ├── hash.ts              # SHA-256 + change detection
@@ -123,7 +150,7 @@ src/
 ## Testing
 
 ```bash
-npm test        # Run all 92 unit tests
+npm test        # Run all 101 unit tests across 11 test suites
 npm run lint    # ESLint check
 npm run build   # Production TypeScript bundle build
 ```
@@ -132,6 +159,9 @@ Tests cover:
 - Headless machine runner & programmatic gating (**Behavior #4: Machine drivability**)
 - Granular cherry-picking diff review (item-by-item selective approval)
 - Context efficiency & token savings telemetry calculations
+- Real-time workspace source drift detection
+- SuperDocs v2 version history browser & snapshot reverts
+- Template variable injection & prompt customization
 - Double-JSON parsing (SuperDocs quirk defense)
 - SHA-256 hashing (with NIST test vectors)
 - Change detection (added/changed/removed files)

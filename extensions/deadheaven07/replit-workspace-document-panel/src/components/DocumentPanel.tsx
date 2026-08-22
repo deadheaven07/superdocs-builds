@@ -34,7 +34,32 @@ export function DocumentPanel() {
   const [superDocsState, superDocsActions] = useSuperDocs(apiKey);
   const { captureHashes, updateCurrentHashes, getChanges, getBaselineHashes } = useFileHashes();
   const [regenerateNotice, setRegenerateNotice] = useState<string | null>(null);
-  
+  const [driftCount, setDriftCount] = useState<number>(0);
+
+  // Check drift when active tab changes or after generation completes
+  const checkDrift = useCallback(async () => {
+    if (!lastContext || lastContext.files.size === 0) {
+      setDriftCount(0);
+      return;
+    }
+    const currentFiles = new Map<string, string>();
+    for (const path of lastContext.files.keys()) {
+      const content = await readFile(path);
+      if (content !== null) currentFiles.set(path, content);
+    }
+    if (currentFiles.size > 0) {
+      await updateCurrentHashes(currentFiles);
+      const changes = getChanges();
+      setDriftCount(changes.changed.length + changes.added.length + changes.removed.length);
+    }
+  }, [lastContext, readFile, updateCurrentHashes, getChanges]);
+
+  useEffect(() => {
+    if (superDocsState.step === 'completed' && lastContext) {
+      checkDrift();
+    }
+  }, [activeTab, superDocsState.step, lastContext, checkDrift]);
+
   // Persist session + selection state together in a single write per commit,
   // avoiding redundant full-state writes to the workspace file.
   useEffect(() => {
@@ -106,8 +131,10 @@ export function DocumentPanel() {
     setLastContext({ ...lastContext, files });
 
     if (result.hasChanges) {
+      setDriftCount(0);
       setActiveTab('review');
     } else {
+      setDriftCount(0);
       setRegenerateNotice('No source changes detected - the document is already up to date.');
     }
   }, [lastContext, readFile, superDocsActions, getBaselineHashes, superDocsState.sessionId]);
@@ -293,6 +320,31 @@ export function DocumentPanel() {
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary-600" />
               <span>Reading project files...</span>
             </div>
+          </div>
+        )}
+
+        {/* Real-time Drift Notification Banner */}
+        {driftCount > 0 && superDocsState.step === 'completed' && (
+          <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-center justify-between text-xs text-amber-900 shadow-xs">
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+              </span>
+              <span>
+                <strong>Source Drift Detected:</strong> {driftCount} file{driftCount > 1 ? 's' : ''} modified since document generation.
+              </span>
+            </div>
+            <button
+              onClick={handleRegenerate}
+              disabled={isProcessing}
+              className="px-3 py-1 bg-amber-600 text-white font-medium rounded hover:bg-amber-700 transition-colors focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 cursor-pointer flex items-center gap-1"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              <span>Regenerate (Zero-Drift)</span>
+            </button>
           </div>
         )}
       </div>
