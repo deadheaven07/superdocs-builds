@@ -16,26 +16,33 @@ interface StatusBadgeProps {
   progress?: string;
   error?: string;
   canRetry?: boolean;
+  sessionId?: string;
   onRetry?: () => void;
   onDismiss?: () => void;
 }
 
-export function StatusBadge({ step, progress, error, canRetry, onRetry, onDismiss }: StatusBadgeProps) {
+export function StatusBadge({ step, progress, error, canRetry, sessionId, onRetry, onDismiss }: StatusBadgeProps) {
   const stepInfo = STEPS.find(s => s.key === step);
   const currentIndex = STEP_ORDER.indexOf(step);
-
 
   const isActive = step !== 'idle' && step !== 'completed' && step !== 'failed';
 
   return (
-    <div className="p-3 rounded-lg border bg-white">
+    <div className="p-3 rounded-lg border bg-white shadow-xs">
       {/* Progress workflow */}
       <div className="mb-3">
         <div className="flex items-center justify-between mb-2">
-          <span className="px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-700">
-            {stepInfo?.label || step}
-          </span>
-          {progress && <span className="text-sm text-gray-600">{progress}</span>}
+          <div className="flex items-center gap-2">
+            <span className="px-2 py-0.5 rounded text-xs font-semibold bg-gray-100 text-gray-800">
+              {stepInfo?.label || step}
+            </span>
+            {sessionId && (
+              <span className="text-xs text-gray-400 font-mono hidden sm:inline" title={`SuperDocs Session: ${sessionId}`}>
+                Session: {sessionId.slice(0, 8)}...
+              </span>
+            )}
+          </div>
+          {progress && <span className="text-xs text-gray-600 truncate max-w-xs">{progress}</span>}
         </div>
         
         {/* Progress indicator */}
@@ -44,7 +51,6 @@ export function StatusBadge({ step, progress, error, canRetry, onRetry, onDismis
             const isCompleted = index < currentIndex;
             const isCurrent = index === currentIndex && isActive;
 
-            
             return (
               <div key={stepKey} className="flex items-center">
                 <div className="relative flex-shrink-0">
@@ -75,16 +81,21 @@ export function StatusBadge({ step, progress, error, canRetry, onRetry, onDismis
       </div>
 
       {/* Current step label */}
-      <div className="flex items-center gap-2 mb-1">
-        <span className={`px-2 py-1 rounded text-xs font-medium ${
-          step === 'failed' ? 'bg-red-100 text-red-700' :
-          step === 'completed' ? 'bg-green-100 text-green-700' :
-          step === 'idle' ? 'bg-gray-100 text-gray-700' :
-          'bg-primary-100 text-primary-700'
-        }`}>
-          {stepInfo?.label || step}
-        </span>
-        {progress && <span className="text-sm text-gray-600">{progress}</span>}
+      <div className="flex items-center justify-between text-xs">
+        <div className="flex items-center gap-2">
+          <span className={`px-2 py-0.5 rounded font-medium ${
+            step === 'failed' ? 'bg-red-100 text-red-700' :
+            step === 'completed' ? 'bg-green-100 text-green-700' :
+            step === 'idle' ? 'bg-gray-100 text-gray-700' :
+            'bg-primary-100 text-primary-700'
+          }`}>
+            {stepInfo?.label || step}
+          </span>
+          {progress && <span className="text-gray-600">{progress}</span>}
+        </div>
+        {isActive && (
+          <span className="text-gray-400 animate-pulse font-mono text-2xs">Active</span>
+        )}
       </div>
       
       {error && (
@@ -96,7 +107,7 @@ export function StatusBadge({ step, progress, error, canRetry, onRetry, onDismis
           {canRetry && onRetry && (
             <button
               onClick={onRetry}
-              className="px-3 py-1 text-xs font-medium bg-red-600 text-white rounded hover:bg-red-700 transition-colors focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+              className="px-3 py-1 text-xs font-medium bg-red-600 text-white rounded hover:bg-red-700 transition-colors focus:ring-2 focus:ring-red-500 focus:ring-offset-2 cursor-pointer"
               aria-label="Retry"
             >
               Retry
@@ -105,7 +116,7 @@ export function StatusBadge({ step, progress, error, canRetry, onRetry, onDismis
           {onDismiss && (
             <button
               onClick={onDismiss}
-              className="px-3 py-1 text-xs font-medium bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+              className="px-3 py-1 text-xs font-medium bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 cursor-pointer"
               aria-label="Dismiss"
             >
               Dismiss

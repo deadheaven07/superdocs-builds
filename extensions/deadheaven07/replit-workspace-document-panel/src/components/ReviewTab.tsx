@@ -1,3 +1,4 @@
+import { useState, useEffect, useMemo } from 'react';
 import { ProposedChangeBatch, ProposedChange } from '../types/superdocs';
 
 const OPERATION_STYLES: Record<string, { bg: string; text: string; border: string; label: string }> = {
@@ -11,7 +12,14 @@ function formatHtmlSnippet(html: string): string {
   return html.replace(/</g, '<').replace(/>/g, '>').slice(0, 400);
 }
 
-function ChangeItem({ change }: { change: ProposedChange }) {
+interface ChangeItemProps {
+  change: ProposedChange;
+  isSelected: boolean;
+  onToggle: (changeId: string) => void;
+  disabled?: boolean;
+}
+
+function ChangeItem({ change, isSelected, onToggle, disabled }: ChangeItemProps) {
   const opStyle = OPERATION_STYLES[change.operation] || {
     bg: 'bg-gray-50',
     text: 'text-gray-700',
@@ -20,13 +28,32 @@ function ChangeItem({ change }: { change: ProposedChange }) {
   };
 
   return (
-    <div className={`border rounded-lg p-4 ${opStyle.border} bg-white`}
-      aria-label={`Change ${change.change_id}: ${opStyle.label}`}>
-      <div className="flex items-start justify-between gap-2 mb-3">
-        <span className={`px-2 py-1 text-xs font-medium rounded ${opStyle.bg} ${opStyle.text}`}>
-          {opStyle.label}
+    <div
+      className={`border rounded-lg p-4 transition-all ${
+        isSelected ? `${opStyle.border} bg-white shadow-sm ring-1 ring-primary-500` : 'border-gray-200 bg-gray-50 opacity-75'
+      }`}
+      aria-label={`Change ${change.change_id}: ${opStyle.label}`}
+    >
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id={`change-${change.change_id}`}
+            checked={isSelected}
+            disabled={disabled}
+            onChange={() => onToggle(change.change_id)}
+            className="w-4 h-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500 cursor-pointer"
+          />
+          <label htmlFor={`change-${change.change_id}`} className="cursor-pointer flex items-center gap-2">
+            <span className={`px-2 py-0.5 text-xs font-medium rounded ${opStyle.bg} ${opStyle.text}`}>
+              {opStyle.label}
+            </span>
+            <span className="text-xs text-gray-400 font-mono">{change.change_id}</span>
+          </label>
+        </div>
+        <span className={`text-xs px-2 py-0.5 rounded font-medium ${isSelected ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-600'}`}>
+          {isSelected ? 'Included in approval' : 'Excluded'}
         </span>
-        <span className="text-xs text-gray-400 font-mono flex-shrink-0">{change.change_id}</span>
       </div>
 
       {change.ai_explanation && (
@@ -82,6 +109,43 @@ export function ReviewTab({
   disabled, 
   step,
 }: ReviewTabProps) {
+  const allChanges = useMemo(() => proposedChanges?.changes || [], [proposedChanges]);
+
+  // Default to selecting all changes initially
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(
+    () => new Set(allChanges.map(c => c.change_id))
+  );
+
+  // Sync selectedIds when proposedChanges batch changes
+  useEffect(() => {
+    setSelectedIds(new Set(allChanges.map(c => c.change_id)));
+  }, [allChanges]);
+
+  const handleToggle = (changeId: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(changeId)) {
+        next.delete(changeId);
+      } else {
+        next.add(changeId);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    setSelectedIds(new Set(allChanges.map(c => c.change_id)));
+  };
+
+  const handleDeselectAll = () => {
+    setSelectedIds(new Set());
+  };
+
+  const selectedChanges = useMemo(
+    () => allChanges.filter(c => selectedIds.has(c.change_id)),
+    [allChanges, selectedIds]
+  );
+
   if (!proposedChanges || proposedChanges.changes.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-gray-500">
@@ -106,21 +170,49 @@ export function ReviewTab({
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
         <div>
-          <p className="font-medium text-gray-900">
-            {proposedChanges.changes.length} proposed change{proposedChanges.changes.length !== 1 ? 's' : ''}
-          </p>
-          <p className="text-sm text-gray-500 mt-0.5">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-gray-900">
+              {allChanges.length} Proposed Change{allChanges.length !== 1 ? 's' : ''}
+            </span>
+            <span className="text-xs bg-primary-100 text-primary-800 font-medium px-2 py-0.5 rounded-full">
+              {selectedChanges.length} of {allChanges.length} Selected
+            </span>
+          </div>
+          <p className="text-xs text-gray-500 mt-0.5">
             {proposedChanges.awaiting_kind === 'continue'
-              ? 'SuperDocs is asking to continue'
-              : 'Awaiting your approval'}
+              ? 'SuperDocs is asking to continue generation'
+              : 'Select changes to cherry-pick approval'}
           </p>
         </div>
+
+        {/* Quick select controls */}
+        {step === 'awaiting_approval' && (
+          <div className="flex items-center gap-2 text-xs">
+            <button
+              type="button"
+              onClick={handleSelectAll}
+              disabled={disabled || selectedChanges.length === allChanges.length}
+              className="px-2.5 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
+            >
+              Select All
+            </button>
+            <button
+              type="button"
+              onClick={handleDeselectAll}
+              disabled={disabled || selectedChanges.length === 0}
+              className="px-2.5 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
+            >
+              Deselect All
+            </button>
+          </div>
+        )}
+
         {proposedChanges.continue_prompt && (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800 flex-1">
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2.5 text-xs text-yellow-800 w-full sm:w-auto">
             <div className="flex items-start gap-2">
-              <svg className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <svg className="w-4 h-4 text-yellow-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               <span className="text-yellow-800">{String(proposedChanges.continue_prompt)}</span>
@@ -131,8 +223,14 @@ export function ReviewTab({
 
       {/* Changes List */}
       <div className="space-y-3 max-h-[500px] overflow-auto" role="list" aria-label="Proposed changes">
-        {proposedChanges.changes.map((change) => (
-          <ChangeItem key={change.change_id} change={change} />
+        {allChanges.map((change) => (
+          <ChangeItem
+            key={change.change_id}
+            change={change}
+            isSelected={selectedIds.has(change.change_id)}
+            onToggle={handleToggle}
+            disabled={disabled || step !== 'awaiting_approval'}
+          />
         ))}
       </div>
 
@@ -141,26 +239,26 @@ export function ReviewTab({
         {step === 'awaiting_approval' && (
           <div className="flex flex-col sm:flex-row gap-2 w-full sm:flex-1">
             <button
-              onClick={() => onApprove(true, proposedChanges.changes)}
-              disabled={disabled}
-              className="flex-1 px-4 py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus:ring-2 focus:ring-green-500 focus:ring-offset-2"
-              aria-label="Approve changes"
+              onClick={() => onApprove(true, selectedChanges)}
+              disabled={disabled || selectedChanges.length === 0}
+              className="flex-1 px-4 py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus:ring-2 focus:ring-green-500 focus:ring-offset-2 flex items-center justify-center gap-2"
+              aria-label={`Approve ${selectedChanges.length} selected changes`}
             >
-              <svg className="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
-              Approve Changes
+              <span>Approve Selected ({selectedChanges.length})</span>
             </button>
             <button
-              onClick={() => onApprove(false, proposedChanges.changes)}
+              onClick={() => onApprove(false, allChanges)}
               disabled={disabled}
-              className="px-4 py-2.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
-              aria-label="Reject changes"
+              className="px-4 py-2.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus:ring-2 focus:ring-red-500 focus:ring-offset-2 flex items-center justify-center gap-2"
+              aria-label="Reject all changes"
             >
-              <svg className="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
-              Reject
+              <span>Reject All</span>
             </button>
           </div>
         )}
@@ -170,13 +268,13 @@ export function ReviewTab({
             <button
               onClick={() => onContinue(true)}
               disabled={disabled}
-              className="flex-1 px-4 py-2.5 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+              className="flex-1 px-4 py-2.5 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 flex items-center justify-center gap-2"
               aria-label="Continue"
             >
-              <svg className="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
               </svg>
-              Continue
+              <span>Continue</span>
             </button>
             <button
               onClick={() => onContinue(false)}

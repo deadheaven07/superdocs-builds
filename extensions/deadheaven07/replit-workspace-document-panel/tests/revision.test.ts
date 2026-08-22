@@ -464,4 +464,29 @@ describe('SuperDocsClient retry logic', () => {
     expect(status.status).toBe('completed');
     expect(mockFetch).toHaveBeenCalledTimes(3);
   });
+
+  describe('DiffTelemetry and savings calculations', () => {
+    it('calculates accurate payload reduction and token savings', async () => {
+      const baseline = await computeFileHashesAsync(mockFiles);
+      const diff = await computeSourceDiff(baseline, mockChangedFiles);
+
+      expect(diff.telemetry).toBeDefined();
+      expect(diff.telemetry.totalFilesCount).toBe(3);
+      expect(diff.telemetry.totalBytes).toBeGreaterThan(0);
+      expect(diff.telemetry.changedBytes).toBeGreaterThan(0);
+      expect(diff.telemetry.changedBytes).toBeLessThan(diff.telemetry.totalBytes);
+      expect(diff.telemetry.payloadSavingsPercent).toBeGreaterThan(0);
+      expect(diff.telemetry.estimatedTokensSaved).toBeGreaterThan(0);
+    });
+
+    it('injects telemetry metadata into the revision message', async () => {
+      const baseline = await computeFileHashesAsync(mockFiles);
+      const diff = await computeSourceDiff(baseline, mockChangedFiles);
+      const message = buildRevisionMessage('readme', 'Test prompt', diff);
+
+      expect(message).toContain('## Telemetry & Context Efficiency');
+      expect(message).toContain(`Payload Reduction: ${diff.telemetry.payloadSavingsPercent}%`);
+      expect(message).toContain(`Estimated Token Savings: ~${diff.telemetry.estimatedTokensSaved} tokens`);
+    });
+  });
 });

@@ -273,7 +273,15 @@ export function DocumentPanel() {
 
       {/* Status */}
       <div className="px-4 py-3 bg-white border-b border-gray-200">
-        <StatusBadge step={superDocsState.step} progress={superDocsState.progress} error={superDocsState.error} canRetry={superDocsState.canRetry} onRetry={superDocsActions.retry} onDismiss={superDocsActions.dismissError} />
+        <StatusBadge
+          step={superDocsState.step}
+          progress={superDocsState.progress}
+          error={superDocsState.error}
+          canRetry={superDocsState.canRetry}
+          sessionId={superDocsState.sessionId}
+          onRetry={superDocsActions.retry}
+          onDismiss={superDocsActions.dismissError}
+        />
         {isProcessing && (
           <div className="mt-2 flex justify-end">
             <button onClick={superDocsActions.cancel} className="px-3 py-1.5 text-xs font-medium bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">Cancel</button>

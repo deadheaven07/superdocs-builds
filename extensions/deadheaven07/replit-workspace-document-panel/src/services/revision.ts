@@ -7,6 +7,19 @@ export interface ChangedFile {
   content: string;
 }
 
+export interface DiffTelemetry {
+  /** Total number of files tracked in current workspace selection. */
+  totalFilesCount: number;
+  /** Total byte size across all selected workspace files. */
+  totalBytes: number;
+  /** Total byte size of changed files sent in this revision payload. */
+  changedBytes: number;
+  /** Percentage reduction in payload size compared to a full repo resend. */
+  payloadSavingsPercent: number;
+  /** Estimated tokens saved by sending diff-only payload instead of full repo. */
+  estimatedTokensSaved: number;
+}
+
 export interface SourceDiff {
   /** Files whose content changed since the baseline, with their CURRENT content. */
   changed: ChangedFile[];
@@ -15,6 +28,8 @@ export interface SourceDiff {
   /** Files in the baseline that no longer exist. */
   removed: string[];
   hasChanges: boolean;
+  /** Telemetry comparing diff payload against full codebase. */
+  telemetry: DiffTelemetry;
 }
 
 const DOCUMENT_LABELS: Record<DocumentType, string> = {
@@ -39,13 +54,40 @@ export async function computeSourceDiff(
   const currentHashes = await computeFileHashesAsync(currentFiles);
   const { changed, added, removed } = detectChangedFiles(baselineHashes, currentHashes);
 
+  const changedList = changed
+    .map(path => ({ path, content: currentFiles.get(path) ?? '' }))
+    .sort((a, b) => a.path.localeCompare(b.path));
+
+  let totalBytes = 0;
+  for (const content of currentFiles.values()) {
+    totalBytes += new TextEncoder().encode(content).length;
+  }
+
+  let changedBytes = 0;
+  for (const file of changedList) {
+    changedBytes += new TextEncoder().encode(file.content).length;
+  }
+
+  const payloadSavingsPercent = totalBytes > 0
+    ? Math.max(0, Math.round((1 - changedBytes / totalBytes) * 1000) / 10)
+    : 0;
+
+  const estimatedTokensSaved = Math.max(0, Math.round((totalBytes - changedBytes) / 4));
+
+  const telemetry: DiffTelemetry = {
+    totalFilesCount: currentFiles.size,
+    totalBytes,
+    changedBytes,
+    payloadSavingsPercent,
+    estimatedTokensSaved,
+  };
+
   return {
-    changed: changed
-      .map(path => ({ path, content: currentFiles.get(path) ?? '' }))
-      .sort((a, b) => a.path.localeCompare(b.path)),
+    changed: changedList,
     added: [...added].sort(),
     removed: [...removed].sort(),
     hasChanges: changed.length > 0 || added.length > 0 || removed.length > 0,
+    telemetry,
   };
 }
 
@@ -96,6 +138,13 @@ ${sections.join('\n\n')}
 ## Changed File Contents (current)
 
 ${fileContents}
+
+---
+
+## Telemetry & Context Efficiency
+- Files Changed: ${diff.changed.length} of ${diff.telemetry.totalFilesCount}
+- Payload Reduction: ${diff.telemetry.payloadSavingsPercent}% (${diff.telemetry.changedBytes} bytes sent vs ${diff.telemetry.totalBytes} bytes baseline)
+- Estimated Token Savings: ~${diff.telemetry.estimatedTokensSaved} tokens
 
 ---
 

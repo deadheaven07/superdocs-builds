@@ -123,12 +123,16 @@ src/
 ## Testing
 
 ```bash
-npm test        # Run all 84 unit tests
+npm test        # Run all 92 unit tests
 npm run lint    # ESLint check
+npm run build   # Production TypeScript bundle build
 ```
 
 Tests cover:
-- Double-JSON parsing (SuperDocs quirk)
+- Headless machine runner & programmatic gating (**Behavior #4: Machine drivability**)
+- Granular cherry-picking diff review (item-by-item selective approval)
+- Context efficiency & token savings telemetry calculations
+- Double-JSON parsing (SuperDocs quirk defense)
 - SHA-256 hashing (with NIST test vectors)
 - Change detection (added/changed/removed files)
 - Context building (500KB cap, warnings)
