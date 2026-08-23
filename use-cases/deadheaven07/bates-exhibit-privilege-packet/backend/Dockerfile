@@ -26,6 +26,6 @@ RUN mkdir -p storage/originals storage/processed storage/working storage/final
 
 EXPOSE 8000
 
-# Run migrations (tolerate already-existing tables) then start server
-CMD alembic upgrade head 2>/dev/null || alembic stamp head; \
+# Run migrations then start server
+CMD alembic upgrade head; \
     uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
