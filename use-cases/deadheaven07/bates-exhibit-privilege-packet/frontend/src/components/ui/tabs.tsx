@@ -32,7 +32,7 @@ export function TabsList({ children, className }: TabsListProps) {
   return (
     <div
       className={clsx(
-        "inline-flex h-10 items-center justify-center rounded-md bg-gray-100 p-1",
+        "inline-flex h-11 items-center justify-center rounded-xl bg-slate-900/90 border border-slate-800/80 p-1 text-slate-400 backdrop-blur-md shadow-inner-light",
         className
       )}
       role="tablist"
@@ -63,10 +63,10 @@ export function TabsTrigger({ value, children, className, disabled }: TabsTrigge
       disabled={disabled}
       onClick={() => !disabled && onValueChange(value)}
       className={clsx(
-        "inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none",
+        "inline-flex items-center justify-center whitespace-nowrap rounded-lg px-3.5 py-1.5 text-xs font-semibold tracking-wide transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-sky-500/50 disabled:opacity-40 disabled:pointer-events-none",
         isActive
-          ? "bg-white text-gray-900 shadow-sm"
-          : "text-gray-600 hover:text-gray-900",
+          ? "bg-slate-800 text-sky-400 shadow-sm border border-slate-700 font-bold"
+          : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50",
         className
       )}
     >

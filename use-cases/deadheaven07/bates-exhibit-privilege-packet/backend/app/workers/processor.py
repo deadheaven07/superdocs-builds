@@ -10,7 +10,7 @@ from sqlalchemy import select
 from app.config import get_settings
 from app.database import async_session_maker
 from app.domain.audit import AuditEvent, AuditEventType
-from app.domain.document import Document, ProcessingStatus
+from app.domain.document import Document, DocumentType, ProcessingStatus
 from app.domain.page import Page
 from app.services.description_generator import generate_description
 from app.services.ingestion import IngestionService
@@ -74,54 +74,74 @@ async def process_document(document_id: str):
                 page_count = doc.page_count
                 doc.close()
 
-                if document.document_type.value == "scanned_pdf":
+                with pdfplumber.open(original_path) as pdf:
+                    text_parts = []
+                    per_page_texts = []
+                    for page in pdf.pages:
+                        text = page.extract_text() or ""
+                        text_parts.append(text)
+                        per_page_texts.append(text)
+                    extracted_text = "\n\n".join(t for t in text_parts if t.strip())
+                    is_searchable = len(extracted_text.strip()) > 0
+
+                # If no native text in PDF, attempt OCR (for scanned or image-based PDFs)
+                if not is_searchable or document.document_type.value == "scanned_pdf":
                     try:
                         import pytesseract
-                        from pdf2image import convert_from_path
 
-                        images = convert_from_path(original_path, dpi=300)
-                        text_parts = []
-                        per_page_texts = []
+                        images = []
+                        try:
+                            doc = fitz.open(original_path)
+                            for p in doc:
+                                pix = p.get_pixmap(dpi=150)
+                                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                                images.append(img)
+                            doc.close()
+                        except Exception:
+                            from pdf2image import convert_from_path
+
+                            images = convert_from_path(original_path, dpi=150)
+
+                        ocr_text_parts = []
+                        ocr_per_page_texts = []
                         for i, image in enumerate(images):
-                            text = pytesseract.image_to_string(image, lang=settings.tesseract_lang)
-                            if text.strip():
-                                text_parts.append(f"[Page {i + 1}]\n{text}")
-                                per_page_texts.append(text)
+                            text = pytesseract.image_to_string(
+                                image, lang=settings.tesseract_lang
+                            ).strip()
+                            if text:
+                                ocr_text_parts.append(f"[Page {i + 1}]\n{text}")
+                                ocr_per_page_texts.append(text)
                             else:
-                                per_page_texts.append("")
-                        extracted_text = "\n\n".join(text_parts)
-                        is_searchable = len(extracted_text.strip()) > 0
+                                ocr_per_page_texts.append("")
 
-                        output_path = (
-                            settings.processed_path / f"{original_path.stem}_searchable.pdf"
-                        )
-                        doc = fitz.open(original_path)
-                        for page_num in range(len(doc)):
-                            page = doc[page_num]
-                            pix = page.get_pixmap(dpi=300)
-                            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-                            pdf_bytes = pytesseract.image_to_pdf_or_hocr(img, extension="pdf")
-                            pdf_page = fitz.open("pdf", pdf_bytes)
-                            page.insert_pdf(pdf_page)
-                        doc.save(output_path)
-                        doc.close()
+                        ocr_extracted = "\n\n".join(ocr_text_parts)
+                        if ocr_extracted.strip():
+                            extracted_text = ocr_extracted
+                            per_page_texts = ocr_per_page_texts
+                            is_searchable = True
+                            document.document_type = DocumentType.SCANNED_PDF
 
-                        document.processed_sha256 = calculate_sha256(output_path)
+                            try:
+                                output_path = (
+                                    settings.processed_path / f"{original_path.stem}_searchable.pdf"
+                                )
+                                searchable_doc = fitz.open()
+                                for img in images:
+                                    pdf_bytes = pytesseract.image_to_pdf_or_hocr(
+                                        img, extension="pdf"
+                                    )
+                                    ocr_page_doc = fitz.open("pdf", pdf_bytes)
+                                    searchable_doc.insert_pdf(ocr_page_doc)
+                                    ocr_page_doc.close()
+                                searchable_doc.save(output_path)
+                                searchable_doc.close()
+                                document.processed_sha256 = calculate_sha256(output_path)
+                            except Exception as ocr_err:
+                                logger.info(
+                                    f"Searchable PDF layer generation skipped for {document.id}: {ocr_err}"
+                                )
                     except Exception as e:
                         logger.warning(f"OCR unavailable for scanned PDF {document.id}: {e}")
-                        extracted_text = ""
-                        per_page_texts = []
-                        is_searchable = False
-                else:
-                    with pdfplumber.open(original_path) as pdf:
-                        text_parts = []
-                        per_page_texts = []
-                        for page in pdf.pages:
-                            text = page.extract_text() or ""
-                            text_parts.append(text)
-                            per_page_texts.append(text)
-                        extracted_text = "\n\n".join(t for t in text_parts if t)
-                        is_searchable = len(extracted_text.strip()) > 0
 
             elif document.document_type.value == "docx":
                 from docx import Document as DocxDocument
@@ -146,7 +166,7 @@ async def process_document(document_id: str):
                     image = Image.open(original_path)
                     extracted_text = pytesseract.image_to_string(
                         image, lang=settings.tesseract_lang
-                    )
+                    ).strip()
                 except Exception as e:
                     logger.warning(f"OCR unavailable for image {document.id}: {e}")
                     extracted_text = ""
@@ -182,23 +202,35 @@ async def process_document(document_id: str):
             existing_pages = result.scalars().all()
 
             if len(existing_pages) != page_count:
-                for page in existing_pages:
-                    await session.delete(page)
+                for p in existing_pages:
+                    await session.delete(p)
+                existing_pages = []
 
+            if not existing_pages:
                 for page_num in range(1, page_count + 1):
                     page_idx = page_num - 1
                     page_text = (
                         per_page_texts[page_idx]
                         if page_idx < len(per_page_texts) and per_page_texts[page_idx]
-                        else extracted_text[:1000000] if extracted_text else None
+                        else (extracted_text if page_count == 1 else "")
                     )
                     page = Page(
                         document_id=document.id,
                         page_number=page_num,
-                        has_text=is_searchable,
+                        has_text=is_searchable and bool(page_text and page_text.strip()),
                         extracted_text=page_text[:1000000] if page_text else None,
                     )
                     session.add(page)
+            else:
+                for p in existing_pages:
+                    page_idx = p.page_number - 1
+                    page_text = (
+                        per_page_texts[page_idx]
+                        if page_idx < len(per_page_texts) and per_page_texts[page_idx]
+                        else (extracted_text if page_count == 1 else "")
+                    )
+                    p.has_text = is_searchable and bool(page_text and page_text.strip())
+                    p.extracted_text = page_text[:1000000] if page_text else None
 
             session.add(
                 AuditEvent(

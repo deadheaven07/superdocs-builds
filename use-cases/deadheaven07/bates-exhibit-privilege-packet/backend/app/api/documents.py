@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_session
 from app.domain.audit import AuditEvent, AuditEventType
-from app.domain.document import Document
+from app.domain.document import Document, DocumentType
 from app.domain.packet import Packet
 from app.domain.page import Page
 from app.services.bates_assignment import BatesAssignmentService
@@ -87,14 +87,35 @@ async def upload_documents(
             await session.flush()
             created_documents.append(result.document)
 
+            per_page_texts: list[str] = []
+            if result.is_searchable and result.document.document_type in (
+                DocumentType.PDF,
+                DocumentType.SCANNED_PDF,
+            ):
+                try:
+                    import fitz
+
+                    orig_path = original_path_for(result.document)
+                    if orig_path.exists():
+                        doc = fitz.open(orig_path)
+                        for p in doc:
+                            per_page_texts.append(p.get_text())
+                        doc.close()
+                except Exception:
+                    pass
+
             for page_num in range(1, result.page_count + 1):
+                page_idx = page_num - 1
+                page_text = (
+                    per_page_texts[page_idx]
+                    if page_idx < len(per_page_texts) and per_page_texts[page_idx].strip()
+                    else (result.extracted_text if result.page_count == 1 else None)
+                )
                 page = Page(
                     document_id=result.document.id,
                     page_number=page_num,
-                    has_text=result.is_searchable,
-                    extracted_text=result.extracted_text[:1000000]
-                    if result.extracted_text
-                    else None,
+                    has_text=result.is_searchable and bool(page_text and page_text.strip()),
+                    extracted_text=page_text[:1000000] if page_text else None,
                 )
                 session.add(page)
 
@@ -354,7 +375,7 @@ async def reorder_document(
     result = await session.execute(
         select(Document).where(Document.packet_id == packet_id).order_by(Document.display_order)
     )
-    documents = result.scalars().all()
+    documents = list(result.scalars().all())
 
     if new_order < 1 or new_order > len(documents):
         raise HTTPException(status_code=400, detail="Invalid order")

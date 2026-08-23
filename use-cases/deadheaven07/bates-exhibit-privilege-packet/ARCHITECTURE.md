@@ -382,6 +382,6 @@ Honest accounting of what this system does not do, what degrades gracefully, and
 
 ### Testing
 
-- **Tests require PostgreSQL.** The full test suite (230 tests) requires a running PostgreSQL instance at `postgresql+asyncpg://deadheaven07@localhost:5432/bates_packet_test`. The 12 offline evidence tests (`test_evidence_redaction_residue.py`) run without any external dependencies. The 9 journal-level crash recovery tests (`test_crash_recovery.py`) also run offline.
+- **Tests require PostgreSQL.** The full DB-backed test suite requires a running PostgreSQL instance at `postgresql+asyncpg://postgres:postgres@localhost:5432/bates_packet_test` (configurable via `TEST_DATABASE_URL`). The offline evidence and unit tests (`make test-offline` / `test_evidence_redaction_residue.py`, `test_content_descriptions.py`, etc.) run without any external dependencies.
 - **No load/performance testing.** All tests verify correctness, not performance. There are no benchmarks for large packets (100+ documents), high-concurrency uploads, or memory usage under load.
-- **SuperDocs is mocked in all tests.** The real SuperDocs API is only exercised by `live_e2e_phase13.py`, which requires a live API key. All other tests use `FakeSuperDocsService`.
+- **SuperDocs is mocked in all tests.** The real SuperDocs API is only exercised by `live_e2e_phase13.py`, which requires a live API key. All other tests use `FakeSuperDocsService` or the mock adapter.

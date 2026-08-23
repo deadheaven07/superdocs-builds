@@ -201,15 +201,29 @@ class IngestionService:
             return "", False
 
     def _ocr_text(self, file_path: Path) -> tuple[str, bool]:
-        """Best-effort local OCR via tesseract (demoted fallback; SuperDocs
-        is the primary OCR path)."""
+        """Best-effort local OCR via tesseract."""
         try:
             import pytesseract
             from PIL import Image
 
-            image = Image.open(file_path)
-            text = pytesseract.image_to_string(image).strip()
-            return text, bool(text)
+            if file_path.suffix.lower() == ".pdf":
+                import fitz
+
+                doc = fitz.open(file_path)
+                page_texts = []
+                for page in doc:
+                    pix = page.get_pixmap(dpi=150)
+                    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                    pt = pytesseract.image_to_string(img, lang=settings.tesseract_lang).strip()
+                    if pt:
+                        page_texts.append(pt)
+                doc.close()
+                text = "\n\n".join(page_texts).strip()
+                return text, bool(text)
+            else:
+                image = Image.open(file_path)
+                text = pytesseract.image_to_string(image, lang=settings.tesseract_lang).strip()
+                return text, bool(text)
         except Exception as e:
             logger.warning(f"Local OCR unavailable for {file_path}: {e}")
             return "", False
@@ -243,8 +257,6 @@ class IngestionService:
 
     def extract_text_from_superdocs(self, document) -> tuple[str, bool]:
         """Extract text from SuperDocs HTML output if available."""
-        # This will be populated after SuperDocs upload and analysis
-        # For now, return empty - text extraction happens via SuperDocs
         return "", False
 
     async def ingest_file(
@@ -254,6 +266,8 @@ class IngestionService:
         packet_id: str,
         display_order: int,
     ) -> "IngestionResult":
+        from app.services.description_generator import generate_description
+
         mime_type, file_size = self.validate_file(file, original_filename)
         sha256 = self.calculate_sha256(file)
 
@@ -296,6 +310,14 @@ class IngestionService:
             with open(processed_path, "rb") as f:
                 processed_sha256 = self.calculate_sha256(f)
 
+        extracted_text, is_searchable = self.extract_text(
+            processed_path or original_path, document_type
+        )
+        desc_result = generate_description(
+            text=extracted_text,
+            filename=original_filename,
+        )
+
         document = Document(
             packet_id=packet_id,
             display_order=display_order,
@@ -308,7 +330,10 @@ class IngestionService:
             processing_status=ProcessingStatus.COMPLETED,
             original_sha256=sha256,
             processed_sha256=processed_sha256,
-            is_searchable=True,  # Will be made searchable by SuperDocs
+            is_searchable=is_searchable,
+            description=desc_result.description if desc_result else None,
+            description_source=desc_result.source if desc_result else None,
+            description_generated_at=utc_now() if desc_result else None,
             processed_at=utc_now(),
             completed_at=utc_now(),
             last_completed_step="ingestion_completed",
@@ -317,7 +342,7 @@ class IngestionService:
         return IngestionResult(
             document=document,
             page_count=page_count,
-            extracted_text="",  # Will be populated by SuperDocs
-            is_searchable=True,
+            extracted_text=extracted_text,
+            is_searchable=is_searchable,
             processed_file_path=str(processed_path or original_path),
         )

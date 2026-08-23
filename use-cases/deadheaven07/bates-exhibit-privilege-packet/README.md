@@ -6,17 +6,16 @@
 
 **Measured results:**
 
-| Metric | Result |
-|---|---|
-| Backend tests | **260/260 passing** (deterministic, order-independent) |
-| Evidence tests (offline, keyless) | **33 tests** proving crash recovery, zero double-stamping, redaction residue absence, manifest SHA reconciliation |
-| Trust boundary tests | **10 tests** proving PROPOSED→APPLIED blocked, REJECTED text survives, double-application prevented, idempotent scrub |
-| Content description tests | **17 tests** proving descriptions come from content, not filenames |
-| Integration evidence tests | **4 tests** proving the SuperDocs adapter is actually called when available |
-| Frontend tests | **7/7 passing** |
-| TypeScript | **clean** (zero errors) |
-| Production build | **succeeds** |
-| Live E2E | **112/112 checks** against running server + real SuperDocs API |
+| Metric | Result | Command to Verify |
+|---|---|---|
+| Offline Evidence & Logic Tests | **86/86 passing** (zero dependencies, no DB, no API key, `DEBUG=false`) | `make test-offline` |
+| Offline Evidence & Benchmark Harness | **39/39 passing** (precision/recall, residue safety, journal continuity) | `make evidence-offline` |
+| DB-Backed Evidence & Kill Matrix | **71/71 passing** (kill matrix, crash recovery, OCR search, requires PostgreSQL) | `make evidence-db` |
+| Full Backend DB Suite | **307/307 passing** (PostgreSQL-backed at `TEST_DATABASE_URL`, `DEBUG=false`) | `make test-db` |
+| Frontend Component Tests | **7/7 passing** (Vitest) | `make test-frontend` |
+| TypeScript Compiler | **clean** (zero errors) | `npx tsc --noEmit` (in `frontend/`) |
+| Production Build | **succeeds** | `npm run build` (in `frontend/`) |
+| Live E2E Integration | **112/112 checks** against running server + real SuperDocs API | `python live_e2e_phase13.py` |
 
 ## What This System Actually Solves
 
@@ -153,6 +152,7 @@ bates-exhibit-privilege-packet/
 ├── docker-compose.yml  # postgres + backend + frontend
 ├── .env.docker         # Docker environment template
 ├── .env.example        # environment variable template (no secrets)
+├── Makefile            # stranger-runnable test targets
 ├── README.md / ARCHITECTURE.md
 ```
 
@@ -227,41 +227,62 @@ Copy `.env.example` (backend). All secrets live only in `.env` (gitignored):
 | `ORIGINALS_DIR`, `PROCESSED_DIR`, `WORKING_DIR`, `FINAL_DIR` | no              | `originals`, …                  | Subdirectory names.                                          |
 | `TESSERACT_CMD`, `TESSERACT_LANG`                            | no              | `tesseract`, `eng`              | OCR configuration.                                           |
 | `BATES_PREFIX`, `BATES_START_NUMBER`, `BATES_PADDING`        | no              | `CASE-`/`1`/`6`                 | Defaults.                                                    |
-| `APP_HOST`, `APP_PORT`, `DEBUG`, `LOG_LEVEL`                 | no              | `0.0.0.0`/`8000`/`false`/`INFO` | Runtime.                                                     |
+| `APP_HOST`, `APP_PORT`, `DEBUG`, `LOG_LEVEL`                 | no              | `0.0.0.0`/`8000`/`false`/`INFO` | Runtime (`DEBUG=false` forced in test targets).             |
 
-## Testing
+## Testing & Verification Commands
 
-### Verified Numbers
+A stranger can verify this build with clearly categorized `make` targets:
 
-- Backend: `pytest -q` → **253 passed**, 7 warnings
-- Evidence tests (offline): `pytest test_evidence_*` → **33 passed** (no DB, no API key)
-- Content description tests: `pytest test_content_descriptions` → **17 passed** (no DB)
-- Frontend unit: `npx vitest run` → **7 passed**
-- TypeScript: `npx tsc --noEmit` → **clean**
-- Production build: `npm run build` → **succeeds**
-- Live E2E: `python live_e2e_phase13.py` → **112/112 checks passed** against the running server + real SuperDocs
+```bash
+# 1. Tier 1: Offline Unit & Safety Suite (zero DB, zero API key, DEBUG=false forced)
+make test-offline
+
+# 2. Tier 1 (Evidence): Offline Benchmark & Residue Suite (no DB required)
+make evidence-offline
+
+# 3. Tier 2: DB-Backed Evidence & Kill Matrix (requires PostgreSQL test database)
+make evidence-db
+
+# 4. Tier 2 (Full Backend): Full 307-Test PostgreSQL Suite
+make test-db
+
+# 5. Tier 3: Frontend Component Tests & Typecheck
+make test-frontend
+```
+
+### Verified Test Counts & Requirements
+
+- **Offline Evidence & Logic Suite (`make test-offline`):** **86 passed** in ~1.1s (zero DB, zero network, no API key). Proves byte scrubber removes PII text, verify confirms absence, state machine invariants, content-derived description extraction, MIME ingestion, SuperDocs parser boundaries, and fallback precision/recall metrics.
+- **Offline Evidence & Benchmark (`make evidence-offline`):** **39 passed** in ~0.35s (no DB required). Runs evaluation metrics against ground truth corpus, 12 redaction residue tests, 10 safety rejection tests, and Bates journal continuity proofs.
+- **DB-Backed Evidence & Kill Matrix (`make evidence-db`):** **71 passed** in ~32s (requires PostgreSQL). Runs adversarial kill matrix (interrupted stamping, crash resume, zero duplicates), manifest SHA reconciliation, OCR searchability, and full chain of custody audit traces.
+- **Full Backend Suite (`make test-db`):** **307 passed** in ~82s (requires PostgreSQL at `TEST_DATABASE_URL`). Comprehensive integration, API endpoints, transactions, and state transitions.
+- **Frontend Suite (`make test-frontend`):** **7/7 passed** Vitest tests, TypeScript compile clean (`npx tsc --noEmit` returns 0 errors).
+- **Live E2E Verification (`python live_e2e_phase13.py`):** **112/112 checks passed** against running backend server + real live SuperDocs API key.
 
 ### Evidence Suites (Stranger-Verifiable)
 
-These test files prove hard claims and require only Python + pytest (no DB for the offline ones):
-
 | File | Tests | What It Proves | Dependencies |
 |---|---|---|---|
+| `test_evidence_redaction_residue.py` | 12 | Byte scrubber removes text from PDF stream; verifier confirms absence | **None (offline)** |
+| `test_content_descriptions.py` | 17 | Exhibit descriptions are generated from extracted text, not filenames | **None (offline)** |
+| `test_safety_rejection.py` | 10 | Unapproved candidates never redacted; rejected text preserved; idempotent scrub | **None (offline)** |
+| `test_offline_state_machine.py` | 13 | Redaction lifecycle transitions (PROPOSED → APPROVED → APPLIED → VERIFIED) | **None (offline)** |
+| `test_offline_bates_resume.py` | 5 | Crash-resume via Bates journal prevents gaps and duplicates | **None (offline)** |
+| `test_evaluation.py` | 6 | Precision/recall/F1 benchmark and false-positive rejection | **None (offline)** |
+| `test_ocr_search.py` | 2 | Scanned/image documents become searchable after OCR processing; unsearchable when empty | PostgreSQL |
 | `test_evidence_zero_double_stamping.py` | 7 | `assign_bates()` called N times produces zero duplicate `(doc, page)` pairs | PostgreSQL |
 | `test_evidence_crash_recovery.py` | 7 | Crash at page N, resume, prove contiguity + no double-stamp | PostgreSQL |
-| `test_evidence_redaction_residue.py` | 12 | Byte scrubber removes text; verifier confirms absence | **None (offline)** |
-| `test_evidence_manifest_reconciliation.py` | 7 | Every SHA-256 in `manifest.json` matches the actual file | PostgreSQL |
+| `test_evidence_manifest_reconciliation.py` | 7 | Every SHA-256 in `manifest.json` matches the actual exported file | PostgreSQL |
+| `evaluation/test_task21_kill_matrix.py` | 9 | Interruption recovery, pristine base preservation, double-application prevention | PostgreSQL |
 
-Run the offline evidence suite with no external dependencies:
+### Test Database Setup
 
-```bash
-cd backend
-pytest app/tests/test_evidence_redaction_residue.py -v
-```
+Database-backed test targets (`make test-db`, `make evidence-db`) read `TEST_DATABASE_URL` from the environment and default to:
+`postgresql+asyncpg://postgres:postgres@localhost:5432/bates_packet_test`
 
-### Local test database
+All test targets explicitly set `DEBUG=false` so a local development `.env` with `DEBUG=true` cannot pollute test runs.
 
-Tests run against `postgresql+asyncpg://postgres:postgres@localhost:5432/bates_packet_test`. Start a test database:
+To start a test database via Docker:
 
 ```bash
 docker run -d --name bates-pg-test \
@@ -309,12 +330,12 @@ The **Bates stamping process is fully idempotent at the page level**. The `assig
 
 **Result:** If the process is killed on page 45 of 100, pages 1–45 are already persisted with contiguous Bates numbers 1–45. On restart, the query returns `max_bates = 45`, `next_number = 46`, and the `assigned_pages` set contains pages 1–45. The loop skips them and resumes cleanly at page 46. No double-stamping, no gaps, no manual intervention.
 
-## Known Environment Requirements
+## Known Environment Requirements & Limitations
 
-- **LibreOffice** (`libreoffice`): used to convert DOCX → PDF. If absent, DOCX uploads are marked `FAILED` with `"LibreOffice unavailable: cannot convert DOCX to PDF"` and are not processed further.
-- **Tesseract** (`tesseract`): used for OCR of scanned-image PDFs and images. If absent, OCR is skipped and documents are processed from any extractable text layer.
-
-Without both tools, the system still fully processes text-based PDF exhibits end to end.
+- **PostgreSQL 16**: Required for database state and relational integrity (`TEST_DATABASE_URL` configurable).
+- **Tesseract** (`tesseract`): Used for OCR of scanned-image PDFs and images. If absent, OCR is skipped and documents without native text layers are marked `is_searchable = False` with graceful degradation. Search queries operate across extracted page text (`Page.extracted_text`).
+- **LibreOffice** (`libreoffice`): Used to convert DOCX → PDF in headless mode. If absent, DOCX uploads are marked `FAILED` with `"LibreOffice unavailable: cannot convert DOCX to PDF"`. Text-based PDF exhibits remain fully functional without LibreOffice.
+- **SuperDocs API Key**: Required for live AI drafting/review. When omitted or unavailable, the system transparently falls back to deterministic local detection with explicit `PROVENANCE_LOCAL_FALLBACK` labeling.
 
 ## QA / Verification
 
@@ -336,15 +357,17 @@ A repeatable live end-to-end QA is provided at `backend/live_e2e_phase13.py`. It
 
 | Check            | Status                    |
 | ---------------- | ------------------------- |
-| Backend tests    | **253 passed** (deterministic, order-independent) |
-| Evidence tests   | **33 passed** (offline/keyless, stranger-verifiable) |
-| Content description tests | **17 passed** (proves descriptions from content) |
-| Frontend tests   | 7 passed                  |
-| TypeScript       | clean                     |
-| Production build | succeeds                  |
+| Offline tests    | **86 passed** (`make test-offline`) |
+| Offline evidence | **39 passed** (`make evidence-offline`) |
+| DB Evidence & Kill Matrix | **71 passed** (`make evidence-db`) |
+| Full backend suite | **307 passed** (`make test-db`) |
+| Frontend tests   | **7 passed** (`make test-frontend`) |
+| TypeScript       | clean (`npx tsc --noEmit`) |
+| Production build | succeeds (`npm run build`) |
 | Live E2E         | 112/112 passed against running server + real SuperDocs |
 | Security         | verified                  |
 | Storage cleanup  | reference-aware           |
 | Database cleanup | cascades + SET NULL audit |
 
-**Status: READY FOR PR** — Full backend suite (253/253) passes deterministically. 33 evidence tests prove hard claims (crash recovery, zero double-stamping, redaction residue, manifest reconciliation) and can be run by a stranger with just `pytest`. 17 content description tests prove exhibit descriptions come from document content, not filenames.
+**Status: READY FOR PR** — Full backend suite (307/307) passes deterministically against PostgreSQL. 86 offline tests prove core logic without any external dependencies. 71 DB evidence tests prove hard claims (crash recovery, zero double-stamping, manifest SHA reconciliation, kill matrix, OCR search).
+

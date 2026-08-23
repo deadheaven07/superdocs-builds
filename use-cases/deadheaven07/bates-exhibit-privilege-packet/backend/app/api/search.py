@@ -39,6 +39,11 @@ async def search_packet(packet_id: UUID, q: str, session: AsyncSession = Depends
     bates_map = {
         (str(ba.document_id), ba.page_number): ba for ba in bates_assignments
     }
+    doc_bates_map: dict[str, list] = {}
+    for ba in bates_assignments:
+        doc_bates_map.setdefault(str(ba.document_id), []).append(ba)
+    for k in doc_bates_map:
+        doc_bates_map[k].sort(key=lambda b: b.bates_number)
 
     doc_results = await session.execute(
         select(Document)
@@ -49,7 +54,6 @@ async def search_packet(packet_id: UUID, q: str, session: AsyncSession = Depends
                 Document.description.ilike(pattern),
             ),
         )
-        .options(selectinload(Document.bates_assignments))
     )
     matched_docs = doc_results.scalars().all()
 
@@ -76,14 +80,13 @@ async def search_packet(packet_id: UUID, q: str, session: AsyncSession = Depends
     seen_page_keys: set = set()
 
     for document in matched_docs:
+        doc_id_str = str(document.id)
         matched_fields = []
         if document.original_filename and query.lower() in document.original_filename.lower():
             matched_fields.append("filename")
         if document.description and query.lower() in document.description.lower():
             matched_fields.append("description")
-        doc_bates = sorted(
-            document.bates_assignments, key=lambda b: b.bates_number
-        ) if document.bates_assignments else []
+        doc_bates = doc_bates_map.get(doc_id_str, [])
         bates_range = (
             f"{doc_bates[0].bates_label} - {doc_bates[-1].bates_label}"
             if doc_bates
@@ -91,7 +94,7 @@ async def search_packet(packet_id: UUID, q: str, session: AsyncSession = Depends
         )
         results.append(
             {
-                "document_id": str(document.id),
+                "document_id": doc_id_str,
                 "document_name": document.original_filename,
                 "document_type": document.document_type.value,
                 "page_count": document.page_count,
@@ -102,7 +105,7 @@ async def search_packet(packet_id: UUID, q: str, session: AsyncSession = Depends
                 "snippets": [],
             }
         )
-        seen_documents.add(str(document.id))
+        seen_documents.add(doc_id_str)
 
     for page, document in page_matches:
         doc_id_str = str(document.id)
@@ -129,9 +132,7 @@ async def search_packet(packet_id: UUID, q: str, session: AsyncSession = Depends
                     break
         elif page_key not in seen_page_keys:
             seen_page_keys.add(page_key)
-            doc_bates = sorted(
-                document.bates_assignments, key=lambda b: b.bates_number
-            ) if document.bates_assignments else []
+            doc_bates = doc_bates_map.get(doc_id_str, [])
             bates_range = (
                 f"{doc_bates[0].bates_label} - {doc_bates[-1].bates_label}"
                 if doc_bates
@@ -166,9 +167,7 @@ async def search_packet(packet_id: UUID, q: str, session: AsyncSession = Depends
         document = await session.get(Document, ba.document_id)
         if not document:
             continue
-        doc_bates = sorted(
-            document.bates_assignments, key=lambda b: b.bates_number
-        ) if document.bates_assignments else []
+        doc_bates = doc_bates_map.get(doc_id_str, [])
         bates_range = (
             f"{doc_bates[0].bates_label} - {doc_bates[-1].bates_label}"
             if doc_bates
