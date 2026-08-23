@@ -3,9 +3,9 @@ import { useParams } from "react-router-dom";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import {
-  Upload, Download, ArrowUpDown, Search, Shield, FileText, Plus,
+  Upload, Download, ArrowUpDown, Shield, FileText, Plus,
   Loader2, AlertCircle, AlertTriangle, CheckCircle2, RefreshCw, Send, Check, X, XCircle,
-  ArrowUp, ArrowDown, Trash2,
+  ArrowUp, ArrowDown, Trash2, Info, Eye, Sparkles, Lock, CheckSquare
 } from "lucide-react";
 import { clsx } from "clsx";
 import { usePacket } from "@/hooks/usePackets";
@@ -13,64 +13,67 @@ import {
   useDocuments, useUploadDocuments, useDeleteDocument, useReorderDocument, useDownloadDocument,
 } from "@/hooks/useDocuments";
 import { useProcessingStatus, useStartProcessing, useRetryDocument } from "@/hooks/useProcessing";
-import { useAssignBates, useBatesPreview } from "@/hooks/useBates";
-import { useBuildPacket, useDownloadPacket, useValidatePacket, useVerifyPacket, useManifest } from "@/hooks/useExports";
+import { useAssignBates } from "@/hooks/useBates";
+import { useBuildPacket, useDownloadPacket, useValidatePacket, useVerifyPacket } from "@/hooks/useExports";
 import {
   useDetectRedactions, useRedactionCandidates, useApproveRedaction,
   useApplyRedaction, useApplyAllRedactions,
 } from "@/hooks/useRedactions";
-import { usePrivilegeLog, usePrivilegeDecisions, useMarkPrivilege } from "@/hooks/usePrivilege";
+import { usePrivilegeDecisions, useMarkPrivilege } from "@/hooks/usePrivilege";
 import { useAuditTrail } from "@/hooks/useAudit";
 import {
   useRequestAIAnalysis, useAnalysisStatus, useApproveAIChanges, useContinueAIJob,
 } from "@/hooks/useReview";
 import { useToast } from "@/components/ui/use-toast";
 import { DocumentPdfViewer } from "@/components/DocumentPdfViewer";
+import { Modal } from "@/components/ui/modal";
+import { Drawer } from "@/components/ui/drawer";
+import { Badge } from "@/components/ui/badge";
 import type {
   DocumentListResponse, PrivilegeDecision, PrivilegeStatus, PrivilegeCategory, RedactionCandidate,
 } from "@/types/api";
 
-const statusColors: Record<string, string> = {
-  completed: "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30",
-  processing: "bg-sky-500/10 text-sky-400 border border-sky-500/30",
-  ocr: "bg-amber-500/10 text-amber-400 border border-amber-500/30",
-  ai_analysis: "bg-purple-500/10 text-purple-400 border border-purple-500/30",
-  waiting_review: "bg-orange-500/10 text-orange-400 border border-orange-500/30",
-  queued: "bg-slate-800 text-slate-400 border border-slate-700",
-  failed: "bg-rose-500/10 text-rose-400 border border-rose-500/30",
-  bates_assigned: "bg-teal-500/10 text-teal-400 border border-teal-500/30",
-  assembling: "bg-indigo-500/10 text-indigo-400 border border-indigo-500/30",
-  approved: "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30",
+const statusBadgeVariants: Record<string, "success" | "indigo" | "warning" | "purple" | "danger" | "default"> = {
+  completed: "success",
+  processing: "indigo",
+  ocr: "warning",
+  ai_analysis: "purple",
+  waiting_review: "warning",
+  queued: "default",
+  failed: "danger",
+  bates_assigned: "success",
+  assembling: "indigo",
+  approved: "success",
 };
 
-const privilegeColors: Record<string, string> = {
-  privileged: "bg-rose-500/10 text-rose-400 border border-rose-500/30",
-  not_privileged: "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30",
-  pending: "bg-slate-800 text-slate-400 border border-slate-700",
+const privilegeBadgeVariants: Record<string, "danger" | "success" | "default"> = {
+  privileged: "danger",
+  not_privileged: "success",
+  pending: "default",
 };
 
-const redactionStatusColors: Record<string, string> = {
-  proposed: "bg-slate-800 text-slate-400 border border-slate-700",
-  pending_approval: "bg-amber-500/10 text-amber-400 border border-amber-500/30",
-  approved: "bg-sky-500/10 text-sky-400 border border-sky-500/30",
-  rejected: "bg-rose-500/10 text-rose-400 border border-rose-500/30",
-  applied: "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30",
-  verified: "bg-teal-500/10 text-teal-400 border border-teal-500/30",
-  failed: "bg-rose-500/10 text-rose-400 border border-rose-500/30",
+const redactionBadgeVariants: Record<string, "default" | "warning" | "indigo" | "danger" | "success"> = {
+  proposed: "default",
+  pending_approval: "warning",
+  approved: "indigo",
+  rejected: "danger",
+  applied: "success",
+  verified: "success",
+  failed: "danger",
 };
 
 function LoadingState({ message }: { message: string }) {
   return (
-    <div className="flex flex-col items-center justify-center py-16 text-slate-400">
-      <Loader2 className="h-8 w-8 animate-spin text-sky-400 mb-3" />
-      <span className="text-xs font-mono">{message}</span>
+    <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+      <Loader2 className="h-9 w-9 animate-spin text-indigo-400 mb-3" />
+      <span className="text-xs font-mono text-slate-300">{message}</span>
     </div>
   );
 }
 
 function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
-    <div className="bg-rose-950/40 border border-rose-800/80 rounded-2xl p-5 backdrop-blur-md">
+    <div className="bg-rose-950/40 border border-rose-800/80 rounded-2xl p-6 backdrop-blur-md shadow-xl">
       <div className="flex items-center gap-2.5">
         <AlertCircle className="h-5 w-5 text-rose-400" />
         <span className="text-sm font-semibold text-rose-200">Operation Error</span>
@@ -79,7 +82,7 @@ function ErrorState({ message, onRetry }: { message: string; onRetry?: () => voi
       {onRetry && (
         <button
           onClick={onRetry}
-          className="mt-3 px-3 py-1.5 text-xs font-medium bg-rose-600 hover:bg-rose-500 text-white rounded-xl transition-colors"
+          className="mt-3 px-3 py-1.5 text-xs font-medium bg-rose-600 hover:bg-rose-500 text-white rounded-xl transition-colors shadow-sm"
         >
           Retry Action
         </button>
@@ -103,7 +106,7 @@ function AiChangesPanel({ packetId, selectedDoc }: { packetId: string; selectedD
   const requestAIAnalysis = useRequestAIAnalysis();
   const approveAIChanges = useApproveAIChanges();
   const continueAIJob = useContinueAIJob();
-  const { data: status, isLoading: statusLoading } = useAnalysisStatus(packetId, selectedDoc.id, jobId ?? "");
+  const { data: status } = useAnalysisStatus(packetId, selectedDoc.id, jobId ?? "");
 
   const handleRequest = async () => {
     try {
@@ -119,128 +122,142 @@ function AiChangesPanel({ packetId, selectedDoc }: { packetId: string; selectedD
     }
   };
 
-  const handleApprove = async (approved: boolean) => {
+  const handleApprove = async (approve: boolean) => {
     if (!jobId || !status?.changes) return;
     try {
       await approveAIChanges.mutateAsync({
         packetId,
         documentId: selectedDoc.id,
-        data: { job_id: jobId, approved, changes: status.changes },
+        data: { job_id: jobId, approved: approve, changes: status.changes ?? [] },
       });
-      toast({ title: approved ? "Changes approved" : "Changes rejected" });
-      setJobId(null);
+      toast({ title: approve ? "Changes approved" : "Changes rejected" });
     } catch (err: any) {
-      toast({ title: "Failed to submit decision", description: err?.message, variant: "destructive" });
+      toast({ title: "Failed to process changes", description: err?.message, variant: "destructive" });
     }
   };
 
-  const handleContinue = async (continueJob: boolean) => {
+  const handleContinue = async (decision: boolean) => {
     if (!jobId) return;
     try {
       await continueAIJob.mutateAsync({
         packetId,
         documentId: selectedDoc.id,
-        data: { job_id: jobId, continue_job: continueJob },
+        data: { job_id: jobId, continue_job: decision },
       });
-      toast({ title: continueJob ? "Job continued" : "Job stopped" });
-      setJobId(null);
+      toast({ title: decision ? "Job continued" : "Job stopped" });
     } catch (err: any) {
       toast({ title: "Failed to continue job", description: err?.message, variant: "destructive" });
     }
   };
 
   return (
-    <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-sm border p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-medium text-gray-900">AI Review: {selectedDoc.filename}</h2>
-        <span className={clsx("px-2 py-1 rounded text-xs", statusColors[selectedDoc.status] ?? "bg-gray-100 text-gray-700")}>
-          {selectedDoc.status.replace("_", " ")}
-        </span>
-      </div>
-
-      {!jobId ? (
-        <div className="space-y-3">
-          <label className="block text-sm font-medium text-gray-700">Instruction for AI Analysis</label>
+    <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
+      <div className="bg-slate-900/80 rounded-2xl shadow-xl border border-slate-800/90 p-6 backdrop-blur-md">
+        <div className="flex items-center gap-2.5 text-indigo-400">
+          <Sparkles className="h-5 w-5" />
+          <h2 className="text-lg font-display font-bold text-white">SuperDocs Intelligence Review</h2>
+        </div>
+        <p className="text-xs text-slate-400 mt-1">
+          Target Exhibit: <span className="font-semibold text-slate-200">{selectedDoc.filename}</span> ({selectedDoc.page_count} pages)
+        </p>
+        <div className="mt-4 space-y-3">
+          <label className="block text-xs font-mono uppercase tracking-wider text-slate-400 font-medium">
+            Review Instructions
+          </label>
           <textarea
             value={instruction}
             onChange={(e) => setInstruction(e.target.value)}
-            rows={4}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+            rows={3}
+            className="w-full px-4 py-3 bg-slate-950 border border-slate-700/80 rounded-xl text-slate-100 placeholder-slate-500 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+            placeholder="Describe the review task for this exhibit..."
           />
-          <Button onClick={handleRequest} disabled={requestAIAnalysis.isPending}>
+          <button
+            onClick={handleRequest}
+            disabled={requestAIAnalysis.isPending}
+            className="px-5 py-2.5 bg-gradient-to-r from-indigo-500 to-sky-500 hover:from-indigo-400 hover:to-sky-400 text-white font-semibold text-sm rounded-xl shadow-lg shadow-indigo-600/25 disabled:opacity-50 transition-all flex items-center gap-2"
+          >
             {requestAIAnalysis.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            Request AI Analysis
-          </Button>
+            Request SuperDocs Analysis
+          </button>
         </div>
-      ) : statusLoading ? (
-        <div className="flex items-center justify-center py-8">
-          <Loader2 className="h-6 w-6 animate-spin text-primary-600" />
-          <span className="ml-3 text-gray-600">Polling job {jobId}...</span>
-        </div>
-      ) : status?.status === "awaiting_approval" && status.changes && status.changes.length > 0 ? (
-        <div className="space-y-4">
-          <p className="text-sm font-medium text-gray-700">
-            {status.changes.length} proposed change(s) awaiting approval
-            {status.awaiting_kind === "continue" ? " (continue prompt)" : ""}
-          </p>
-          {status.changes.map((change) => (
-            <div key={change.change_id} className="border border-gray-200 rounded-lg p-4">
-              <div className="flex items-center justify-between gap-2">
-                <span className="px-1.5 py-0.5 text-xs bg-purple-50 text-purple-700 rounded">{change.operation}</span>
-                <span className="text-xs text-gray-400">{change.change_id}</span>
-              </div>
-              {change.ai_explanation && (
-                <p className="text-sm text-gray-600 mt-2">{change.ai_explanation}</p>
-              )}
+      </div>
+
+      {status?.status === "awaiting_approval" && status.changes && status.changes.length > 0 ? (
+        <div className="bg-slate-900/80 rounded-2xl shadow-xl border border-slate-800/90 p-6 space-y-4 backdrop-blur-md">
+          <h3 className="text-sm font-semibold text-white uppercase tracking-wider font-mono">Proposed Changes Awaiting Review</h3>
+          {status.changes.map((change: any) => (
+            <div key={change.change_id} className="p-4 bg-slate-950/70 rounded-xl border border-slate-800 space-y-2">
+              <p className="text-xs font-semibold text-sky-400 font-mono">{change.operation || "EDIT"}</p>
               {change.old_html && (
-                <p className="text-xs text-gray-500 mt-2">
-                  <span className="font-medium text-red-600">Before:</span> {stripHtml(change.old_html).slice(0, 300)}
+                <p className="text-xs text-slate-400">
+                  <span className="font-semibold text-rose-400">Original:</span> {stripHtml(change.old_html).slice(0, 300)}
                 </p>
               )}
               {change.new_html && (
-                <p className="text-xs text-gray-500 mt-1">
-                  <span className="font-medium text-green-600">After:</span> {stripHtml(change.new_html).slice(0, 300)}
+                <p className="text-xs text-slate-400">
+                  <span className="font-semibold text-emerald-400">Proposed:</span> {stripHtml(change.new_html).slice(0, 300)}
                 </p>
               )}
             </div>
           ))}
-          <div className="flex gap-2">
-            <Button onClick={() => handleApprove(true)} disabled={approveAIChanges.isPending}>
-              <Check className="h-4 w-4" /> Approve All
-            </Button>
-            <Button variant="outline" onClick={() => handleApprove(false)} disabled={approveAIChanges.isPending}>
-              <X className="h-4 w-4" /> Reject All
-            </Button>
+          <div className="flex gap-2.5 pt-2">
+            <button
+              onClick={() => handleApprove(true)}
+              disabled={approveAIChanges.isPending}
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl shadow-md transition-all flex items-center gap-1.5"
+            >
+              <Check className="h-3.5 w-3.5" /> Approve All
+            </button>
+            <button
+              onClick={() => handleApprove(false)}
+              disabled={approveAIChanges.isPending}
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl border border-slate-700 transition-all flex items-center gap-1.5"
+            >
+              <X className="h-3.5 w-3.5" /> Reject All
+            </button>
           </div>
         </div>
       ) : status?.status === "awaiting_approval" && status.continue_prompt ? (
-        <div className="space-y-3">
-          <p className="text-sm text-gray-700">{String(status.continue_prompt)}</p>
-          <div className="flex gap-2">
-            <Button onClick={() => handleContinue(true)} disabled={continueAIJob.isPending}>
-              <Check className="h-4 w-4" /> Continue
-            </Button>
-            <Button variant="outline" onClick={() => handleContinue(false)} disabled={continueAIJob.isPending}>
-              <X className="h-4 w-4" /> Stop
-            </Button>
+        <div className="bg-slate-900/80 rounded-2xl border border-slate-800 p-6 space-y-3">
+          <p className="text-sm text-slate-300">{String(status.continue_prompt)}</p>
+          <div className="flex gap-2.5">
+            <button
+              onClick={() => handleContinue(true)}
+              disabled={continueAIJob.isPending}
+              className="px-4 py-2 bg-indigo-600 text-white text-xs font-semibold rounded-xl"
+            >
+              <Check className="h-3.5 w-3.5 inline mr-1" /> Continue
+            </button>
+            <button
+              onClick={() => handleContinue(false)}
+              disabled={continueAIJob.isPending}
+              className="px-4 py-2 bg-slate-800 text-slate-300 text-xs font-semibold rounded-xl"
+            >
+              <X className="h-3.5 w-3.5 inline mr-1" /> Stop
+            </button>
           </div>
         </div>
       ) : status?.error ? (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-2">
-          <AlertCircle className="h-5 w-5 text-red-600" />
-          <span className="text-sm text-red-800">{status.error}</span>
+        <div className="bg-rose-950/40 border border-rose-800/80 rounded-2xl p-4 flex items-center gap-2 text-rose-300 text-xs font-mono">
+          <AlertCircle className="h-4 w-4 text-rose-400" />
+          <span>{status.error}</span>
         </div>
       ) : (
-        <div className="space-y-2">
-          <p className="text-sm text-gray-600">Job status: <span className="font-medium">{status?.status ?? "unknown"}</span></p>
+        <div className="bg-slate-900/60 rounded-2xl border border-slate-800/80 p-5 space-y-2 text-xs font-mono">
+          <p className="text-slate-400">Analysis status: <span className="text-white font-semibold">{status?.status ?? "idle"}</span></p>
           {status?.result && (
-            <pre className="text-xs bg-gray-50 border border-gray-200 rounded p-3 overflow-x-auto max-h-64">
+            <pre className="p-3 bg-slate-950 rounded-xl border border-slate-800 overflow-x-auto text-[11px] text-slate-300 max-h-64">
               {JSON.stringify(status.result, null, 2).slice(0, 2000)}
             </pre>
           )}
-          <Button variant="outline" onClick={() => setJobId(null)}>
-            <XCircle className="h-4 w-4" /> Cancel Job
-          </Button>
+          {jobId && (
+            <button
+              onClick={() => setJobId(null)}
+              className="mt-2 px-3 py-1.5 bg-slate-800 text-slate-400 hover:text-white rounded-lg text-xs"
+            >
+              Cancel Job
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -264,22 +281,24 @@ function PrivilegeRow({
   const invalid = status === "privileged" && !reason.trim();
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-4">
+    <div className="bg-slate-900/70 rounded-2xl border border-slate-800/90 p-5 shadow-lg space-y-3 hover:border-slate-700/80 transition-all">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="font-medium text-gray-900 truncate">{doc.filename}</p>
-          <div className="flex items-center gap-2 mt-1 text-xs text-gray-500">
-            <span className={clsx("px-1.5 py-0.5 rounded", privilegeColors[status])}>{status.replace("_", " ")}</span>
-            {doc.bates_range && <span className="font-mono">{doc.bates_range}</span>}
-            {decision?.reviewer && <span>by {decision.reviewer}</span>}
+          <p className="font-semibold text-sm text-white truncate">{doc.filename}</p>
+          <div className="flex items-center gap-2 mt-1.5 text-xs">
+            <Badge variant={privilegeBadgeVariants[status] ?? "default"}>
+              {status.replace("_", " ")}
+            </Badge>
+            {doc.bates_range && <span className="font-mono text-sky-400 text-[11px] bg-sky-950/50 px-2 py-0.5 rounded border border-sky-800/50">{doc.bates_range}</span>}
+            {decision?.reviewer && <span className="text-slate-400 text-xs">by {decision.reviewer}</span>}
           </div>
         </div>
       </div>
-      <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
         <select
           value={status}
           onChange={(e) => setStatus(e.target.value as PrivilegeStatus)}
-          className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-primary-500"
+          className="px-3 py-2 bg-slate-950 border border-slate-700/80 rounded-xl text-slate-200 text-xs font-medium focus:ring-2 focus:ring-indigo-500 outline-none"
         >
           <option value="pending">Pending</option>
           <option value="privileged">Privileged</option>
@@ -289,7 +308,7 @@ function PrivilegeRow({
           value={category}
           onChange={(e) => setCategory(e.target.value as PrivilegeCategory | "")}
           disabled={status !== "privileged"}
-          className="px-3 py-2 border border-gray-300 rounded-lg bg-white text-sm focus:ring-2 focus:ring-primary-500 disabled:opacity-50"
+          className="px-3 py-2 bg-slate-950 border border-slate-700/80 rounded-xl text-slate-200 text-xs font-medium focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-40"
         >
           <option value="">Category...</option>
           <option value="attorney_client">Attorney-Client</option>
@@ -302,16 +321,17 @@ function PrivilegeRow({
           onChange={(e) => setReason(e.target.value)}
           disabled={status !== "privileged"}
           placeholder={status === "privileged" ? "Reason (required)" : "Reason"}
-          className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 disabled:opacity-50"
+          className="px-3 py-2 bg-slate-950 border border-slate-700/80 rounded-xl text-slate-200 placeholder-slate-500 text-xs focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-40"
         />
       </div>
-      {invalid && <p className="text-xs text-red-600 mt-2">Reason is required for privileged documents.</p>}
-      <div className="mt-3 flex justify-end">
+      {invalid && <p className="text-xs text-rose-400 font-mono">Reason is required for privileged documents.</p>}
+      <div className="flex justify-end pt-1">
         <Button
           size="sm"
           variant="outline"
           disabled={isSaving || invalid || (status === "pending" && !decision)}
           onClick={() => onSave(doc.id, { status, category: category || undefined, reason: reason || undefined })}
+          className="gap-1.5 text-xs font-semibold"
         >
           {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
           Save Decision
@@ -343,25 +363,30 @@ function PrivilegePanel({ packetId, documents }: { packetId: string; documents?:
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-4">
-      <div className="bg-white rounded-lg shadow-sm border p-4 flex items-center justify-between">
+    <div className="max-w-4xl mx-auto space-y-5 animate-fade-in">
+      <div className="bg-slate-900/80 rounded-2xl shadow-xl border border-slate-800/90 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 backdrop-blur-md">
         <div>
-          <h2 className="text-lg font-medium text-gray-900">Privilege Marking</h2>
-          <p className="text-sm text-gray-500 mt-1">Mark documents as privileged with category and reason. Privileged documents appear in the privilege log.</p>
+          <div className="flex items-center gap-2">
+            <Lock className="h-5 w-5 text-indigo-400" />
+            <h2 className="text-lg font-display font-bold text-white">Privilege Review & Logging</h2>
+          </div>
+          <p className="text-xs text-slate-400 mt-1">
+            Categorize privileged documents with legal rationale. Included in final privilege log.
+          </p>
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-sm text-gray-600">Reviewer:</label>
+          <label className="text-xs font-mono text-slate-400 uppercase">Reviewer:</label>
           <input
             type="text"
             value={reviewer}
             onChange={(e) => setReviewer(e.target.value)}
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm w-40 focus:ring-2 focus:ring-primary-500"
+            className="px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white w-36 focus:ring-2 focus:ring-indigo-500 outline-none"
           />
         </div>
       </div>
       {!documents || documents.length === 0 ? (
-        <div className="bg-white rounded-lg border border-gray-200 p-6 text-center text-gray-500">
-          No documents to mark. Upload documents first.
+        <div className="bg-slate-900/60 rounded-2xl border border-slate-800 p-12 text-center text-slate-400">
+          No documents in packet. Upload documents to review privilege.
         </div>
       ) : (
         documents.map((doc) => (
@@ -388,7 +413,7 @@ function RedactionsPanel({ packetId, candidates }: { packetId: string; candidate
   const applyAll = useApplyAllRedactions();
 
   const approvedDocIds = useMemo(
-    () => [...new Set((candidates ?? []).filter((c) => c.status === "approved").map((c) => c.document_id))],
+    () => [...new Set((candidates ?? []).filter((c: RedactionCandidate) => c.status === "approved").map((c: RedactionCandidate) => c.document_id))],
     [candidates]
   );
 
@@ -408,7 +433,7 @@ function RedactionsPanel({ packetId, candidates }: { packetId: string; candidate
   const handleApply = async (candidate: RedactionCandidate) => {
     try {
       await applyRedaction.mutateAsync({ packetId, redactionId: candidate.id });
-      toast({ title: "Redaction applied", description: "Applied and verified." });
+      toast({ title: "Redaction applied", description: "Byte-scrubbed and verified absent." });
     } catch (err: any) {
       toast({ title: "Apply failed", description: err?.message, variant: "destructive" });
     }
@@ -426,92 +451,101 @@ function RedactionsPanel({ packetId, candidates }: { packetId: string; candidate
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-4">
-      <div className="bg-white rounded-lg shadow-sm border p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+    <div className="max-w-4xl mx-auto space-y-5 animate-fade-in">
+      <div className="bg-slate-900/80 rounded-2xl shadow-xl border border-slate-800/90 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 backdrop-blur-md">
         <div>
-          <h2 className="text-lg font-medium text-gray-900">Redaction Candidates</h2>
-          <p className="text-sm text-gray-500 mt-1">
-            {candidates?.length ?? 0} candidate(s). Approve, reject, then apply redactions to documents.
+          <div className="flex items-center gap-2">
+            <Shield className="h-5 w-5 text-rose-400" />
+            <h2 className="text-lg font-display font-bold text-white">PII Redaction Studio</h2>
+          </div>
+          <p className="text-xs text-slate-400 mt-1">
+            {candidates?.length ?? 0} candidate(s) detected. Approve/reject candidates before applying byte-level scrubs.
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-sm text-gray-600">Approver:</label>
+          <label className="text-xs font-mono text-slate-400 uppercase">Approver:</label>
           <input
             type="text"
             value={approver}
             onChange={(e) => setApprover(e.target.value)}
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm w-32 focus:ring-2 focus:ring-primary-500"
+            className="px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white w-32 focus:ring-2 focus:ring-indigo-500 outline-none"
           />
-          <Button onClick={handleApplyAll} disabled={approvedDocIds.length === 0 || applyAll.isPending}>
+          <Button
+            onClick={handleApplyAll}
+            disabled={approvedDocIds.length === 0 || applyAll.isPending}
+            className="gap-1.5 text-xs font-semibold bg-gradient-to-r from-indigo-500 to-sky-500 hover:from-indigo-400 hover:to-sky-400 shadow-md shadow-indigo-600/20"
+          >
             {applyAll.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-            Apply All Approved
+            Apply All Approved ({approvedDocIds.length})
           </Button>
         </div>
       </div>
 
       {!candidates || candidates.length === 0 ? (
-        <div className="bg-white rounded-lg border border-gray-200 p-6 text-center text-gray-500">
+        <div className="bg-slate-900/60 rounded-2xl border border-slate-800 p-12 text-center text-slate-400">
           No redaction candidates yet. Run "Detect Redactions" to scan for PII.
         </div>
       ) : (
         candidates.map((candidate) => (
-          <div key={candidate.id} className="bg-white rounded-lg border border-gray-200 p-4">
+          <div key={candidate.id} className="bg-slate-900/70 rounded-2xl border border-slate-800/90 p-5 shadow-lg space-y-3 hover:border-slate-700/80 transition-all">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="font-medium text-gray-900">{candidate.matched_text}</p>
-                <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-gray-500">
-                  <span className="px-1.5 py-0.5 bg-purple-50 text-purple-700 rounded">{candidate.category}</span>
-                  <span>{candidate.document_name}</span>
-                  <span>Page {candidate.page_number}</span>
-                  <span className={clsx("px-1.5 py-0.5 rounded", redactionStatusColors[candidate.status] ?? "bg-gray-100 text-gray-700")}>
+                <p className="font-mono font-bold text-sm text-white bg-slate-950/80 px-2.5 py-1 rounded-lg border border-slate-800 inline-block">
+                  {candidate.matched_text}
+                </p>
+                <div className="flex flex-wrap items-center gap-2 mt-2 text-xs">
+                  <Badge variant="purple">{candidate.category}</Badge>
+                  <span className="text-slate-400 text-xs">{candidate.document_name}</span>
+                  <span className="font-mono text-xs text-slate-400">Page {candidate.page_number}</span>
+                  <Badge variant={redactionBadgeVariants[candidate.status] ?? "default"}>
                     {candidate.status.replace("_", " ")}
-                  </span>
+                  </Badge>
                   {candidate.proposed_by && (
                     <span className={clsx(
-                      "px-1.5 py-0.5 rounded text-[10px] font-medium",
+                      "px-2 py-0.5 rounded-full text-[10px] font-mono border",
                       candidate.proposed_by === "superdocs"
-                        ? "bg-blue-50 text-blue-700"
-                        : "bg-amber-50 text-amber-700"
+                        ? "bg-sky-950/60 text-sky-300 border-sky-800/60"
+                        : "bg-amber-950/60 text-amber-300 border-amber-800/60"
                     )}>
                       {candidate.proposed_by === "superdocs" ? "SuperDocs AI" : "Local Fallback"}
                     </span>
                   )}
-                  {candidate.approval?.approver && <span>by {candidate.approval.approver}</span>}
+                  {candidate.approval?.approver && <span className="text-slate-400 text-xs">by {candidate.approval.approver}</span>}
                 </div>
                 {(candidate.context_before || candidate.context_after) && (
-                  <p className="text-xs text-gray-500 mt-2">
-                    {candidate.context_before && <span>…{candidate.context_before}</span>}
-                    <span className="font-medium text-gray-700"> {candidate.matched_text} </span>
-                    {candidate.context_after && <span>{candidate.context_after}…</span>}
+                  <p className="text-xs text-slate-400 mt-2.5 p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 font-mono">
+                    {candidate.context_before && <span className="text-slate-500">…{candidate.context_before}</span>}
+                    <span className="font-bold text-rose-300 bg-rose-950/40 px-1 py-0.5 rounded"> {candidate.matched_text} </span>
+                    {candidate.context_after && <span className="text-slate-500">{candidate.context_after}…</span>}
                   </p>
                 )}
               </div>
-              <div className="flex gap-2 flex-shrink-0">
+              <div className="flex gap-2 shrink-0">
                 {(candidate.status === "proposed" || candidate.status === "pending_approval") && (
                   <>
-                    <Button size="sm" variant="outline" onClick={() => handleApprove(candidate, true)} disabled={approveRedaction.isPending}>
-                      <Check className="h-3.5 w-3.5" /> Approve
+                    <Button size="sm" variant="outline" onClick={() => handleApprove(candidate, true)} disabled={approveRedaction.isPending} className="gap-1 text-xs">
+                      <Check className="h-3.5 w-3.5 text-emerald-400" /> Approve
                     </Button>
-                    <Button size="sm" variant="outline" onClick={() => handleApprove(candidate, false)} disabled={approveRedaction.isPending}>
-                      <X className="h-3.5 w-3.5" /> Reject
+                    <Button size="sm" variant="outline" onClick={() => handleApprove(candidate, false)} disabled={approveRedaction.isPending} className="gap-1 text-xs">
+                      <X className="h-3.5 w-3.5 text-rose-400" /> Reject
                     </Button>
                   </>
                 )}
                 {candidate.status === "approved" && (
-                  <Button size="sm" onClick={() => handleApply(candidate)} disabled={applyRedaction.isPending}>
+                  <Button size="sm" onClick={() => handleApply(candidate)} disabled={applyRedaction.isPending} className="gap-1 text-xs bg-emerald-600 hover:bg-emerald-500">
                     {applyRedaction.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
                     Apply
                   </Button>
                 )}
                 {candidate.status === "applied" && (
-                  <span className="text-xs text-gray-500 flex items-center gap-1">
-                    <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  <span className="text-xs text-emerald-400 flex items-center gap-1 font-mono">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-400" />
                     Applied
-                    {candidate.approval?.verified_at && <span className="text-teal-600">• Verified</span>}
+                    {candidate.approval?.verified_at && <span className="text-teal-400">• Verified Absent</span>}
                   </span>
                 )}
                 {candidate.status === "rejected" && (
-                  <span className="text-xs text-red-600 flex items-center gap-1">
+                  <span className="text-xs text-rose-400 flex items-center gap-1 font-mono">
                     <XCircle className="h-4 w-4" /> Rejected
                   </span>
                 )}
@@ -530,36 +564,34 @@ function AuditPanel({ packetId }: { packetId: string }) {
   const { data: trail, isLoading } = useAuditTrail(packetId);
 
   return (
-    <div className="max-w-4xl mx-auto space-y-4">
-      <div className="bg-white rounded-lg shadow-sm border p-4">
-        <h2 className="text-lg font-medium text-gray-900">Audit Trail</h2>
-        <p className="text-sm text-gray-500 mt-1">{trail?.total_events ?? 0} event(s) recorded for this packet.</p>
+    <div className="max-w-4xl mx-auto space-y-4 animate-fade-in">
+      <div className="bg-slate-900/80 rounded-2xl shadow-xl border border-slate-800/90 p-5 backdrop-blur-md">
+        <h2 className="text-lg font-display font-bold text-white">Immutable Audit Trail & Ledger</h2>
+        <p className="text-xs text-slate-400 mt-1 font-mono">{trail?.total_events ?? 0} total lifecycle events recorded.</p>
       </div>
       {isLoading ? (
         <LoadingState message="Loading audit trail..." />
       ) : !trail || trail.events.length === 0 ? (
-        <div className="bg-white rounded-lg border border-gray-200 p-6 text-center text-gray-500">
+        <div className="bg-slate-900/60 rounded-2xl border border-slate-800 p-12 text-center text-slate-400">
           No audit events recorded yet.
         </div>
       ) : (
         trail.events.map((event) => (
-          <div key={event.id} className="bg-white rounded-lg border border-gray-200 p-4">
+          <div key={event.id} className="bg-slate-900/70 rounded-2xl border border-slate-800/90 p-4 shadow-md space-y-2">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="px-1.5 py-0.5 text-xs bg-primary-50 text-primary-700 rounded font-medium">
-                    {event.event_type.replace(/_/g, " ")}
-                  </span>
-                  {event.user_id && <span className="text-xs text-gray-500">by {event.user_id}</span>}
-                  {event.document_name && <span className="text-xs text-gray-500">{event.document_name}</span>}
+                  <Badge variant="indigo">{event.event_type.replace(/_/g, " ")}</Badge>
+                  {event.user_id && <span className="text-xs text-slate-400 font-mono">by {event.user_id}</span>}
+                  {event.document_name && <span className="text-xs text-slate-300 font-medium">{event.document_name}</span>}
                 </div>
                 {event.metadata && (
-                  <pre className="text-xs bg-gray-50 border border-gray-100 rounded p-2 mt-2 overflow-x-auto">
+                  <pre className="text-[11px] bg-slate-950 border border-slate-800/90 rounded-xl p-3 mt-2 overflow-x-auto text-slate-300 font-mono">
                     {JSON.stringify(event.metadata, null, 2).slice(0, 500)}
                   </pre>
                 )}
               </div>
-              <span className="text-xs text-gray-400 flex-shrink-0">
+              <span className="text-xs text-slate-400 font-mono shrink-0">
                 {new Date(event.timestamp).toLocaleString()}
               </span>
             </div>
@@ -570,23 +602,24 @@ function AuditPanel({ packetId }: { packetId: string }) {
   );
 }
 
-// ---------- Main Workspace ----------
+// ---------- Main Workspace Component ----------
 
 export function PacketWorkspace() {
   const { packetId = "" } = useParams();
   const [activeTab, setActiveTab] = useState("documents");
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [verifyResult, setVerifyResult] = useState<any>(null);
+  const [isBuildModalOpen, setIsBuildModalOpen] = useState(false);
+  const [isDocInspectorOpen, setIsDocInspectorOpen] = useState(false);
+  const [inspectingDoc, setInspectingDoc] = useState<DocumentListResponse | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
   const { data: packet, isLoading: packetLoading, error: packetError, refetch: refetchPacket } = usePacket(packetId);
   const { data: documents, isLoading: docsLoading, error: docsError, refetch: refetchDocs } = useDocuments(packetId);
   const { data: processingStatus, refetch: refetchProcessing } = useProcessingStatus(packetId);
-  const { data: batesPreview } = useBatesPreview(packetId);
-  const { data: manifest } = useManifest(packetId);
   const { data: redactionCandidates } = useRedactionCandidates(packetId);
-  const { data: privilegeLog } = usePrivilegeLog(packetId);
 
   const uploadMutation = useUploadDocuments(packetId);
   const startProcessing = useStartProcessing();
@@ -653,7 +686,8 @@ export function PacketWorkspace() {
     }
   };
 
-  const handleBuild = async () => {
+  const handleConfirmBuild = async () => {
+    setIsBuildModalOpen(false);
     try {
       await validatePacket.mutateAsync(packetId);
       const result = await buildPacket.mutateAsync(packetId);
@@ -733,11 +767,10 @@ export function PacketWorkspace() {
   const handleMoveDocument = async (doc: DocumentListResponse, direction: "up" | "down") => {
     const index = sortedDocs.findIndex((d) => d.id === doc.id);
     if (index < 0) return;
-    const newOrder =
-      direction === "up" ? index : index + 2;
+    const newOrder = direction === "up" ? index : index + 2;
     try {
       await reorderDocument.mutateAsync({ documentId: doc.id, newOrder });
-      toast({ title: "Document reordered", description: "Bates numbers will be reassigned." });
+      toast({ title: "Document reordered", description: "Bates numbers reassigned contiguously." });
     } catch (err: any) {
       toast({ title: "Reorder failed", description: err?.message, variant: "destructive" });
     }
@@ -754,13 +787,16 @@ export function PacketWorkspace() {
     }
   };
 
-  if (packetLoading) return <LoadingState message="Loading packet..." />;
+  if (packetLoading) return <LoadingState message="Loading exhibit packet..." />;
   if (packetError) return <ErrorState message={packetError.message} onRetry={refetchPacket} />;
   if (!packet) return <ErrorState message="Packet not found." />;
 
   const batesStartLabel = packet.bates_prefix
     ? `${packet.bates_prefix}${String(packet.bates_start_number ?? 1).padStart(packet.bates_padding ?? 6, "0")}+`
     : "Not configured";
+
+  const totalPagesCount = documents?.reduce((sum, d) => sum + (d.page_count ?? 0), 0) ?? 0;
+  const unapprovedCandidates = (redactionCandidates ?? []).filter((c: RedactionCandidate) => c.status === "proposed" || c.status === "pending_approval");
 
   return (
     <div className="h-full flex flex-col bg-slate-950 text-slate-100 font-sans">
@@ -770,16 +806,16 @@ export function PacketWorkspace() {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-display font-bold text-white tracking-tight">{packet.name}</h1>
-              <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold bg-sky-500/10 text-sky-400 border border-sky-500/20">
+              <Badge variant="indigo" size="md">
                 {batesStartLabel}
-              </span>
+              </Badge>
             </div>
             <p className="text-xs font-mono text-slate-400 mt-1 flex items-center gap-2">
               <span>ID: {packet.id.slice(0, 8)}...</span>
               <span>•</span>
-              <span className="text-slate-300 font-bold">{documents ? documents.length : 0}</span> documents
+              <span className="text-slate-200 font-bold">{documents ? documents.length : 0}</span> documents
               <span>•</span>
-              <span className="text-slate-300 font-bold">{documents?.reduce((sum, d) => sum + (d.page_count ?? 0), 0) ?? 0}</span> pages
+              <span className="text-slate-200 font-bold">{totalPagesCount}</span> pages
             </p>
           </div>
           <div className="flex flex-wrap gap-2 items-center">
@@ -794,36 +830,223 @@ export function PacketWorkspace() {
             <Button
               variant="outline"
               size="sm"
-              className="gap-1.5"
+              className="gap-1.5 shadow-sm"
               onClick={() => fileInputRef.current?.click()}
               disabled={uploadMutation.isPending}
             >
               {uploadMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
               Upload
             </Button>
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={handleProcess} disabled={startProcessing.isPending}>
+            <Button variant="outline" size="sm" className="gap-1.5 shadow-sm" onClick={handleProcess} disabled={startProcessing.isPending}>
               {startProcessing.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowUpDown className="h-3.5 w-3.5" />}
               Process
             </Button>
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={handleAssignBates} disabled={assignBates.isPending}>
+            <Button variant="outline" size="sm" className="gap-1.5 shadow-sm" onClick={handleAssignBates} disabled={assignBates.isPending}>
               {assignBates.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Shield className="h-3.5 w-3.5" />}
               Assign Bates
             </Button>
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={handleBuild} disabled={buildPacket.isPending || validatePacket.isPending}>
+            <Button variant="outline" size="sm" className="gap-1.5 shadow-sm" onClick={handleDetectRedactions} disabled={detectRedactions.isPending}>
+              {detectRedactions.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Lock className="h-3.5 w-3.5" />}
+              Detect PII
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 shadow-sm bg-indigo-950/40 border-indigo-700/60 text-indigo-300 hover:bg-indigo-900/60"
+              onClick={() => setIsBuildModalOpen(true)}
+              disabled={buildPacket.isPending || validatePacket.isPending}
+            >
               {buildPacket.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
               Build Packet
             </Button>
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={handleVerify} disabled={verifyPacket.isPending}>
-              {verifyPacket.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+            <Button variant="outline" size="sm" className="gap-1.5 shadow-sm" onClick={handleVerify} disabled={verifyPacket.isPending}>
+              {verifyPacket.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />}
               Verify
             </Button>
-            <Button size="sm" className="gap-1.5" onClick={handleExport} disabled={downloadPacket.isPending}>
+            <Button
+              size="sm"
+              className="gap-1.5 bg-gradient-to-r from-indigo-500 to-sky-500 hover:from-indigo-400 hover:to-sky-400 text-white shadow-md shadow-indigo-600/25"
+              onClick={handleExport}
+              disabled={downloadPacket.isPending}
+            >
               {downloadPacket.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
               Export
             </Button>
           </div>
         </div>
       </div>
+
+      {/* Pre-Flight Build Confirmation Modal */}
+      <Modal
+        isOpen={isBuildModalOpen}
+        onClose={() => setIsBuildModalOpen(false)}
+        title="Pre-Flight Packet Build Checklist"
+        description="Verify packet parameters before compiling covers, stamps, exhibit index, and cryptographic manifest."
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => setIsBuildModalOpen(false)}
+              className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-white bg-slate-800 rounded-xl"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmBuild}
+              disabled={buildPacket.isPending || validatePacket.isPending}
+              className="px-5 py-2 text-xs font-semibold bg-gradient-to-r from-indigo-500 to-sky-500 hover:from-indigo-400 hover:to-sky-400 text-white rounded-xl shadow-lg shadow-indigo-600/25 flex items-center gap-2"
+            >
+              {(buildPacket.isPending || validatePacket.isPending) ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Compiling...
+                </>
+              ) : (
+                <>
+                  <CheckSquare className="h-4 w-4" />
+                  Proceed & Build Final Packet
+                </>
+              )}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="p-3.5 bg-slate-950/70 rounded-xl border border-slate-800">
+              <span className="text-[10px] font-mono text-slate-400 uppercase">Total Exhibits</span>
+              <p className="text-lg font-bold text-white font-mono mt-0.5">{documents?.length ?? 0}</p>
+            </div>
+            <div className="p-3.5 bg-slate-950/70 rounded-xl border border-slate-800">
+              <span className="text-[10px] font-mono text-slate-400 uppercase">Total Pages</span>
+              <p className="text-lg font-bold text-white font-mono mt-0.5">{totalPagesCount}</p>
+            </div>
+          </div>
+
+          <div className="p-3.5 bg-slate-950/70 rounded-xl border border-slate-800 space-y-1 text-xs">
+            <div className="flex justify-between items-center">
+              <span className="text-slate-400">Bates Stamping Range:</span>
+              <span className="font-mono font-bold text-sky-400">{batesStartLabel}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-slate-400">Unapproved Redactions:</span>
+              <span className={clsx("font-mono font-bold", unapprovedCandidates.length > 0 ? "text-amber-400" : "text-emerald-400")}>
+                {unapprovedCandidates.length} pending
+              </span>
+            </div>
+          </div>
+
+          {unapprovedCandidates.length > 0 && (
+            <div className="p-3 bg-amber-950/40 border border-amber-800/80 rounded-xl text-xs text-amber-300 flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400 mt-0.5" />
+              <span>You have unapproved redactions. Only approved redactions will be byte-scrubbed in the final deliverable.</span>
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      {/* Slide-out Document Quick Inspector Drawer */}
+      <Drawer
+        isOpen={isDocInspectorOpen}
+        onClose={() => {
+          setIsDocInspectorOpen(false);
+          setInspectingDoc(null);
+        }}
+        title={
+          <div className="flex items-center gap-2 truncate">
+            <FileText className="h-5 w-5 text-indigo-400 shrink-0" />
+            <span className="truncate">{inspectingDoc?.filename}</span>
+          </div>
+        }
+        subtitle={inspectingDoc ? `Document ID: ${inspectingDoc.id}` : undefined}
+        footer={
+          inspectingDoc && (
+            <div className="flex items-center justify-between w-full">
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 text-xs"
+                onClick={() => handleDownloadDocument(inspectingDoc)}
+              >
+                <Download className="h-3.5 w-3.5" />
+                Download Original
+              </Button>
+              <Button
+                size="sm"
+                className="gap-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white"
+                onClick={() => {
+                  setSelectedDocId(inspectingDoc.id);
+                  setActiveTab("documents");
+                  setIsDocInspectorOpen(false);
+                }}
+              >
+                <Eye className="h-3.5 w-3.5" />
+                View in Workspace
+              </Button>
+            </div>
+          )
+        }
+      >
+        {inspectingDoc && (
+          <div className="space-y-6 text-xs">
+            {/* Properties Grid */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-3.5 bg-slate-950/70 rounded-xl border border-slate-800">
+                <span className="text-[10px] font-mono text-slate-500 uppercase">Format Type</span>
+                <p className="text-sm font-bold text-slate-200 font-mono mt-0.5">{inspectingDoc.document_type.toUpperCase()}</p>
+              </div>
+              <div className="p-3.5 bg-slate-950/70 rounded-xl border border-slate-800">
+                <span className="text-[10px] font-mono text-slate-500 uppercase">Pages</span>
+                <p className="text-sm font-bold text-slate-200 font-mono mt-0.5">{inspectingDoc.page_count}</p>
+              </div>
+            </div>
+
+            {/* Bates & Privilege */}
+            <div className="p-4 bg-slate-950/70 rounded-xl border border-slate-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400 font-mono uppercase text-[10px]">Bates Range</span>
+                <span className="font-mono text-sky-400 font-bold bg-sky-950/60 px-2 py-0.5 rounded border border-sky-800/60">
+                  {inspectingDoc.bates_range || "Not Assigned"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400 font-mono uppercase text-[10px]">Privilege Classification</span>
+                <Badge variant={privilegeBadgeVariants[inspectingDoc.privilege_status] ?? "default"}>
+                  {(inspectingDoc.privilege_status ?? "pending").replace("_", " ")}
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400 font-mono uppercase text-[10px]">Processing State</span>
+                <Badge variant={statusBadgeVariants[inspectingDoc.status] ?? "default"}>
+                  {inspectingDoc.status.replace("_", " ")}
+                </Badge>
+              </div>
+            </div>
+
+            {/* Description Summary */}
+            {inspectingDoc.description && (
+              <div className="p-4 bg-slate-950/70 rounded-xl border border-slate-800 space-y-1">
+                <span className="text-[10px] font-mono text-slate-500 uppercase">Content Summary</span>
+                <p className="text-slate-300 leading-relaxed pt-1">{inspectingDoc.description}</p>
+                {inspectingDoc.description_source && (
+                  <span className="inline-block mt-2 text-[10px] font-mono text-sky-400 bg-sky-950/40 px-2 py-0.5 rounded border border-sky-800/40">
+                    Source: {inspectingDoc.description_source.replace("_", " ")}
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Ingestion & Searchability */}
+            <div className="p-3.5 bg-slate-950/70 rounded-xl border border-slate-800 space-y-1">
+              <span className="text-[10px] font-mono text-slate-500 uppercase">OCR / Searchable Status</span>
+              <p className="text-slate-300 font-mono">
+                {inspectingDoc.is_searchable ? "Searchable text layer active" : "Non-searchable / Raw scan"}
+              </p>
+            </div>
+          </div>
+        )}
+      </Drawer>
 
       {/* Verification Results Banner */}
       {verifyResult && (
@@ -836,7 +1059,7 @@ export function PacketWorkspace() {
               : "bg-rose-950/40 border-rose-800/80"
         )}>
           <div className="flex items-start gap-4 max-w-6xl mx-auto">
-            <div className="flex-shrink-0 mt-0.5">
+            <div className="shrink-0 mt-0.5">
               {verifyResult.status === "VERIFIED" ? (
                 <CheckCircle2 className="h-6 w-6 text-emerald-400" />
               ) : verifyResult.status === "NOT_BUILT" ? (
@@ -868,9 +1091,9 @@ export function PacketWorkspace() {
                 {verifyResult.checks.map((check: any) => (
                   <div key={check.name} className="flex items-center gap-2 text-xs font-mono">
                     {check.passed ? (
-                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 flex-shrink-0" />
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
                     ) : (
-                      <XCircle className="h-3.5 w-3.5 text-rose-400 flex-shrink-0" />
+                      <XCircle className="h-3.5 w-3.5 text-rose-400 shrink-0" />
                     )}
                     <span className={clsx("truncate", check.passed ? "text-slate-300" : "text-rose-300 font-semibold")}>
                       {check.name.replace(/_/g, " ")}
@@ -886,7 +1109,7 @@ export function PacketWorkspace() {
             </div>
             <button
               onClick={() => setVerifyResult(null)}
-              className="flex-shrink-0 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+              className="shrink-0 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
             >
               <X className="h-4 w-4" />
             </button>
@@ -916,7 +1139,7 @@ export function PacketWorkspace() {
                 {!docsLoading && !docsError && (!documents || documents.length === 0) && (
                   <div className="text-center py-12 text-slate-500">
                     <FileText className="h-8 w-8 mx-auto mb-2 text-slate-600" />
-                    <p className="text-xs font-medium text-slate-400">No documents yet.</p>
+                    <p className="text-xs font-medium text-slate-400 font-display">No documents yet.</p>
                     <p className="text-[11px] text-slate-500 mt-1">Upload PDF, DOCX, or scans.</p>
                   </div>
                 )}
@@ -926,7 +1149,7 @@ export function PacketWorkspace() {
                     className={clsx(
                       "p-3 rounded-xl border transition-all duration-150 group",
                       selectedDoc?.id === doc.id
-                        ? "border-sky-500/50 bg-sky-500/10 shadow-sm"
+                        ? "border-indigo-500/50 bg-indigo-500/10 shadow-sm"
                         : "border-slate-800/80 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-800/40"
                     )}
                   >
@@ -936,14 +1159,14 @@ export function PacketWorkspace() {
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-xs text-white truncate group-hover:text-sky-300 transition-colors">{doc.filename}</p>
+                          <p className="font-semibold text-xs text-white truncate group-hover:text-indigo-300 transition-colors">{doc.filename}</p>
                           <div className="flex items-center gap-1.5 mt-1.5 text-[10px]">
-                            <span className={clsx("px-1.5 py-0.2 rounded font-mono", statusColors[doc.status] ?? "bg-slate-800 text-slate-400")}>
+                            <Badge variant={statusBadgeVariants[doc.status] ?? "default"}>
                               {doc.status.replace("_", " ")}
-                            </span>
-                            <span className={clsx("px-1.5 py-0.2 rounded font-mono", privilegeColors[doc.privilege_status] ?? "bg-slate-800 text-slate-400")}>
+                            </Badge>
+                            <Badge variant={privilegeBadgeVariants[doc.privilege_status] ?? "default"}>
                               {(doc.privilege_status ?? "pending").replace("_", " ")}
-                            </span>
+                            </Badge>
                           </div>
                           {doc.bates_range && (
                             <p className="text-xs text-sky-400 mt-1 font-mono font-medium">{doc.bates_range}</p>
@@ -951,22 +1174,22 @@ export function PacketWorkspace() {
                           {doc.description && (
                             <div className="mt-1">
                               <p className="text-xs text-slate-400 truncate" title={doc.description}>{doc.description}</p>
-                              {doc.description_source && (
-                                <span className={clsx(
-                                  "inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-mono",
-                                  doc.description_source === "content_summary"
-                                    ? "bg-sky-500/10 text-sky-300 border border-sky-500/20"
-                                    : "bg-slate-800 text-slate-400"
-                                )}>
-                                  {doc.description_source === "content_summary" ? "Content-derived" : "Filename-based"}
-                                </span>
-                              )}
                             </div>
                           )}
                         </div>
                       </div>
                     </button>
                     <div className="flex items-center gap-1 mt-2.5 pt-2 border-t border-slate-800/80">
+                      <button
+                        title="Quick Inspect"
+                        onClick={() => {
+                          setInspectingDoc(doc);
+                          setIsDocInspectorOpen(true);
+                        }}
+                        className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-indigo-400 transition-colors"
+                      >
+                        <Info className="h-3.5 w-3.5" />
+                      </button>
                       <button
                         title="Move up"
                         onClick={() => handleMoveDocument(doc, "up")}
@@ -1026,9 +1249,9 @@ export function PacketWorkspace() {
                     <div key={doc.id} className="p-3 bg-slate-900 rounded-xl border border-slate-800 space-y-1.5">
                       <p className="text-xs font-semibold text-white truncate">{doc.filename}</p>
                       <div className="flex items-center gap-2">
-                        <span className={clsx("px-1.5 py-0.5 rounded text-[10px] font-mono", statusColors[doc.status] ?? "bg-slate-800 text-slate-400")}>
+                        <Badge variant={statusBadgeVariants[doc.status] ?? "default"}>
                           {doc.status.replace("_", " ")}
-                        </span>
+                        </Badge>
                         {doc.error && <span className="text-[11px] text-rose-400 truncate">{doc.error}</span>}
                       </div>
                       {doc.status === "failed" && (
@@ -1051,7 +1274,7 @@ export function PacketWorkspace() {
                     </p>
                   )}
                   {processingStatus?.documents?.every((d) => d.status === "completed") && (
-                    <p className="text-center text-xs text-emerald-400 font-medium py-6">
+                    <p className="text-center text-xs text-emerald-400 font-medium py-6 font-mono">
                       All documents processed.
                     </p>
                   )}
@@ -1112,7 +1335,7 @@ export function PacketWorkspace() {
             {activeTab === "ai-changes" && !selectedDoc && (
               <div className="max-w-4xl mx-auto bg-slate-900/60 rounded-2xl border border-slate-800 p-12 text-center text-slate-400">
                 <FileText className="h-10 w-10 mx-auto text-slate-600 mb-3" />
-                <p className="text-slate-300 font-medium">Select a document to run AI analysis</p>
+                <p className="text-slate-300 font-medium font-display">Select a document to run AI analysis</p>
                 <p className="text-xs text-slate-500 mt-1">Choose an exhibit from the left sidebar to generate proposals.</p>
               </div>
             )}
@@ -1134,18 +1357,30 @@ export function PacketWorkspace() {
                           size="sm"
                           variant="outline"
                           className="gap-1.5 text-xs"
+                          onClick={() => {
+                            setInspectingDoc(selectedDoc);
+                            setIsDocInspectorOpen(true);
+                          }}
+                        >
+                          <Info className="h-3.5 w-3.5 text-indigo-400" />
+                          Inspect
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1.5 text-xs"
                           onClick={() => handleDownloadDocument(selectedDoc)}
                           disabled={downloadDocument.isPending}
                         >
                           {downloadDocument.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
                           Download
                         </Button>
-                        <span className={clsx("px-2 py-0.5 rounded text-xs font-mono", statusColors[selectedDoc.status] ?? "bg-slate-800 text-slate-400")}>
+                        <Badge variant={statusBadgeVariants[selectedDoc.status] ?? "default"}>
                           {selectedDoc.status.replace("_", " ")}
-                        </span>
-                        <span className={clsx("px-2 py-0.5 rounded text-xs font-mono", privilegeColors[selectedDoc.privilege_status] ?? "bg-slate-800 text-slate-400")}>
+                        </Badge>
+                        <Badge variant={privilegeBadgeVariants[selectedDoc.privilege_status] ?? "default"}>
                           {(selectedDoc.privilege_status ?? "pending").replace("_", " ")}
-                        </span>
+                        </Badge>
                       </div>
                     </div>
 
@@ -1178,7 +1413,7 @@ export function PacketWorkspace() {
                 ) : (
                   <div className="text-center py-20 text-slate-500">
                     <FileText className="h-12 w-12 mx-auto mb-3 text-slate-600" />
-                    <p className="text-sm text-slate-300 font-medium">Select a document from the left sidebar to preview</p>
+                    <p className="text-sm text-slate-300 font-medium font-display">Select a document from the left sidebar to preview</p>
                     <p className="text-xs text-slate-500 mt-1">Preview native PDFs, OCR extracted text layers, and Bates stamps.</p>
                   </div>
                 )}
@@ -1198,135 +1433,16 @@ export function PacketWorkspace() {
                           {doc.error && ` • ${doc.error}`}
                         </p>
                       </div>
-                      <span className={clsx("px-2.5 py-0.5 rounded text-xs font-mono flex-shrink-0", statusColors[doc.status] ?? "bg-slate-800 text-slate-400")}>
+                      <Badge variant={statusBadgeVariants[doc.status] ?? "default"}>
                         {doc.status.replace("_", " ")}
-                      </span>
+                      </Badge>
                     </div>
                   ))}
-                  {(!processingStatus?.documents || processingStatus.documents.length === 0) && (
-                    <p className="text-center text-xs text-slate-500 py-8">No documents loaded.</p>
-                  )}
                 </div>
-              </div>
-            )}
-
-            {activeTab === "review" && (
-              <div className="max-w-5xl mx-auto bg-slate-900/70 rounded-2xl border border-slate-800/90 p-6 shadow-xl space-y-3">
-                <h2 className="text-lg font-display font-bold text-white">AI Review Queue</h2>
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  Documents awaiting AI analysis or human approval of proposed changes. Use the AI Changes tab to
-                  request and review analysis for a selected document.
-                </p>
               </div>
             )}
           </div>
         </main>
-
-        {/* Right Telemetry & Quick Action Sidebar */}
-        <aside className="w-80 border-l border-slate-800/80 bg-slate-900/60 overflow-y-auto p-4 hidden lg:block backdrop-blur-md space-y-4 shrink-0">
-          <div className="p-4 bg-sky-950/30 rounded-2xl border border-sky-800/50 space-y-3">
-            <h3 className="text-xs font-mono uppercase tracking-wider font-semibold text-sky-400 flex items-center gap-2">
-              <Shield className="h-4 w-4" />
-              Quick Actions
-            </h3>
-            <div className="space-y-2">
-              <Button variant="secondary" size="sm" className="w-full justify-start gap-2 text-xs" onClick={handleAssignBates} disabled={assignBates.isPending}>
-                {assignBates.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin text-sky-400" /> : <Shield className="h-3.5 w-3.5 text-sky-400" />}
-                Assign Bates Numbers
-              </Button>
-              <Button variant="secondary" size="sm" className="w-full justify-start gap-2 text-xs" onClick={() => setActiveTab("ai-changes")}>
-                <Send className="h-3.5 w-3.5 text-indigo-400" />
-                AI Review Proposals
-              </Button>
-              <Button variant="secondary" size="sm" className="w-full justify-start gap-2 text-xs" onClick={handleDetectRedactions} disabled={detectRedactions.isPending}>
-                {detectRedactions.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-400" /> : <Search className="h-3.5 w-3.5 text-amber-400" />}
-                Detect Redactions
-              </Button>
-              <Button variant="secondary" size="sm" className="w-full justify-start gap-2 text-xs" onClick={handleBuild} disabled={buildPacket.isPending || validatePacket.isPending}>
-                {buildPacket.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-400" /> : <FileText className="h-3.5 w-3.5 text-emerald-400" />}
-                Build Final Packet
-              </Button>
-            </div>
-          </div>
-
-          {selectedDoc && (
-            <div className="p-4 bg-slate-900/80 rounded-2xl border border-slate-800 space-y-2">
-              <h3 className="text-xs font-mono uppercase tracking-wider font-semibold text-slate-300">Selected Exhibit</h3>
-              <dl className="space-y-1.5 text-xs font-mono">
-                <div className="flex justify-between">
-                  <dt className="text-slate-400">Status</dt>
-                  <dd className="font-semibold capitalize text-slate-200">{selectedDoc.status.replace("_", " ")}</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-slate-400">Privilege</dt>
-                  <dd className="font-semibold capitalize text-slate-200">{(selectedDoc.privilege_status ?? "pending").replace("_", " ")}</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-slate-400">Pages</dt>
-                  <dd className="font-semibold text-slate-200">{selectedDoc.page_count}</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-slate-400">Bates</dt>
-                  <dd className="font-semibold text-sky-400">{selectedDoc.bates_range || "Not assigned"}</dd>
-                </div>
-              </dl>
-            </div>
-          )}
-
-          <div className="p-4 bg-slate-900/80 rounded-2xl border border-slate-800 space-y-2">
-            <h3 className="text-xs font-mono uppercase tracking-wider font-semibold text-slate-300">Packet Summary</h3>
-            <dl className="space-y-1.5 text-xs font-mono">
-              <div className="flex justify-between">
-                <dt className="text-slate-400">Documents</dt>
-                <dd className="font-semibold text-slate-200">{documents?.length ?? 0}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-slate-400">Total Pages</dt>
-                <dd className="font-semibold text-slate-200">{documents?.reduce((sum, d) => sum + (d.page_count ?? 0), 0) ?? 0}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-slate-400">Privileged</dt>
-                <dd className="font-semibold text-rose-400">{privilegeLog?.total_privileged_documents ?? 0}</dd>
-              </div>
-              <div className="flex justify-between">
-                <dt className="text-slate-400">Redactions</dt>
-                <dd className="font-semibold text-amber-400">{redactionCandidates?.length ?? 0}</dd>
-              </div>
-              {batesPreview?.start_label && (
-                <div className="flex justify-between">
-                  <dt className="text-slate-400">Bates Preview</dt>
-                  <dd className="font-semibold font-mono text-xs text-sky-400">
-                    {batesPreview.start_label} - {batesPreview.end_label}
-                  </dd>
-                </div>
-              )}
-              {manifest && (
-                <div className="flex justify-between pt-1 border-t border-slate-800">
-                  <dt className="text-slate-400">Manifest</dt>
-                  <dd className="font-semibold flex items-center gap-1 text-emerald-400">
-                    <CheckCircle2 className="h-3 w-3" />
-                    SHA-256 Valid
-                  </dd>
-                </div>
-              )}
-            </dl>
-          </div>
-
-          <div className="p-4 bg-slate-900/80 rounded-2xl border border-slate-800 space-y-2.5">
-            <h3 className="text-xs font-mono uppercase tracking-wider font-semibold text-slate-300">Redactions & PII</h3>
-            <p className="text-xs text-slate-400">
-              <span className="text-amber-400 font-bold">{redactionCandidates?.length ?? 0}</span> candidate(s) detected
-            </p>
-            <Button variant="secondary" size="sm" className="w-full justify-start gap-2 text-xs" onClick={handleDetectRedactions} disabled={detectRedactions.isPending}>
-              {detectRedactions.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
-              Scan for PII
-            </Button>
-            <Button variant="secondary" size="sm" className="w-full justify-start gap-2 text-xs" onClick={() => setActiveTab("redactions")}>
-              <Check className="h-3.5 w-3.5" />
-              Review Candidates
-            </Button>
-          </div>
-        </aside>
       </div>
     </div>
   );
