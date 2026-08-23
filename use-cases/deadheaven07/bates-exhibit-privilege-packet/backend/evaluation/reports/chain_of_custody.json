@@ -1,34 +1,34 @@
 [
   {
-    "document_id": "31bcb485-167b-42d3-b7d4-f9dd0e841a3b",
+    "document_id": "a00b9512-815f-4685-ac40-130522751e98",
     "document_filename": "custody_test.pdf",
     "page": 1,
     "bates_label": "CASE-000001",
     "proposal": {
-      "candidate_id": "45830a2f-1b17-4e88-b1c5-cabdf715e89a",
+      "candidate_id": "f8c0c70f-9e92-45a3-846e-c722fef08a7f",
       "matched_text": "***",
       "category": "ssn",
       "proposed_by": "local_fallback",
-      "proposed_at": "2026-08-23T01:31:00.678611+00:00",
+      "proposed_at": "2026-08-23T02:22:29.111863+00:00",
       "superdocs_change_id": null
     },
     "human_decision": {
       "status": "approved",
       "approver": "evaluator@test.com",
-      "approved_at": "2026-08-23T01:31:00.694322+00:00"
+      "approved_at": "2026-08-23T02:22:29.131209+00:00"
     },
     "application": {
       "applied_at": null,
       "applied_by": null
     },
     "verification": {
-      "45830a2f-1b17-4e88-b1c5-cabdf715e89a": {
+      "f8c0c70f-9e92-45a3-846e-c722fef08a7f": {
         "verified": true,
         "text_still_present": false
       }
     },
     "final_artifact": {
-      "sha256": "87c8a84e6350217a59d307589e2f8ea23a7f799a202f7bef4458625895a2db47"
+      "sha256": "06d562ce13462245c5097506432c0786e4c151b7a369c587282edb944aa6550d"
     }
   }
 ]

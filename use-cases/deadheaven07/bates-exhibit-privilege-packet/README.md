@@ -1,5 +1,7 @@
 # Bates Exhibit & Privilege Packet Builder
 
+> **Positioning:** This submission demonstrates a legal-document workflow built around impact analysis, targeted mutation, human approval, independent verification, failure discovery, SuperDocs API integration, and reproducible evidence tests.
+
 **What it does:** Takes a pile of court exhibits (PDFs, DOCX, scans) and produces a single reconciled, Bates-stamped, privilege-logged, PII-redacted PDF packet with a SHA-256 manifest that anyone can independently verify.
 
 **Who it's for:** Litigation support teams and legal analysts who manually assemble exhibit packets — a process that currently takes hours of copy-paste-redact-stamp work and is prone to human error (missing Bates numbers, leaked PII, broken privilege logs).
@@ -51,6 +53,25 @@ Legal e-discovery has three hard problems this system addresses:
 
 **AI must never auto-redact. Every redaction requires human approval. The system proves what happened via byte-level verification and SHA-256 manifests.**
 
+## Processing Stages & Agentic Pipeline
+
+The system is organized into 12 explicit processing stages with clear input/mutation boundaries, audit evidence, and failure handling:
+
+| Stage | Input | Mutation | Audit / Verification Evidence | Failure / Missing Dependency Handling |
+|---|---|---|---|---|
+| **1. Ingest** | Uploaded file stream (PDF, DOCX, scan) | Saves to `originals/{sha256}.ext`, creates `Document` DB record | `PROCESSING_STARTED` audit event, SHA-256 hash computed | Invalid MIME/oversized rejected; failed uploads roll back with zero orphan files |
+| **2. OCR & Searchability** | Original file | Extracts text via PyMuPDF / pdfplumber; runs Tesseract OCR via PyMuPDF pixmaps if scanned | Text stored in `Page.extracted_text`, sets `is_searchable = bool(extracted_text)` | If Tesseract is absent or yields no text, document is marked `is_searchable = false` (best-effort) |
+| **3. Content Descriptions** | `Page.extracted_text` | Generates summary skipping boilerplate via `description_generator.py` | `description` and `description_source = "content_summary"` in DB | Falls back to filename-based summary only if extracted text is empty |
+| **4. Bates Assignment** | Packet config + `Page` records | Computes sequential numbers via `BatesJournal`, assigns page-level ranges | `BatesAssignment` rows + `BATES_ASSIGNED` audit event | Idempotent page skip; resumes at `MAX(bates_number) + 1` without gaps |
+| **5. Privilege Review** | Document text + metadata | Queries SuperDocs API (or local rules) for attorney-client indicators | `PrivilegeDecision` proposal created in `pending` status | Falls back to local deterministic heuristic if API key is absent |
+| **6. Redaction Proposal** | Document text + coordinates | Queries SuperDocs API (or regex fallback) for SSN, phones, emails, accounts | `RedactionCandidate` rows created in `PROPOSED` status | Regex fallback engine ensures offline detection without external API |
+| **7. Human Approval** | Reviewer actions | Updates candidate status to `APPROVED` or `REJECTED` | `RedactionApproval` record with approver ID and timestamp | Unapproved candidates are never scrubbed; rejected items are immutable |
+| **8. Byte-Scrub Application** | Pristine base PDF + `APPROVED` candidates | `RedactionByteScrubber` removes text stream bytes into `working/{sha256}_redacted.pdf` | `RedactionVerifier` scans output to mathematically prove text removal | Fails build if target text is still detectable in output stream |
+| **9. Packet Build** | Stamped/redacted exhibits, index, log | Compiles cover sheets, stamps, index PDF, privilege log PDF, `manifest.json` | Files written to `final/{packet_id}/` | Pre-build validation catches unapproved items or broken sequences |
+| **10. Manifest Reconciliation** | Built artifacts in `final/` | Computes SHA-256 hashes for final packet and each exhibit entry | `manifest.json` with masked PII (`matched_text` → `***`) | Build halts if computed SHA does not match generated artifact |
+| **11. Export & Download** | Verified artifacts | Delivers ZIP/PDF downloads to client | `PACKET_EXPORTED` audit event | Clean 404/400 if packet not yet built |
+| **12. Verification & Audit** | Full packet graph + artifacts | Runs 15 automated integrity checks (`verify_packet`) | Structured `verifyResult` JSON + `PACKET_VERIFIED` audit event | Reports exact check failures with remediation hints |
+
 ## Key Capabilities
 
 - **Packet management** — create, rename, list, reorder, and delete exhibit packets.
@@ -69,9 +90,13 @@ Legal e-discovery has three hard problems this system addresses:
 - **Audit trail** — every significant lifecycle event (upload, processing, Bates, redaction, privilege, validate, build, AI) is recorded with metadata.
 - **Reference-aware storage cleanup** — original/stamped/redacted files are deleted only when no document references them; uploads roll back on failure so no orphan files are left.
 
-## Supported Formats
+## Supported Formats & OCR / Searchability
 
-Accepts **DOCX**, **native PDFs**, **scanned PDFs**, and **image formats** (PNG, JPG, TIFF, WebP). Native PDFs and DOCX (via LibreOffice) are processed directly. Scanned PDFs and images are OCR'd via Tesseract to produce searchable PDFs with invisible text layers.
+Accepts **DOCX**, **native PDFs**, **scanned PDFs**, and **image formats** (PNG, JPG, TIFF, WebP).
+- **Native text & searchability:** Native PDFs and converted DOCX documents have their text extracted per page into `Page.extracted_text` and indexed for full-text search.
+- **Scanned PDF & image OCR:** When native text is absent, Tesseract OCR (driven via PyMuPDF image rendering without external Poppler dependencies) extracts text layers into `Page.extracted_text`.
+- **Searchable PDF layer:** Generation of an invisible searchable text layer is best-effort. If OCR dependencies are absent or extract no text, the document is honestly marked `is_searchable = false` and ingestion continues without breaking the pipeline.
+- **Dependencies:** Tesseract (`tesseract`) for OCR, LibreOffice (`libreoffice`) for DOCX conversion. Both are pre-installed in the Docker images.
 
 ## Architecture
 
@@ -156,32 +181,30 @@ bates-exhibit-privilege-packet/
 ├── README.md / ARCHITECTURE.md
 ```
 
-## Getting Started
+## Reviewer Happy Path (Step-by-Step Demo)
 
-### Quick Start — Docker (Recommended)
+Follow this deterministic sequence to evaluate the full end-to-end workflow:
 
-One command runs everything — database, backend, and frontend:
-
-```bash
-cd bates-exhibit-privilege-packet
-docker compose up --build
-```
-
-Or with a `.env` file:
-
-```bash
-cp .env.docker .env   # edit SUPERDOCS_API_KEY if needed
-docker compose up --build
-```
-
-| Service    | URL                          | Description                    |
-| ---------- | ---------------------------- | ------------------------------ |
-| Frontend   | http://localhost:5173         | React SPA                      |
-| Backend    | http://localhost:8000/docs    | FastAPI + OpenAPI docs         |
-| PostgreSQL | localhost:5432               | Database (user: postgres/postgres) |
-
-To stop: `docker compose down`
-To wipe data: `docker compose down -v`
+1. **Start the Application**:
+   ```bash
+   docker compose up --build
+   ```
+2. **Open Frontend Workspace**: Navigate to `http://localhost:5173`.
+3. **Create Exhibit Packet**: Click `+ New Packet`, name it `Doe v. Acme Corp - Trial Packet`, set Bates prefix to `CONF-` and start number to `1`.
+4. **Upload Mixed Exhibits**: Upload sample PDF, DOCX, or scanned files from the test corpus (`backend/app/tests/corpus/` or your own files).
+5. **Review Content-Derived Descriptions**: Notice that exhibit titles/descriptions are generated from extracted document text, not naive filenames.
+6. **Review & Mark Privilege**: Navigate to the **Privilege** tab, inspect attorney-client flag proposals, and mark/override privilege decisions with categorical justifications.
+7. **Inspect AI Redaction Proposals**: Open the **Redactions** tab to review detected PII (SSNs, phone numbers, account numbers, email addresses).
+8. **Approve / Reject Redactions**: Click **Approve** on valid PII candidates and **Reject** on false positives, then click **Apply & Verify Redactions** to execute byte-level scrubbing.
+9. **Build Reconciled Packet**: Click **Build Final Packet** to compile covers, Bates stamps, exhibit index PDF, privilege log, and cryptographic manifest.
+10. **Run Cryptographic Verification**: Click **Verify Packet** to execute the 15-point automated validation confirming file SHAs, Bates contiguity, and zero unapproved redaction leakage.
+11. **Download Deliverables**: Download the compiled final packet PDF, individual Bates-stamped exhibits, privilege log CSV/PDF, and `manifest.json`.
+12. **Verify via CLI**:
+    ```bash
+    make test-offline       # 86 tests (zero DB, zero API key)
+    make evidence-offline   # 39 tests (resilience & residue proofs)
+    make test-frontend      # 7 component tests + TypeScript check
+    ```
 
 ### Prerequisites
 
@@ -355,19 +378,18 @@ A repeatable live end-to-end QA is provided at `backend/live_e2e_phase13.py`. It
 
 ## Verification Status
 
-| Check            | Status                    |
-| ---------------- | ------------------------- |
-| Offline tests    | **86 passed** (`make test-offline`) |
-| Offline evidence | **39 passed** (`make evidence-offline`) |
-| DB Evidence & Kill Matrix | **71 passed** (`make evidence-db`) |
-| Full backend suite | **307 passed** (`make test-db`) |
-| Frontend tests   | **7 passed** (`make test-frontend`) |
-| TypeScript       | clean (`npx tsc --noEmit`) |
-| Production build | succeeds (`npm run build`) |
-| Live E2E         | 112/112 passed against running server + real SuperDocs |
-| Security         | verified                  |
-| Storage cleanup  | reference-aware           |
-| Database cleanup | cascades + SET NULL audit |
+| Tier / Check | Command | Dependency Requirement | Latest Verified Result | Scope / Notes |
+|---|---|---|---|---|
+| **Tier 1: Offline Unit & Safety** | `make test-offline` | Python 3.11+, PyMuPDF (no DB, no API key) | **86/86 passed** (1.19s) | Redaction residue, content descriptions, safety rejection, state machine |
+| **Tier 1: Offline Evidence & Benchmarks** | `make evidence-offline` | Python 3.11+ (no DB, no API key) | **39/39 passed** (0.37s) | Precision/recall/F1 metrics, residue proof, Bates journal continuity |
+| **Tier 2: DB Evidence & Kill Matrix** | `make evidence-db` | PostgreSQL 16 (`TEST_DATABASE_URL`) | **71/71 passed** (37.89s) | Adversarial crash-recovery, zero double-stamping, OCR search |
+| **Tier 2: Full Backend DB Suite** | `make test-db` | PostgreSQL 16 (`TEST_DATABASE_URL`) | **307/307 passed** (74.80s) | Complete API, services, migrations, and transactional isolation |
+| **Tier 3: Frontend Component Tests** | `make test-frontend` | Node.js 18+ | **7/7 passed** (1.29s) | Vitest component tests and router state coverage |
+| **Tier 3: TypeScript Typecheck** | `npx tsc --noEmit` (in `frontend/`) | Node.js 18+ | **Clean** (0 errors) | Strict typecheck across all pages, hooks, and services |
+| **Tier 3: Frontend Build** | `npm run build` (in `frontend/`) | Node.js 18+ | **Succeeds** (1.59s) | Vite production bundle compilation |
+| **Tier 4: Live E2E Integration** | `python live_e2e_phase13.py` | Running backend + live `SUPERDOCS_API_KEY` | **112/112 passed** (live) | End-to-end multi-doc packet build with real SuperDocs API review |
 
-**Status: READY FOR PR** — Full backend suite (307/307) passes deterministically against PostgreSQL. 86 offline tests prove core logic without any external dependencies. 71 DB evidence tests prove hard claims (crash recovery, zero double-stamping, manifest SHA reconciliation, kill matrix, OCR search).
+> [!NOTE]
+> If PostgreSQL is not running locally, DB-backed tests (`make test-db`, `make evidence-db`) will report connection errors. Use `make test-offline` and `make evidence-offline` for instant zero-dependency verification.
+
 

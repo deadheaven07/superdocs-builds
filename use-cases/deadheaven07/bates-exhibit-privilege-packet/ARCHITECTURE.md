@@ -1,5 +1,7 @@
 # Architecture
 
+> **Positioning:** This submission demonstrates a legal-document workflow built around impact analysis, targeted mutation, human approval, independent verification, failure discovery, SuperDocs API integration, and reproducible evidence tests.
+
 ## 1. System Context
 
 **Bates Exhibit & Privilege Packet Builder** is a legal e-discovery application. Legal teams upload exhibit files (PDF, DOCX, scanned PDFs, images), and the system produces a single reconciled PDF **packet** consisting of:
@@ -313,11 +315,14 @@ Results include:
 
 Final verified numbers:
 
-- Backend: **253 passed** (deterministic; test order independence verified)
-- Frontend unit (Vitest): **7 passed**
-- TypeScript: `tsc --noEmit` **clean**
-- Production build: **succeeds**
-- Live E2E: **112/112 passed** (real SuperDocs)
+- Offline Unit & Logic (`make test-offline`): **86 passed** (zero dependencies, no DB, no API key, `DEBUG=false`)
+- Offline Evidence & Benchmark (`make evidence-offline`): **39 passed** (precision/recall, residue safety, journal continuity)
+- DB Evidence & Kill Matrix (`make evidence-db`): **71 passed** (adversarial crash recovery, zero double-stamping, OCR search)
+- Full Backend Suite (`make test-db`): **307 passed** (PostgreSQL-backed at `TEST_DATABASE_URL`, deterministic, isolated schemas)
+- Frontend Unit Suite (`make test-frontend`): **7 passed** (Vitest component tests)
+- TypeScript: `tsc --noEmit` **clean** (0 errors)
+- Production Build: **succeeds** (`npm run build`)
+- Live E2E Integration: **112/112 passed** (against live backend server + real SuperDocs API)
 
 ## 18. Design Decisions / Why We Built It This Way
 
