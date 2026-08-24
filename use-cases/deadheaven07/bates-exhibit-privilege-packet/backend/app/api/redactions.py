@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException
@@ -50,11 +51,42 @@ class BatchApprovalRequest(BaseModel):
 
 
 def _serialize_candidate(candidate: RedactionCandidate, document_name: str | None = None) -> dict:
+    category_val = candidate.category.value if hasattr(candidate.category, "value") else str(candidate.category)
+    status_val = candidate.status.value if hasattr(candidate.status, "value") else str(candidate.status)
+
+    approval_dict = None
+    if candidate.approval:
+        app_status = (
+            candidate.approval.status.value
+            if hasattr(candidate.approval.status, "value")
+            else str(candidate.approval.status)
+        )
+        approval_dict = {
+            "status": app_status,
+            "approver": candidate.approval.approver,
+            "approved_at": (
+                candidate.approval.approved_at.isoformat()
+                if candidate.approval.approved_at
+                else None
+            ),
+            "applied_at": (
+                candidate.approval.applied_at.isoformat()
+                if candidate.approval.applied_at
+                else None
+            ),
+            "verified_at": (
+                candidate.approval.verified_at.isoformat()
+                if candidate.approval.verified_at
+                else None
+            ),
+            "verification_passed": candidate.approval.verification_passed,
+        }
+
     data = {
         "id": str(candidate.id),
         "document_id": str(candidate.document_id),
         "page_number": candidate.page_number,
-        "category": candidate.category.value,
+        "category": category_val,
         "matched_text": candidate.matched_text,
         "context_before": candidate.context_before,
         "context_after": candidate.context_after,
@@ -64,29 +96,12 @@ def _serialize_candidate(candidate: RedactionCandidate, document_name: str | Non
             "x1": candidate.x1,
             "y1": candidate.y1,
         },
-        "status": candidate.status.value,
+        "status": status_val,
         "reason": candidate.reason,
         "proposed_at": candidate.proposed_at.isoformat() if candidate.proposed_at else None,
         "proposed_by": candidate.proposed_by,
         "superdocs_change_id": candidate.superdocs_change_id,
-        "approval": {
-            "status": candidate.approval.status.value if candidate.approval else None,
-            "approver": candidate.approval.approver if candidate.approval else None,
-            "approved_at": candidate.approval.approved_at.isoformat()
-            if candidate.approval and candidate.approval.approved_at
-            else None,
-            "applied_at": candidate.approval.applied_at.isoformat()
-            if candidate.approval and candidate.approval.applied_at
-            else None,
-            "verified_at": candidate.approval.verified_at.isoformat()
-            if candidate.approval and candidate.approval.verified_at
-            else None,
-            "verification_passed": candidate.approval.verification_passed
-            if candidate.approval
-            else None,
-        }
-        if candidate.approval
-        else None,
+        "approval": approval_dict,
     }
     if document_name is not None:
         data["document_name"] = document_name
@@ -99,8 +114,8 @@ def _serialize_candidate(candidate: RedactionCandidate, document_name: str | Non
 @router.post("/{packet_id}/detect")
 async def detect_redactions(
     packet_id: UUID,
+    background_tasks: BackgroundTasks,
     request: DetectRedactionsRequest | None = Body(default=None),
-    background_tasks: BackgroundTasks = BackgroundTasks(),
     session: AsyncSession = Depends(get_session),
 ):
     """Detect PII via the primary intelligence path (SuperDocs async chat,
@@ -113,14 +128,20 @@ async def detect_redactions(
     result = await session.execute(
         select(Document).where(
             Document.packet_id == packet_id,
-            Document.processing_status == ProcessingStatus.COMPLETED,
+            Document.processing_status != ProcessingStatus.FAILED,
         )
     )
     documents = result.scalars().all()
 
-    categories = None
+    categories: list[PIICategory] | None = None
     if request and request.categories:
-        categories = [PIICategory(c) for c in request.categories]
+        valid_cats: list[PIICategory] = []
+        for c in request.categories:
+            try:
+                valid_cats.append(PIICategory(c.lower()))
+            except (ValueError, KeyError):
+                pass
+        categories = valid_cats or None
 
     for document in documents:
         background_tasks.add_task(detect_document_redactions, document.id, categories)
@@ -134,7 +155,7 @@ async def detect_redactions(
 @router.post("/{packet_id}/analyze")
 async def analyze_packet_intelligence(
     packet_id: UUID,
-    background_tasks: BackgroundTasks = BackgroundTasks(),
+    background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
 ):
     """Run the SuperDocs intelligence pass (PII + privilege proposals) over
@@ -147,7 +168,7 @@ async def analyze_packet_intelligence(
     result = await session.execute(
         select(Document).where(
             Document.packet_id == packet_id,
-            Document.processing_status == ProcessingStatus.COMPLETED,
+            Document.processing_status != ProcessingStatus.FAILED,
         )
     )
     documents = result.scalars().all()
@@ -161,7 +182,10 @@ async def analyze_packet_intelligence(
     }
 
 
-async def run_intelligence_pass(document_id: UUID):
+async def run_intelligence_pass(
+    document_id: UUID,
+    categories: list[PIICategory] | None = None,
+):
     detection = _new_detection_service()
     async with async_session_maker() as bg_session:
         document = await bg_session.get(Document, document_id)
@@ -185,7 +209,7 @@ async def run_intelligence_pass(document_id: UUID):
 
         try:
             pii_result = await detection.detect_pii_in_document(
-                bg_session, document.id, siblings=siblings
+                bg_session, document.id, categories=categories, siblings=siblings
             )
         except Exception as e:  # noqa: BLE001
             bg_session.add(
@@ -228,9 +252,8 @@ async def detect_document_redactions(
     document_id: UUID,
     categories: list[PIICategory] | None = None,
 ):
-    """Background task for the /detect endpoint (kept for API compatibility;
-    /analyze is the SuperDocs-intelligence-first entry point)."""
-    await run_intelligence_pass(document_id)
+    """Background task for the /detect endpoint with category forwarding."""
+    await run_intelligence_pass(document_id, categories=categories)
 
 
 # ---------------------------------------------------------------------- #
@@ -319,19 +342,15 @@ async def _decide_redaction(
             status_code=400, detail="Redaction is not in a state that can be approved"
         )
 
-    if request.status == RedactionStatus.APPROVED:
-        candidate.status = RedactionStatus.APPROVED
-        approval = RedactionApproval(
-            candidate_id=candidate.id,
-            status=RedactionStatus.APPROVED,
-            approver=request.approver,
-        )
-        session.add(approval)
+    target_status = request.status
+    candidate.status = target_status
+    if candidate.approval:
+        candidate.approval.status = target_status
+        candidate.approval.approver = request.approver
     else:
-        candidate.status = RedactionStatus.REJECTED
         approval = RedactionApproval(
             candidate_id=candidate.id,
-            status=RedactionStatus.REJECTED,
+            status=target_status,
             approver=request.approver,
         )
         session.add(approval)
@@ -433,13 +452,17 @@ async def approve_redaction_batch(
                 detail=f"Redaction {candidate.id} is not in a reviewable state",
             )
         candidate.status = target_status
-        session.add(
-            RedactionApproval(
-                candidate_id=candidate.id,
-                status=target_status,
-                approver=request.approver,
+        if candidate.approval:
+            candidate.approval.status = target_status
+            candidate.approval.approver = request.approver
+        else:
+            session.add(
+                RedactionApproval(
+                    candidate_id=candidate.id,
+                    status=target_status,
+                    approver=request.approver,
+                )
             )
-        )
         session.add(
             AuditEvent(
                 packet_id=packet_id,
@@ -500,7 +523,7 @@ async def approve_redaction_batch(
     }
 
 
-def _job_key(candidates: list[RedactionCandidate]) -> str:
+def _job_key(candidates: Sequence[RedactionCandidate] | list[RedactionCandidate]) -> str:
     # Group changes per document session/job. The native change payload only
     # carries change_id; the job is derived from the last intelligence pass.
     return "batch:" + ",".join(sorted(str(c.document_id) for c in candidates))

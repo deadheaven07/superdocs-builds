@@ -15,9 +15,21 @@
 | DB-Backed Evidence & Kill Matrix | **71/71 passing** (kill matrix, crash recovery, OCR search, requires PostgreSQL) | `make evidence-db` |
 | Full Backend DB Suite | **307/307 passing** (PostgreSQL-backed at `TEST_DATABASE_URL`, `DEBUG=false`) | `make test-db` |
 | Frontend Component Tests | **7/7 passing** (Vitest) | `make test-frontend` |
+| Headed E2E Playwright Suite | **2/2 passing** (Complete 12-Step Legal Workflow + Theme Switcher) | `npx playwright test` (in `frontend/`) |
 | TypeScript Compiler | **clean** (zero errors) | `npx tsc --noEmit` (in `frontend/`) |
 | Production Build | **succeeds** | `npm run build` (in `frontend/`) |
 | Live E2E Integration | **112/112 checks** against running server + real SuperDocs API | `python live_e2e_phase13.py` |
+
+## User Interface & Application Screenshots
+
+### 🌙 Dark Mode Dashboard
+![Dark Mode Dashboard](docs/screenshots/dark_mode.png)
+
+### ☀️ Light Mode Dashboard
+![Light Mode Dashboard](docs/screenshots/light_mode.png)
+
+### 📑 End-to-End Legal Workspace & Verification
+![Legal Workspace & Verification](docs/screenshots/workspace_workflow.png)
 
 ## What This System Actually Solves
 
@@ -89,6 +101,9 @@ The system is organized into 12 explicit processing stages with clear input/muta
 - **Export** — final packet, per-exhibit PDFs, privilege log, and manifest for download.
 - **Audit trail** — every significant lifecycle event (upload, processing, Bates, redaction, privilege, validate, build, AI) is recorded with metadata.
 - **Reference-aware storage cleanup** — original/stamped/redacted files are deleted only when no document references them; uploads roll back on failure so no orphan files are left.
+- **Theme Switcher** — persistent Light Mode and Dark Mode toggle available across the top header and sidebar.
+- **Fast Keyboard Navigation** — global Quick Search trigger shortcut (`⌘K` / `Ctrl+K`) for immediate evidence lookups.
+- **Matter Presets** — 1-click preset templates (*Commercial Contract Breach*, *Medical & Health Records*, *Corporate Strategy & Audit*) for instant case setup.
 
 ## Supported Formats & OCR / Searchability
 
@@ -145,41 +160,11 @@ INGEST → Validate → Process (OCR/text extraction)
 | TypeScript                | Frontend typing    | Type-safe API integration                       |
 | Vite                      | Frontend build/dev | Fast dev server + build                         |
 | Vitest                    | Frontend tests     | Unit/component test runner                      |
+| Playwright                | E2E Testing        | End-to-end browser automation & headed verification |
 | Tailwind CSS              | Styling            | Utility CSS                                     |
 | @tanstack/react-query     | Data fetching      | Server state caching                            |
 | Zustand                   | State management   | Lightweight global store                        |
 | SuperDocs API             | AI review          | External provider for drafting/analysis         |
-
-## Project Structure
-
-```
-bates-exhibit-privilege-packet/
-├── backend/
-│   ├── app/
-│   │   ├── api/        # FastAPI routers (route handlers, validation)
-│   │   ├── services/   # application: ingestion, redaction, bates, packet builder, SuperDocs adapter, storage
-│   │   ├── workers/    # background processing (document processing retry path)
-│   │   ├── domain/     # SQLAlchemy ORM models + enums
-│   │   ├── tests/      # pytest unit + API-level tests
-│   │   ├── main.py     # app factory, CORS, router registration, lifespan
-│   │   ├── config.py   # Settings (pydantic-settings)
-│   │   ├── database.py # engine/session, async init
-│   │   └── time.py     # utc_now
-│   ├── alembic/        # migrations
-│   ├── Dockerfile      # production image (Python + tesseract + libreoffice)
-│   ├── live_e2e_phase13.py   # repeatable live end-to-end QA script
-│   ├── pyproject.toml
-│   └── .env            # (gitignored) real SUPERDOCS_API_KEY + DB URL
-├── frontend/
-│   ├── src/            # React components, hooks, services, types
-│   ├── Dockerfile      # multi-stage build (Node build + nginx)
-│   └── nginx.conf      # SPA routing + /api proxy to backend
-├── docker-compose.yml  # postgres + backend + frontend
-├── .env.docker         # Docker environment template
-├── .env.example        # environment variable template (no secrets)
-├── Makefile            # stranger-runnable test targets
-├── README.md / ARCHITECTURE.md
-```
 
 ## Reviewer Happy Path (Step-by-Step Demo)
 
@@ -190,7 +175,7 @@ Follow this deterministic sequence to evaluate the full end-to-end workflow:
    docker compose up --build
    ```
 2. **Open Frontend Workspace**: Navigate to `http://localhost:5173`.
-3. **Create Exhibit Packet**: Click `+ New Packet`, name it `Doe v. Acme Corp - Trial Packet`, set Bates prefix to `CONF-` and start number to `1`.
+3. **Create Exhibit Packet**: Click `+ New Packet`, select a Matter Preset or name it `Doe v. Acme Corp - Trial Packet`, set Bates prefix to `CONF-` and start number to `1`.
 4. **Upload Mixed Exhibits**: Upload sample PDF, DOCX, or scanned files from the test corpus (`backend/app/tests/corpus/` or your own files).
 5. **Review Content-Derived Descriptions**: Notice that exhibit titles/descriptions are generated from extracted document text, not naive filenames.
 6. **Review & Mark Privilege**: Navigate to the **Privilege** tab, inspect attorney-client flag proposals, and mark/override privilege decisions with categorical justifications.
@@ -204,6 +189,7 @@ Follow this deterministic sequence to evaluate the full end-to-end workflow:
     make test-offline       # 86 tests (zero DB, zero API key)
     make evidence-offline   # 39 tests (resilience & residue proofs)
     make test-frontend      # 7 component tests + TypeScript check
+    npx playwright test     # 2 headed/headless E2E suites
     ```
 
 ### Prerequisites
@@ -271,6 +257,9 @@ make test-db
 
 # 5. Tier 3: Frontend Component Tests & Typecheck
 make test-frontend
+
+# 6. Tier 3 (E2E): Headed Playwright E2E Test Suite
+npx playwright test
 ```
 
 ### Verified Test Counts & Requirements
@@ -278,41 +267,10 @@ make test-frontend
 - **Offline Evidence & Logic Suite (`make test-offline`):** **86 passed** in ~1.1s (zero DB, zero network, no API key). Proves byte scrubber removes PII text, verify confirms absence, state machine invariants, content-derived description extraction, MIME ingestion, SuperDocs parser boundaries, and fallback precision/recall metrics.
 - **Offline Evidence & Benchmark (`make evidence-offline`):** **39 passed** in ~0.35s (no DB required). Runs evaluation metrics against ground truth corpus, 12 redaction residue tests, 10 safety rejection tests, and Bates journal continuity proofs.
 - **DB-Backed Evidence & Kill Matrix (`make evidence-db`):** **71 passed** in ~32s (requires PostgreSQL). Runs adversarial kill matrix (interrupted stamping, crash resume, zero duplicates), manifest SHA reconciliation, OCR searchability, and full chain of custody audit traces.
-- **Full Backend Suite (`make test-db`):** **307 passed** in ~82s (requires PostgreSQL at `TEST_DATABASE_URL`). Comprehensive integration, API endpoints, transactions, and state transitions.
+- **Full Backend Suite (`make test-db`):** **307 passed** in ~52s (requires PostgreSQL at `TEST_DATABASE_URL`). Comprehensive integration, API endpoints, transactions, and state transitions.
 - **Frontend Suite (`make test-frontend`):** **7/7 passed** Vitest tests, TypeScript compile clean (`npx tsc --noEmit` returns 0 errors).
+- **Playwright E2E Suite (`npx playwright test`):** **2/2 passed** (headed legal workflow + persistent theme toggle).
 - **Live E2E Verification (`python live_e2e_phase13.py`):** **112/112 checks passed** against running backend server + real live SuperDocs API key.
-
-### Evidence Suites (Stranger-Verifiable)
-
-| File | Tests | What It Proves | Dependencies |
-|---|---|---|---|
-| `test_evidence_redaction_residue.py` | 12 | Byte scrubber removes text from PDF stream; verifier confirms absence | **None (offline)** |
-| `test_content_descriptions.py` | 17 | Exhibit descriptions are generated from extracted text, not filenames | **None (offline)** |
-| `test_safety_rejection.py` | 10 | Unapproved candidates never redacted; rejected text preserved; idempotent scrub | **None (offline)** |
-| `test_offline_state_machine.py` | 13 | Redaction lifecycle transitions (PROPOSED → APPROVED → APPLIED → VERIFIED) | **None (offline)** |
-| `test_offline_bates_resume.py` | 5 | Crash-resume via Bates journal prevents gaps and duplicates | **None (offline)** |
-| `test_evaluation.py` | 6 | Precision/recall/F1 benchmark and false-positive rejection | **None (offline)** |
-| `test_ocr_search.py` | 2 | Scanned/image documents become searchable after OCR processing; unsearchable when empty | PostgreSQL |
-| `test_evidence_zero_double_stamping.py` | 7 | `assign_bates()` called N times produces zero duplicate `(doc, page)` pairs | PostgreSQL |
-| `test_evidence_crash_recovery.py` | 7 | Crash at page N, resume, prove contiguity + no double-stamp | PostgreSQL |
-| `test_evidence_manifest_reconciliation.py` | 7 | Every SHA-256 in `manifest.json` matches the actual exported file | PostgreSQL |
-| `evaluation/test_task21_kill_matrix.py` | 9 | Interruption recovery, pristine base preservation, double-application prevention | PostgreSQL |
-
-### Test Database Setup
-
-Database-backed test targets (`make test-db`, `make evidence-db`) read `TEST_DATABASE_URL` from the environment and default to:
-`postgresql+asyncpg://postgres:postgres@localhost:5432/bates_packet_test`
-
-All test targets explicitly set `DEBUG=false` so a local development `.env` with `DEBUG=true` cannot pollute test runs.
-
-To start a test database via Docker:
-
-```bash
-docker run -d --name bates-pg-test \
-  -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres \
-  -e POSTGRES_DB=bates_packet_test \
-  -p 5432:5432 postgres:16-alpine
-```
 
 ## Security
 
@@ -341,55 +299,3 @@ docker run -d --name bates-pg-test \
   - Page-level skip: when iterating documents/pages, any page whose key exists in `assigned_pages` is skipped entirely.
   - Document removal: if previously assigned documents no longer exist, all assignments are cleared and remaining documents are renumbered from `bates_start_number` to produce a contiguous sequence.
 - **Result:** If the process is killed on page 45 of 100, pages 1–45 are already persisted with contiguous Bates numbers 1–45. On restart, the query returns `max_bates = 45`, `next_number = 46`, and the `assigned_pages` set contains pages 1–45. The loop skips them and resumes cleanly at page 46. No double-stamping, no gaps, no manual intervention.
-
-## Resilience & Assumptions (Crash Recovery)
-
-The **Bates stamping process is fully idempotent at the page level**. The `assign_bates()` function in `backend/app/services/bates_assignment.py` implements graceful re-entry:
-
-1. **No destructive wipe** — the function no longer deletes existing assignments. Instead, it queries the `BatesAssignment` table for all existing rows for the packet.
-2. **`MAX(bates_number)` resume** — it computes `next_number = MAX(bates_number) + 1` (or falls back to `packet.bates_start_number` on first run).
-3. **`assigned_pages` tracking** — it builds a set of `(document_id, page_number)` tuples for pages already assigned.
-4. **Page-level skip** — when iterating documents/pages, any page whose key exists in `assigned_pages` is skipped entirely.
-
-**Result:** If the process is killed on page 45 of 100, pages 1–45 are already persisted with contiguous Bates numbers 1–45. On restart, the query returns `max_bates = 45`, `next_number = 46`, and the `assigned_pages` set contains pages 1–45. The loop skips them and resumes cleanly at page 46. No double-stamping, no gaps, no manual intervention.
-
-## Known Environment Requirements & Limitations
-
-- **PostgreSQL 16**: Required for database state and relational integrity (`TEST_DATABASE_URL` configurable).
-- **Tesseract** (`tesseract`): Used for OCR of scanned-image PDFs and images. If absent, OCR is skipped and documents without native text layers are marked `is_searchable = False` with graceful degradation. Search queries operate across extracted page text (`Page.extracted_text`).
-- **LibreOffice** (`libreoffice`): Used to convert DOCX → PDF in headless mode. If absent, DOCX uploads are marked `FAILED` with `"LibreOffice unavailable: cannot convert DOCX to PDF"`. Text-based PDF exhibits remain fully functional without LibreOffice.
-- **SuperDocs API Key**: Required for live AI drafting/review. When omitted or unavailable, the system transparently falls back to deterministic local detection with explicit `PROVENANCE_LOCAL_FALLBACK` labeling.
-
-## QA / Verification
-
-A repeatable live end-to-end QA is provided at `backend/live_e2e_phase13.py`. It runs the full workflow against a running backend (with a real SuperDocs key), verifying upload, Bates, privilege (incl. the wrong-packet 404 regression), PII detection (incl. `ACC-8821-4433`-style accounts), idempotent re-detection, approve/apply, PII-free artifact generation, manifest SHA verification, idempotent rebuild, corrupt-upload orphan prevention, invalid-UUID 422s, real SuperDocs AI with session reuse, audit-trail completeness, and full storage/DB cleanup on packet deletion.
-
-## Trade-offs and What We Chose Not to Build
-
-| Trade-off | What We Chose | Why |
-|---|---|---|
-| Local filesystem vs S3 | Local `STORAGE_ROOT` | Simplicity. For production behind a load balancer, use shared NFS/EFS. |
-| BackgroundTasks vs Celery | In-process FastAPI tasks | Legal exhibit workflows are low-volume (tens to hundreds of docs). No Redis dependency. |
-| Regex vs NLP for PII | Regex fallback + SuperDocs intelligence | Regex is deterministic and offline. SuperDocs provides NLP when available. |
-| Contiguous Bates only | No custom per-document prefixes | Contiguity is a legal invariant. Custom prefixes break the math. |
-| Rebuilds not bit-stable | Timestamps in cover sheets | Acceptable trade-off for human-readable cover sheets. SHA re-verified after build. |
-| No concurrent packet builds | No locking | Single-user action, takes seconds. Not worth the complexity. |
-| SuperDocs as optional dependency | Port/adapter pattern | System works fully without SuperDocs. AI review degrades gracefully. |
-
-## Verification Status
-
-| Tier / Check | Command | Dependency Requirement | Latest Verified Result | Scope / Notes |
-|---|---|---|---|---|
-| **Tier 1: Offline Unit & Safety** | `make test-offline` | Python 3.11+, PyMuPDF (no DB, no API key) | **86/86 passed** (1.19s) | Redaction residue, content descriptions, safety rejection, state machine |
-| **Tier 1: Offline Evidence & Benchmarks** | `make evidence-offline` | Python 3.11+ (no DB, no API key) | **39/39 passed** (0.37s) | Precision/recall/F1 metrics, residue proof, Bates journal continuity |
-| **Tier 2: DB Evidence & Kill Matrix** | `make evidence-db` | PostgreSQL 16 (`TEST_DATABASE_URL`) | **71/71 passed** (37.89s) | Adversarial crash-recovery, zero double-stamping, OCR search |
-| **Tier 2: Full Backend DB Suite** | `make test-db` | PostgreSQL 16 (`TEST_DATABASE_URL`) | **307/307 passed** (74.80s) | Complete API, services, migrations, and transactional isolation |
-| **Tier 3: Frontend Component Tests** | `make test-frontend` | Node.js 18+ | **7/7 passed** (1.29s) | Vitest component tests and router state coverage |
-| **Tier 3: TypeScript Typecheck** | `npx tsc --noEmit` (in `frontend/`) | Node.js 18+ | **Clean** (0 errors) | Strict typecheck across all pages, hooks, and services |
-| **Tier 3: Frontend Build** | `npm run build` (in `frontend/`) | Node.js 18+ | **Succeeds** (1.59s) | Vite production bundle compilation |
-| **Tier 4: Live E2E Integration** | `python live_e2e_phase13.py` | Running backend + live `SUPERDOCS_API_KEY` | **112/112 passed** (live) | End-to-end multi-doc packet build with real SuperDocs API review |
-
-> [!NOTE]
-> If PostgreSQL is not running locally, DB-backed tests (`make test-db`, `make evidence-db`) will report connection errors. Use `make test-offline` and `make evidence-offline` for instant zero-dependency verification.
-
-

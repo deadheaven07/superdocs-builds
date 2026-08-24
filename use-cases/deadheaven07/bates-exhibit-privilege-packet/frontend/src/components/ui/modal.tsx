@@ -49,9 +49,9 @@ export function Modal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
-      {/* Backdrop with blur and dark gradient */}
+      {/* Backdrop with blur */}
       <div
-        className="fixed inset-0 bg-slate-950/80 backdrop-blur-md transition-opacity duration-300 animate-fade-in"
+        className="fixed inset-0 dark:bg-slate-950/80 bg-slate-900/40 backdrop-blur-md transition-opacity duration-300 animate-fade-in"
         onClick={onClose}
         aria-hidden="true"
       />
@@ -59,28 +59,28 @@ export function Modal({
       {/* Modal Card */}
       <div
         className={clsx(
-          "relative w-full bg-slate-900 border border-slate-800/90 rounded-2xl shadow-2xl shadow-slate-950/80",
-          "p-6 text-slate-100 transform transition-all duration-300 animate-slide-up z-10",
+          "relative w-full dark:bg-slate-900 bg-white dark:border-slate-800/90 border-slate-200 border rounded-2xl shadow-2xl dark:shadow-slate-950/80 shadow-slate-400/20",
+          "p-6 dark:text-slate-100 text-slate-900 transform transition-all duration-300 animate-slide-up z-10",
           maxWidthClasses
         )}
         role="dialog"
         aria-modal="true"
       >
         {/* Header */}
-        <div className="flex items-start justify-between pb-4 border-b border-slate-800/80">
+        <div className="flex items-start justify-between pb-4 border-b dark:border-slate-800/80 border-slate-200/80">
           <div>
-            <h3 className="text-lg font-semibold tracking-tight text-slate-100 font-display">
+            <h3 className="text-lg font-semibold tracking-tight dark:text-slate-100 text-slate-900 font-display">
               {title}
             </h3>
             {description && (
-              <p className="mt-1 text-xs text-slate-400 leading-relaxed">
+              <p className="mt-1 text-xs dark:text-slate-400 text-slate-500 leading-relaxed">
                 {description}
               </p>
             )}
           </div>
           <button
             onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="rounded-lg p-1.5 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500"
             title="Close"
           >
             <X className="w-5 h-5" />
@@ -94,7 +94,7 @@ export function Modal({
 
         {/* Footer */}
         {footer && (
-          <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800/80">
+          <div className="flex items-center justify-end gap-3 pt-4 border-t dark:border-slate-800/80 border-slate-200/80">
             {footer}
           </div>
         )}

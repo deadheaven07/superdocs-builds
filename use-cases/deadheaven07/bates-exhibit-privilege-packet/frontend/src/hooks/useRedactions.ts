@@ -7,6 +7,7 @@ export function useRedactionCandidates(packetId: string) {
     queryKey: ['redactions', 'candidates', packetId],
     queryFn: () => redactionsApi.getAll(packetId),
     enabled: !!packetId,
+    refetchInterval: 1000,
   });
 }
 

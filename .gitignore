@@ -1,6 +1,13 @@
 # Node
 node_modules/
 dist/
+playwright-results.json
+test-results/
+playwright-report/
+
+# Storage / artifacts
+storage/
+*.log
 
 # Python
 __pycache__/

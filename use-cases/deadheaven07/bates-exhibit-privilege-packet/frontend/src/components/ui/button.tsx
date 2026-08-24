@@ -8,13 +8,13 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant = "default", size = "md", disabled, children, ...props }, ref) => {
-    const baseStyles = "inline-flex items-center justify-center font-medium rounded-xl transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-sky-500/50 focus:ring-offset-2 focus:ring-offset-slate-950 disabled:opacity-50 disabled:pointer-events-none active:scale-[0.98]";
+    const baseStyles = "inline-flex items-center justify-center font-medium rounded-xl transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-sky-500/50 focus:ring-offset-2 dark:focus:ring-offset-slate-950 focus:ring-offset-white disabled:opacity-50 disabled:pointer-events-none active:scale-[0.98]";
 
     const variants = {
       default: "bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white shadow-glow-sm hover:shadow-glow-md",
-      secondary: "bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700/80 shadow-sm",
-      outline: "border border-slate-700 bg-slate-900/80 text-slate-200 hover:bg-slate-800 hover:text-white",
-      ghost: "text-slate-400 hover:text-slate-100 hover:bg-slate-800/60",
+      secondary: "dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-100 dark:border-slate-700/80 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200/90 shadow-sm",
+      outline: "dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white border-slate-300 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900 shadow-sm border",
+      ghost: "dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-slate-800/60 text-slate-600 hover:text-slate-900 hover:bg-slate-100",
       destructive: "bg-rose-600 hover:bg-rose-500 text-white shadow-sm",
     };
 

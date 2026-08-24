@@ -82,11 +82,36 @@ class BatesAssignmentService:
         current_documents: Sequence[Document] = current_documents_result.scalars().all()
         current_total_pages = sum(d.page_count for d in current_documents)
 
+        # Check if existing assignments match contiguous sequence across display order
+        order_valid = True
+        if db_assignments:
+            expected_current_num = packet.bates_start_number
+            seen_unassigned = False
+            for doc in current_documents:
+                doc_assignments = sorted(
+                    [a for a in db_assignments if a.document_id == doc.id],
+                    key=lambda a: a.page_number,
+                )
+                if not doc_assignments:
+                    seen_unassigned = True
+                    continue
+                if seen_unassigned:
+                    # An assigned document appears after an unassigned document
+                    order_valid = False
+                    break
+                for a in doc_assignments:
+                    if a.bates_number != expected_current_num:
+                        order_valid = False
+                        break
+                    expected_current_num += 1
+                if not order_valid:
+                    break
+
         if db_assignments:
             db_max = max(a.bates_number for a in db_assignments)
             expected_max = packet.bates_start_number + current_total_pages - 1
-            if db_max > expected_max:
-                # Configuration changed: clear all and renumber from start
+            if db_max > expected_max or not order_valid:
+                # Configuration or display order changed: clear all and renumber from start
                 for assignment in db_assignments:
                     await session.delete(assignment)
                 await session.flush()

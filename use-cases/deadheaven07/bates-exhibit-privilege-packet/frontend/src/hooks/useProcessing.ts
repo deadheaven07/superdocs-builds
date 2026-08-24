@@ -6,7 +6,7 @@ export function useProcessingStatus(packetId: string) {
     queryKey: ['processing', 'status', packetId],
     queryFn: () => processingApi.getPacketStatus(packetId),
     enabled: !!packetId,
-    refetchInterval: 5000,
+    refetchInterval: 1000,
   });
 }
 

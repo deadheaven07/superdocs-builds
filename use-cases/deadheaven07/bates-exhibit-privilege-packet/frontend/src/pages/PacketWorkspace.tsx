@@ -64,21 +64,21 @@ const redactionBadgeVariants: Record<string, "default" | "warning" | "indigo" | 
 
 function LoadingState({ message }: { message: string }) {
   return (
-    <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-      <Loader2 className="h-9 w-9 animate-spin text-indigo-400 mb-3" />
-      <span className="text-xs font-mono text-slate-300">{message}</span>
+    <div className="flex flex-col items-center justify-center py-20 dark:text-slate-400 text-slate-500">
+      <Loader2 className="h-9 w-9 animate-spin text-indigo-500 mb-3" />
+      <span className="text-xs font-mono dark:text-slate-300 text-slate-600">{message}</span>
     </div>
   );
 }
 
 function ErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
-    <div className="bg-rose-950/40 border border-rose-800/80 rounded-2xl p-6 backdrop-blur-md shadow-xl">
+    <div className="dark:bg-rose-950/40 bg-rose-50 border dark:border-rose-800/80 border-rose-200 rounded-2xl p-6 backdrop-blur-md shadow-xl">
       <div className="flex items-center gap-2.5">
-        <AlertCircle className="h-5 w-5 text-rose-400" />
-        <span className="text-sm font-semibold text-rose-200">Operation Error</span>
+        <AlertCircle className="h-5 w-5 text-rose-500" />
+        <span className="text-sm font-semibold dark:text-rose-200 text-rose-800">Operation Error</span>
       </div>
-      <p className="text-xs text-rose-300 mt-2 font-mono">{message}</p>
+      <p className="text-xs dark:text-rose-300 text-rose-700 mt-2 font-mono">{message}</p>
       {onRetry && (
         <button
           onClick={onRetry}
@@ -152,23 +152,23 @@ function AiChangesPanel({ packetId, selectedDoc }: { packetId: string; selectedD
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
-      <div className="bg-slate-900/80 rounded-2xl shadow-xl border border-slate-800/90 p-6 backdrop-blur-md">
-        <div className="flex items-center gap-2.5 text-indigo-400">
+      <div className="dark:bg-slate-900/80 bg-white rounded-2xl shadow-sm border dark:border-slate-800/90 border-slate-200 p-6 backdrop-blur-md">
+        <div className="flex items-center gap-2.5 text-indigo-500">
           <Sparkles className="h-5 w-5" />
-          <h2 className="text-lg font-display font-bold text-white">SuperDocs Intelligence Review</h2>
+          <h2 className="text-lg font-display font-bold dark:text-white text-slate-900">SuperDocs Intelligence Review</h2>
         </div>
-        <p className="text-xs text-slate-400 mt-1">
-          Target Exhibit: <span className="font-semibold text-slate-200">{selectedDoc.filename}</span> ({selectedDoc.page_count} pages)
+        <p className="text-xs dark:text-slate-400 text-slate-600 mt-1">
+          Target Exhibit: <span className="font-semibold dark:text-slate-200 text-slate-800">{selectedDoc.filename}</span> ({selectedDoc.page_count} pages)
         </p>
         <div className="mt-4 space-y-3">
-          <label className="block text-xs font-mono uppercase tracking-wider text-slate-400 font-medium">
+          <label className="block text-xs font-mono uppercase tracking-wider dark:text-slate-400 text-slate-600 font-medium">
             Review Instructions
           </label>
           <textarea
             value={instruction}
             onChange={(e) => setInstruction(e.target.value)}
             rows={3}
-            className="w-full px-4 py-3 bg-slate-950 border border-slate-700/80 rounded-xl text-slate-100 placeholder-slate-500 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+            className="w-full px-4 py-3 dark:bg-slate-950 bg-white border dark:border-slate-700/80 border-slate-300 rounded-xl dark:text-slate-100 text-slate-900 dark:placeholder-slate-500 placeholder-slate-400 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
             placeholder="Describe the review task for this exhibit..."
           />
           <button
@@ -183,19 +183,19 @@ function AiChangesPanel({ packetId, selectedDoc }: { packetId: string; selectedD
       </div>
 
       {status?.status === "awaiting_approval" && status.changes && status.changes.length > 0 ? (
-        <div className="bg-slate-900/80 rounded-2xl shadow-xl border border-slate-800/90 p-6 space-y-4 backdrop-blur-md">
-          <h3 className="text-sm font-semibold text-white uppercase tracking-wider font-mono">Proposed Changes Awaiting Review</h3>
+        <div className="dark:bg-slate-900/80 bg-white rounded-2xl shadow-sm border dark:border-slate-800/90 border-slate-200 p-6 space-y-4 backdrop-blur-md">
+          <h3 className="text-sm font-semibold dark:text-white text-slate-900 uppercase tracking-wider font-mono">Proposed Changes Awaiting Review</h3>
           {status.changes.map((change: any) => (
-            <div key={change.change_id} className="p-4 bg-slate-950/70 rounded-xl border border-slate-800 space-y-2">
-              <p className="text-xs font-semibold text-sky-400 font-mono">{change.operation || "EDIT"}</p>
+            <div key={change.change_id} className="p-4 dark:bg-slate-950/70 bg-slate-50 rounded-xl border dark:border-slate-800 border-slate-200 space-y-2">
+              <p className="text-xs font-semibold text-sky-500 font-mono">{change.operation || "EDIT"}</p>
               {change.old_html && (
-                <p className="text-xs text-slate-400">
-                  <span className="font-semibold text-rose-400">Original:</span> {stripHtml(change.old_html).slice(0, 300)}
+                <p className="text-xs dark:text-slate-400 text-slate-600">
+                  <span className="font-semibold text-rose-500">Original:</span> {stripHtml(change.old_html).slice(0, 300)}
                 </p>
               )}
               {change.new_html && (
-                <p className="text-xs text-slate-400">
-                  <span className="font-semibold text-emerald-400">Proposed:</span> {stripHtml(change.new_html).slice(0, 300)}
+                <p className="text-xs dark:text-slate-400 text-slate-600">
+                  <span className="font-semibold text-emerald-500">Proposed:</span> {stripHtml(change.new_html).slice(0, 300)}
                 </p>
               )}
             </div>
@@ -211,15 +211,15 @@ function AiChangesPanel({ packetId, selectedDoc }: { packetId: string; selectedD
             <button
               onClick={() => handleApprove(false)}
               disabled={approveAIChanges.isPending}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl border border-slate-700 transition-all flex items-center gap-1.5"
+              className="px-4 py-2 dark:bg-slate-800 dark:hover:bg-slate-700 bg-slate-100 hover:bg-slate-200 dark:text-slate-300 text-slate-700 text-xs font-semibold rounded-xl border dark:border-slate-700 border-slate-300 transition-all flex items-center gap-1.5"
             >
               <X className="h-3.5 w-3.5" /> Reject All
             </button>
           </div>
         </div>
       ) : status?.status === "awaiting_approval" && status.continue_prompt ? (
-        <div className="bg-slate-900/80 rounded-2xl border border-slate-800 p-6 space-y-3">
-          <p className="text-sm text-slate-300">{String(status.continue_prompt)}</p>
+        <div className="dark:bg-slate-900/80 bg-white rounded-2xl border dark:border-slate-800 border-slate-200 p-6 space-y-3 shadow-sm">
+          <p className="text-sm dark:text-slate-300 text-slate-700">{String(status.continue_prompt)}</p>
           <div className="flex gap-2.5">
             <button
               onClick={() => handleContinue(true)}
@@ -231,29 +231,29 @@ function AiChangesPanel({ packetId, selectedDoc }: { packetId: string; selectedD
             <button
               onClick={() => handleContinue(false)}
               disabled={continueAIJob.isPending}
-              className="px-4 py-2 bg-slate-800 text-slate-300 text-xs font-semibold rounded-xl"
+              className="px-4 py-2 dark:bg-slate-800 bg-slate-100 dark:text-slate-300 text-slate-700 text-xs font-semibold rounded-xl border dark:border-slate-700 border-slate-300"
             >
               <X className="h-3.5 w-3.5 inline mr-1" /> Stop
             </button>
           </div>
         </div>
       ) : status?.error ? (
-        <div className="bg-rose-950/40 border border-rose-800/80 rounded-2xl p-4 flex items-center gap-2 text-rose-300 text-xs font-mono">
-          <AlertCircle className="h-4 w-4 text-rose-400" />
+        <div className="dark:bg-rose-950/40 bg-rose-50 border dark:border-rose-800/80 border-rose-200 rounded-2xl p-4 flex items-center gap-2 text-rose-600 dark:text-rose-300 text-xs font-mono">
+          <AlertCircle className="h-4 w-4 text-rose-500" />
           <span>{status.error}</span>
         </div>
       ) : (
-        <div className="bg-slate-900/60 rounded-2xl border border-slate-800/80 p-5 space-y-2 text-xs font-mono">
-          <p className="text-slate-400">Analysis status: <span className="text-white font-semibold">{status?.status ?? "idle"}</span></p>
+        <div className="dark:bg-slate-900/60 bg-white rounded-2xl border dark:border-slate-800/80 border-slate-200 p-5 space-y-2 text-xs font-mono shadow-sm">
+          <p className="dark:text-slate-400 text-slate-500">Analysis status: <span className="dark:text-white text-slate-900 font-semibold">{status?.status ?? "idle"}</span></p>
           {status?.result && (
-            <pre className="p-3 bg-slate-950 rounded-xl border border-slate-800 overflow-x-auto text-[11px] text-slate-300 max-h-64">
+            <pre className="p-3 dark:bg-slate-950 bg-slate-50 rounded-xl border dark:border-slate-800 border-slate-200 overflow-x-auto text-[11px] dark:text-slate-300 text-slate-700 max-h-64">
               {JSON.stringify(status.result, null, 2).slice(0, 2000)}
             </pre>
           )}
           {jobId && (
             <button
               onClick={() => setJobId(null)}
-              className="mt-2 px-3 py-1.5 bg-slate-800 text-slate-400 hover:text-white rounded-lg text-xs"
+              className="mt-2 px-3 py-1.5 dark:bg-slate-800 bg-slate-100 dark:text-slate-400 text-slate-600 hover:text-slate-900 dark:hover:text-white rounded-lg text-xs"
             >
               Cancel Job
             </button>
@@ -281,16 +281,16 @@ function PrivilegeRow({
   const invalid = status === "privileged" && !reason.trim();
 
   return (
-    <div className="bg-slate-900/70 rounded-2xl border border-slate-800/90 p-5 shadow-lg space-y-3 hover:border-slate-700/80 transition-all">
+    <div className="dark:bg-slate-900/70 bg-white rounded-2xl border dark:border-slate-800/90 border-slate-200 p-5 shadow-sm space-y-3 dark:hover:border-slate-700/80 hover:border-slate-300 transition-all">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="font-semibold text-sm text-white truncate">{doc.filename}</p>
+          <p className="font-semibold text-sm dark:text-white text-slate-900 truncate">{doc.filename}</p>
           <div className="flex items-center gap-2 mt-1.5 text-xs">
             <Badge variant={privilegeBadgeVariants[status] ?? "default"}>
               {status.replace("_", " ")}
             </Badge>
-            {doc.bates_range && <span className="font-mono text-sky-400 text-[11px] bg-sky-950/50 px-2 py-0.5 rounded border border-sky-800/50">{doc.bates_range}</span>}
-            {decision?.reviewer && <span className="text-slate-400 text-xs">by {decision.reviewer}</span>}
+            {doc.bates_range && <span className="font-mono text-sky-500 text-[11px] dark:bg-sky-950/50 bg-sky-50 px-2 py-0.5 rounded border dark:border-sky-800/50 border-sky-200 font-semibold">{doc.bates_range}</span>}
+            {decision?.reviewer && <span className="dark:text-slate-400 text-slate-500 text-xs">by {decision.reviewer}</span>}
           </div>
         </div>
       </div>
@@ -298,7 +298,7 @@ function PrivilegeRow({
         <select
           value={status}
           onChange={(e) => setStatus(e.target.value as PrivilegeStatus)}
-          className="px-3 py-2 bg-slate-950 border border-slate-700/80 rounded-xl text-slate-200 text-xs font-medium focus:ring-2 focus:ring-indigo-500 outline-none"
+          className="px-3 py-2 dark:bg-slate-950 bg-white border dark:border-slate-700/80 border-slate-300 rounded-xl dark:text-slate-200 text-slate-800 text-xs font-medium focus:ring-2 focus:ring-indigo-500 outline-none"
         >
           <option value="pending">Pending</option>
           <option value="privileged">Privileged</option>
@@ -308,7 +308,7 @@ function PrivilegeRow({
           value={category}
           onChange={(e) => setCategory(e.target.value as PrivilegeCategory | "")}
           disabled={status !== "privileged"}
-          className="px-3 py-2 bg-slate-950 border border-slate-700/80 rounded-xl text-slate-200 text-xs font-medium focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-40"
+          className="px-3 py-2 dark:bg-slate-950 bg-white border dark:border-slate-700/80 border-slate-300 rounded-xl dark:text-slate-200 text-slate-800 text-xs font-medium focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-40"
         >
           <option value="">Category...</option>
           <option value="attorney_client">Attorney-Client</option>
@@ -321,10 +321,10 @@ function PrivilegeRow({
           onChange={(e) => setReason(e.target.value)}
           disabled={status !== "privileged"}
           placeholder={status === "privileged" ? "Reason (required)" : "Reason"}
-          className="px-3 py-2 bg-slate-950 border border-slate-700/80 rounded-xl text-slate-200 placeholder-slate-500 text-xs focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-40"
+          className="px-3 py-2 dark:bg-slate-950 bg-white border dark:border-slate-700/80 border-slate-300 rounded-xl dark:text-slate-200 text-slate-800 dark:placeholder-slate-500 placeholder-slate-400 text-xs focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-40"
         />
       </div>
-      {invalid && <p className="text-xs text-rose-400 font-mono">Reason is required for privileged documents.</p>}
+      {invalid && <p className="text-xs text-rose-500 font-mono">Reason is required for privileged documents.</p>}
       <div className="flex justify-end pt-1">
         <Button
           size="sm"
@@ -364,28 +364,28 @@ function PrivilegePanel({ packetId, documents }: { packetId: string; documents?:
 
   return (
     <div className="max-w-4xl mx-auto space-y-5 animate-fade-in">
-      <div className="bg-slate-900/80 rounded-2xl shadow-xl border border-slate-800/90 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 backdrop-blur-md">
+      <div className="dark:bg-slate-900/80 bg-white rounded-2xl shadow-sm border dark:border-slate-800/90 border-slate-200 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 backdrop-blur-md">
         <div>
           <div className="flex items-center gap-2">
-            <Lock className="h-5 w-5 text-indigo-400" />
-            <h2 className="text-lg font-display font-bold text-white">Privilege Review & Logging</h2>
+            <Lock className="h-5 w-5 text-indigo-500" />
+            <h2 className="text-lg font-display font-bold dark:text-white text-slate-900">Privilege Review & Logging</h2>
           </div>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-xs dark:text-slate-400 text-slate-600 mt-1">
             Categorize privileged documents with legal rationale. Included in final privilege log.
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-xs font-mono text-slate-400 uppercase">Reviewer:</label>
+          <label className="text-xs font-mono dark:text-slate-400 text-slate-600 uppercase">Reviewer:</label>
           <input
             type="text"
             value={reviewer}
             onChange={(e) => setReviewer(e.target.value)}
-            className="px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white w-36 focus:ring-2 focus:ring-indigo-500 outline-none"
+            className="px-3 py-1.5 dark:bg-slate-950 bg-white border dark:border-slate-700 border-slate-300 rounded-xl text-xs dark:text-white text-slate-900 w-36 focus:ring-2 focus:ring-indigo-500 outline-none"
           />
         </div>
       </div>
       {!documents || documents.length === 0 ? (
-        <div className="bg-slate-900/60 rounded-2xl border border-slate-800 p-12 text-center text-slate-400">
+        <div className="dark:bg-slate-900/60 bg-white rounded-2xl border dark:border-slate-800 border-slate-200 p-12 text-center dark:text-slate-400 text-slate-500">
           No documents in packet. Upload documents to review privilege.
         </div>
       ) : (
@@ -452,23 +452,23 @@ function RedactionsPanel({ packetId, candidates }: { packetId: string; candidate
 
   return (
     <div className="max-w-4xl mx-auto space-y-5 animate-fade-in">
-      <div className="bg-slate-900/80 rounded-2xl shadow-xl border border-slate-800/90 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 backdrop-blur-md">
+      <div className="dark:bg-slate-900/80 bg-white rounded-2xl shadow-sm border dark:border-slate-800/90 border-slate-200 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 backdrop-blur-md">
         <div>
           <div className="flex items-center gap-2">
-            <Shield className="h-5 w-5 text-rose-400" />
-            <h2 className="text-lg font-display font-bold text-white">PII Redaction Studio</h2>
+            <Shield className="h-5 w-5 text-rose-500" />
+            <h2 className="text-lg font-display font-bold dark:text-white text-slate-900">PII Redaction Studio</h2>
           </div>
-          <p className="text-xs text-slate-400 mt-1">
+          <p className="text-xs dark:text-slate-400 text-slate-600 mt-1">
             {candidates?.length ?? 0} candidate(s) detected. Approve/reject candidates before applying byte-level scrubs.
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-xs font-mono text-slate-400 uppercase">Approver:</label>
+          <label className="text-xs font-mono dark:text-slate-400 text-slate-600 uppercase">Approver:</label>
           <input
             type="text"
             value={approver}
             onChange={(e) => setApprover(e.target.value)}
-            className="px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white w-32 focus:ring-2 focus:ring-indigo-500 outline-none"
+            className="px-3 py-1.5 dark:bg-slate-950 bg-white border dark:border-slate-700 border-slate-300 rounded-xl text-xs dark:text-white text-slate-900 w-32 focus:ring-2 focus:ring-indigo-500 outline-none"
           />
           <Button
             onClick={handleApplyAll}
@@ -482,21 +482,21 @@ function RedactionsPanel({ packetId, candidates }: { packetId: string; candidate
       </div>
 
       {!candidates || candidates.length === 0 ? (
-        <div className="bg-slate-900/60 rounded-2xl border border-slate-800 p-12 text-center text-slate-400">
+        <div className="dark:bg-slate-900/60 bg-white rounded-2xl border dark:border-slate-800 border-slate-200 p-12 text-center dark:text-slate-400 text-slate-500">
           No redaction candidates yet. Run "Detect Redactions" to scan for PII.
         </div>
       ) : (
         candidates.map((candidate) => (
-          <div key={candidate.id} className="bg-slate-900/70 rounded-2xl border border-slate-800/90 p-5 shadow-lg space-y-3 hover:border-slate-700/80 transition-all">
+          <div key={candidate.id} className="dark:bg-slate-900/70 bg-white rounded-2xl border dark:border-slate-800/90 border-slate-200 p-5 shadow-sm space-y-3 dark:hover:border-slate-700/80 hover:border-slate-300 transition-all">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="font-mono font-bold text-sm text-white bg-slate-950/80 px-2.5 py-1 rounded-lg border border-slate-800 inline-block">
+                <p className="font-mono font-bold text-sm dark:text-white text-slate-900 dark:bg-slate-950/80 bg-slate-100 px-2.5 py-1 rounded-lg border dark:border-slate-800 border-slate-200 inline-block">
                   {candidate.matched_text}
                 </p>
                 <div className="flex flex-wrap items-center gap-2 mt-2 text-xs">
                   <Badge variant="purple">{candidate.category}</Badge>
-                  <span className="text-slate-400 text-xs">{candidate.document_name}</span>
-                  <span className="font-mono text-xs text-slate-400">Page {candidate.page_number}</span>
+                  <span className="dark:text-slate-400 text-slate-600 text-xs">{candidate.document_name}</span>
+                  <span className="font-mono text-xs dark:text-slate-400 text-slate-500">Page {candidate.page_number}</span>
                   <Badge variant={redactionBadgeVariants[candidate.status] ?? "default"}>
                     {candidate.status.replace("_", " ")}
                   </Badge>
@@ -504,19 +504,19 @@ function RedactionsPanel({ packetId, candidates }: { packetId: string; candidate
                     <span className={clsx(
                       "px-2 py-0.5 rounded-full text-[10px] font-mono border",
                       candidate.proposed_by === "superdocs"
-                        ? "bg-sky-950/60 text-sky-300 border-sky-800/60"
-                        : "bg-amber-950/60 text-amber-300 border-amber-800/60"
+                        ? "dark:bg-sky-950/60 dark:text-sky-300 dark:border-sky-800/60 bg-sky-50 text-sky-700 border-sky-200"
+                        : "dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800/60 bg-amber-50 text-amber-700 border-amber-200"
                     )}>
                       {candidate.proposed_by === "superdocs" ? "SuperDocs AI" : "Local Fallback"}
                     </span>
                   )}
-                  {candidate.approval?.approver && <span className="text-slate-400 text-xs">by {candidate.approval.approver}</span>}
+                  {candidate.approval?.approver && <span className="dark:text-slate-400 text-slate-500 text-xs">by {candidate.approval.approver}</span>}
                 </div>
                 {(candidate.context_before || candidate.context_after) && (
-                  <p className="text-xs text-slate-400 mt-2.5 p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 font-mono">
-                    {candidate.context_before && <span className="text-slate-500">…{candidate.context_before}</span>}
-                    <span className="font-bold text-rose-300 bg-rose-950/40 px-1 py-0.5 rounded"> {candidate.matched_text} </span>
-                    {candidate.context_after && <span className="text-slate-500">{candidate.context_after}…</span>}
+                  <p className="text-xs dark:text-slate-400 text-slate-600 mt-2.5 p-3 rounded-xl dark:bg-slate-950/60 bg-slate-50 border dark:border-slate-800/80 border-slate-200 font-mono">
+                    {candidate.context_before && <span className="dark:text-slate-500 text-slate-400">…{candidate.context_before}</span>}
+                    <span className="font-bold text-rose-500 dark:text-rose-300 dark:bg-rose-950/40 bg-rose-50 px-1 py-0.5 rounded border border-rose-200 dark:border-transparent"> {candidate.matched_text} </span>
+                    {candidate.context_after && <span className="dark:text-slate-500 text-slate-400">{candidate.context_after}…</span>}
                   </p>
                 )}
               </div>
@@ -524,10 +524,10 @@ function RedactionsPanel({ packetId, candidates }: { packetId: string; candidate
                 {(candidate.status === "proposed" || candidate.status === "pending_approval") && (
                   <>
                     <Button size="sm" variant="outline" onClick={() => handleApprove(candidate, true)} disabled={approveRedaction.isPending} className="gap-1 text-xs">
-                      <Check className="h-3.5 w-3.5 text-emerald-400" /> Approve
+                      <Check className="h-3.5 w-3.5 text-emerald-500" /> Approve
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => handleApprove(candidate, false)} disabled={approveRedaction.isPending} className="gap-1 text-xs">
-                      <X className="h-3.5 w-3.5 text-rose-400" /> Reject
+                      <X className="h-3.5 w-3.5 text-rose-500" /> Reject
                     </Button>
                   </>
                 )}
@@ -538,14 +538,14 @@ function RedactionsPanel({ packetId, candidates }: { packetId: string; candidate
                   </Button>
                 )}
                 {candidate.status === "applied" && (
-                  <span className="text-xs text-emerald-400 flex items-center gap-1 font-mono">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                  <span className="text-xs text-emerald-500 flex items-center gap-1 font-mono">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-500" />
                     Applied
-                    {candidate.approval?.verified_at && <span className="text-teal-400">• Verified Absent</span>}
+                    {candidate.approval?.verified_at && <span className="text-teal-600 dark:text-teal-400">• Verified Absent</span>}
                   </span>
                 )}
                 {candidate.status === "rejected" && (
-                  <span className="text-xs text-rose-400 flex items-center gap-1 font-mono">
+                  <span className="text-xs text-rose-500 flex items-center gap-1 font-mono">
                     <XCircle className="h-4 w-4" /> Rejected
                   </span>
                 )}
@@ -565,33 +565,33 @@ function AuditPanel({ packetId }: { packetId: string }) {
 
   return (
     <div className="max-w-4xl mx-auto space-y-4 animate-fade-in">
-      <div className="bg-slate-900/80 rounded-2xl shadow-xl border border-slate-800/90 p-5 backdrop-blur-md">
-        <h2 className="text-lg font-display font-bold text-white">Immutable Audit Trail & Ledger</h2>
-        <p className="text-xs text-slate-400 mt-1 font-mono">{trail?.total_events ?? 0} total lifecycle events recorded.</p>
+      <div className="dark:bg-slate-900/80 bg-white rounded-2xl shadow-sm border dark:border-slate-800/90 border-slate-200 p-5 backdrop-blur-md">
+        <h2 className="text-lg font-display font-bold dark:text-white text-slate-900">Immutable Audit Trail & Ledger</h2>
+        <p className="text-xs dark:text-slate-400 text-slate-600 mt-1 font-mono">{trail?.total_events ?? 0} total lifecycle events recorded.</p>
       </div>
       {isLoading ? (
         <LoadingState message="Loading audit trail..." />
       ) : !trail || trail.events.length === 0 ? (
-        <div className="bg-slate-900/60 rounded-2xl border border-slate-800 p-12 text-center text-slate-400">
+        <div className="dark:bg-slate-900/60 bg-white rounded-2xl border dark:border-slate-800 border-slate-200 p-12 text-center dark:text-slate-400 text-slate-500">
           No audit events recorded yet.
         </div>
       ) : (
         trail.events.map((event) => (
-          <div key={event.id} className="bg-slate-900/70 rounded-2xl border border-slate-800/90 p-4 shadow-md space-y-2">
+          <div key={event.id} className="dark:bg-slate-900/70 bg-white rounded-2xl border dark:border-slate-800/90 border-slate-200 p-4 shadow-sm space-y-2">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant="indigo">{event.event_type.replace(/_/g, " ")}</Badge>
-                  {event.user_id && <span className="text-xs text-slate-400 font-mono">by {event.user_id}</span>}
-                  {event.document_name && <span className="text-xs text-slate-300 font-medium">{event.document_name}</span>}
+                  {event.user_id && <span className="text-xs dark:text-slate-400 text-slate-500 font-mono">by {event.user_id}</span>}
+                  {event.document_name && <span className="text-xs dark:text-slate-300 text-slate-700 font-medium">{event.document_name}</span>}
                 </div>
                 {event.metadata && (
-                  <pre className="text-[11px] bg-slate-950 border border-slate-800/90 rounded-xl p-3 mt-2 overflow-x-auto text-slate-300 font-mono">
+                  <pre className="text-[11px] dark:bg-slate-950 bg-slate-50 border dark:border-slate-800/90 border-slate-200 rounded-xl p-3 mt-2 overflow-x-auto dark:text-slate-300 text-slate-700 font-mono">
                     {JSON.stringify(event.metadata, null, 2).slice(0, 500)}
                   </pre>
                 )}
               </div>
-              <span className="text-xs text-slate-400 font-mono shrink-0">
+              <span className="text-xs dark:text-slate-400 text-slate-500 font-mono shrink-0">
                 {new Date(event.timestamp).toLocaleString()}
               </span>
             </div>
@@ -619,7 +619,7 @@ export function PacketWorkspace() {
   const { data: packet, isLoading: packetLoading, error: packetError, refetch: refetchPacket } = usePacket(packetId);
   const { data: documents, isLoading: docsLoading, error: docsError, refetch: refetchDocs } = useDocuments(packetId);
   const { data: processingStatus, refetch: refetchProcessing } = useProcessingStatus(packetId);
-  const { data: redactionCandidates } = useRedactionCandidates(packetId);
+  const { data: redactionCandidates, refetch: refetchRedactions } = useRedactionCandidates(packetId);
 
   const uploadMutation = useUploadDocuments(packetId);
   const startProcessing = useStartProcessing();
@@ -741,6 +741,7 @@ export function PacketWorkspace() {
   const handleDetectRedactions = async () => {
     try {
       const result = await detectRedactions.mutateAsync(packetId);
+      refetchRedactions();
       toast({
         title: "Detection started",
         description: `${result.documents_queued ?? 0} document(s) queued for PII scan.`,
@@ -799,23 +800,23 @@ export function PacketWorkspace() {
   const unapprovedCandidates = (redactionCandidates ?? []).filter((c: RedactionCandidate) => c.status === "proposed" || c.status === "pending_approval");
 
   return (
-    <div className="h-full flex flex-col bg-slate-950 text-slate-100 font-sans">
+    <div className="h-full flex flex-col dark:bg-slate-950 bg-slate-50 dark:text-slate-100 text-slate-900 font-sans transition-colors duration-200">
       {/* Top Workspace Header Bar */}
-      <div className="p-4 px-6 border-b border-slate-800/90 bg-slate-900/80 backdrop-blur-xl shadow-md">
+      <div className="p-4 px-6 border-b dark:border-slate-800/90 border-slate-200/90 dark:bg-slate-900/80 bg-white/90 backdrop-blur-xl shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-display font-bold text-white tracking-tight">{packet.name}</h1>
+              <h1 className="text-2xl font-display font-bold dark:text-white text-slate-900 tracking-tight">{packet.name}</h1>
               <Badge variant="indigo" size="md">
                 {batesStartLabel}
               </Badge>
             </div>
-            <p className="text-xs font-mono text-slate-400 mt-1 flex items-center gap-2">
+            <p className="text-xs font-mono dark:text-slate-400 text-slate-500 mt-1 flex items-center gap-2">
               <span>ID: {packet.id.slice(0, 8)}...</span>
               <span>•</span>
-              <span className="text-slate-200 font-bold">{documents ? documents.length : 0}</span> documents
+              <span className="dark:text-slate-200 text-slate-800 font-bold">{documents ? documents.length : 0}</span> documents
               <span>•</span>
-              <span className="text-slate-200 font-bold">{totalPagesCount}</span> pages
+              <span className="dark:text-slate-200 text-slate-800 font-bold">{totalPagesCount}</span> pages
             </p>
           </div>
           <div className="flex flex-wrap gap-2 items-center">
@@ -852,7 +853,7 @@ export function PacketWorkspace() {
             <Button
               variant="outline"
               size="sm"
-              className="gap-1.5 shadow-sm bg-indigo-950/40 border-indigo-700/60 text-indigo-300 hover:bg-indigo-900/60"
+              className="gap-1.5 shadow-sm dark:bg-indigo-950/40 dark:border-indigo-700/60 dark:text-indigo-300 bg-indigo-50 border-indigo-300 text-indigo-700 dark:hover:bg-indigo-900/60 hover:bg-indigo-100"
               onClick={() => setIsBuildModalOpen(true)}
               disabled={buildPacket.isPending || validatePacket.isPending}
             >
@@ -860,7 +861,7 @@ export function PacketWorkspace() {
               Build Packet
             </Button>
             <Button variant="outline" size="sm" className="gap-1.5 shadow-sm" onClick={handleVerify} disabled={verifyPacket.isPending}>
-              {verifyPacket.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />}
+              {verifyPacket.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />}
               Verify
             </Button>
             <Button
@@ -887,7 +888,7 @@ export function PacketWorkspace() {
             <button
               type="button"
               onClick={() => setIsBuildModalOpen(false)}
-              className="px-4 py-2 text-xs font-medium text-slate-400 hover:text-white bg-slate-800 rounded-xl"
+              className="px-4 py-2 text-xs font-medium dark:text-slate-400 text-slate-600 dark:hover:text-white hover:text-slate-900 dark:bg-slate-800 bg-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl"
             >
               Cancel
             </button>
@@ -914,32 +915,32 @@ export function PacketWorkspace() {
       >
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
-            <div className="p-3.5 bg-slate-950/70 rounded-xl border border-slate-800">
-              <span className="text-[10px] font-mono text-slate-400 uppercase">Total Exhibits</span>
-              <p className="text-lg font-bold text-white font-mono mt-0.5">{documents?.length ?? 0}</p>
+            <div className="p-3.5 dark:bg-slate-950/70 bg-slate-50 rounded-xl border dark:border-slate-800 border-slate-200">
+              <span className="text-[10px] font-mono dark:text-slate-400 text-slate-500 uppercase">Total Exhibits</span>
+              <p className="text-lg font-bold dark:text-white text-slate-900 font-mono mt-0.5">{documents?.length ?? 0}</p>
             </div>
-            <div className="p-3.5 bg-slate-950/70 rounded-xl border border-slate-800">
-              <span className="text-[10px] font-mono text-slate-400 uppercase">Total Pages</span>
-              <p className="text-lg font-bold text-white font-mono mt-0.5">{totalPagesCount}</p>
+            <div className="p-3.5 dark:bg-slate-950/70 bg-slate-50 rounded-xl border dark:border-slate-800 border-slate-200">
+              <span className="text-[10px] font-mono dark:text-slate-400 text-slate-500 uppercase">Total Pages</span>
+              <p className="text-lg font-bold dark:text-white text-slate-900 font-mono mt-0.5">{totalPagesCount}</p>
             </div>
           </div>
 
-          <div className="p-3.5 bg-slate-950/70 rounded-xl border border-slate-800 space-y-1 text-xs">
+          <div className="p-3.5 dark:bg-slate-950/70 bg-slate-50 rounded-xl border dark:border-slate-800 border-slate-200 space-y-1 text-xs">
             <div className="flex justify-between items-center">
-              <span className="text-slate-400">Bates Stamping Range:</span>
-              <span className="font-mono font-bold text-sky-400">{batesStartLabel}</span>
+              <span className="dark:text-slate-400 text-slate-600">Bates Stamping Range:</span>
+              <span className="font-mono font-bold text-sky-500">{batesStartLabel}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-slate-400">Unapproved Redactions:</span>
-              <span className={clsx("font-mono font-bold", unapprovedCandidates.length > 0 ? "text-amber-400" : "text-emerald-400")}>
+              <span className="dark:text-slate-400 text-slate-600">Unapproved Redactions:</span>
+              <span className={clsx("font-mono font-bold", unapprovedCandidates.length > 0 ? "text-amber-500" : "text-emerald-500")}>
                 {unapprovedCandidates.length} pending
               </span>
             </div>
           </div>
 
           {unapprovedCandidates.length > 0 && (
-            <div className="p-3 bg-amber-950/40 border border-amber-800/80 rounded-xl text-xs text-amber-300 flex items-start gap-2">
-              <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400 mt-0.5" />
+            <div className="p-3 dark:bg-amber-950/40 bg-amber-50 border dark:border-amber-800/80 border-amber-300 rounded-xl text-xs dark:text-amber-300 text-amber-800 flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500 mt-0.5" />
               <span>You have unapproved redactions. Only approved redactions will be byte-scrubbed in the final deliverable.</span>
             </div>
           )}
@@ -955,7 +956,7 @@ export function PacketWorkspace() {
         }}
         title={
           <div className="flex items-center gap-2 truncate">
-            <FileText className="h-5 w-5 text-indigo-400 shrink-0" />
+            <FileText className="h-5 w-5 text-indigo-500 shrink-0" />
             <span className="truncate">{inspectingDoc?.filename}</span>
           </div>
         }
@@ -992,32 +993,32 @@ export function PacketWorkspace() {
           <div className="space-y-6 text-xs">
             {/* Properties Grid */}
             <div className="grid grid-cols-2 gap-3">
-              <div className="p-3.5 bg-slate-950/70 rounded-xl border border-slate-800">
-                <span className="text-[10px] font-mono text-slate-500 uppercase">Format Type</span>
-                <p className="text-sm font-bold text-slate-200 font-mono mt-0.5">{inspectingDoc.document_type.toUpperCase()}</p>
+              <div className="p-3.5 dark:bg-slate-950/70 bg-slate-50 rounded-xl border dark:border-slate-800 border-slate-200">
+                <span className="text-[10px] font-mono dark:text-slate-500 text-slate-400 uppercase">Format Type</span>
+                <p className="text-sm font-bold dark:text-slate-200 text-slate-800 font-mono mt-0.5">{inspectingDoc.document_type.toUpperCase()}</p>
               </div>
-              <div className="p-3.5 bg-slate-950/70 rounded-xl border border-slate-800">
-                <span className="text-[10px] font-mono text-slate-500 uppercase">Pages</span>
-                <p className="text-sm font-bold text-slate-200 font-mono mt-0.5">{inspectingDoc.page_count}</p>
+              <div className="p-3.5 dark:bg-slate-950/70 bg-slate-50 rounded-xl border dark:border-slate-800 border-slate-200">
+                <span className="text-[10px] font-mono dark:text-slate-500 text-slate-400 uppercase">Pages</span>
+                <p className="text-sm font-bold dark:text-slate-200 text-slate-800 font-mono mt-0.5">{inspectingDoc.page_count}</p>
               </div>
             </div>
 
             {/* Bates & Privilege */}
-            <div className="p-4 bg-slate-950/70 rounded-xl border border-slate-800 space-y-3">
+            <div className="p-4 dark:bg-slate-950/70 bg-slate-50 rounded-xl border dark:border-slate-800 border-slate-200 space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-slate-400 font-mono uppercase text-[10px]">Bates Range</span>
-                <span className="font-mono text-sky-400 font-bold bg-sky-950/60 px-2 py-0.5 rounded border border-sky-800/60">
+                <span className="dark:text-slate-400 text-slate-600 font-mono uppercase text-[10px]">Bates Range</span>
+                <span className="font-mono text-sky-500 font-bold dark:bg-sky-950/60 bg-sky-50 px-2 py-0.5 rounded border dark:border-sky-800/60 border-sky-200">
                   {inspectingDoc.bates_range || "Not Assigned"}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-slate-400 font-mono uppercase text-[10px]">Privilege Classification</span>
+                <span className="dark:text-slate-400 text-slate-600 font-mono uppercase text-[10px]">Privilege Classification</span>
                 <Badge variant={privilegeBadgeVariants[inspectingDoc.privilege_status] ?? "default"}>
                   {(inspectingDoc.privilege_status ?? "pending").replace("_", " ")}
                 </Badge>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-slate-400 font-mono uppercase text-[10px]">Processing State</span>
+                <span className="dark:text-slate-400 text-slate-600 font-mono uppercase text-[10px]">Processing State</span>
                 <Badge variant={statusBadgeVariants[inspectingDoc.status] ?? "default"}>
                   {inspectingDoc.status.replace("_", " ")}
                 </Badge>
@@ -1026,11 +1027,11 @@ export function PacketWorkspace() {
 
             {/* Description Summary */}
             {inspectingDoc.description && (
-              <div className="p-4 bg-slate-950/70 rounded-xl border border-slate-800 space-y-1">
-                <span className="text-[10px] font-mono text-slate-500 uppercase">Content Summary</span>
-                <p className="text-slate-300 leading-relaxed pt-1">{inspectingDoc.description}</p>
+              <div className="p-4 dark:bg-slate-950/70 bg-slate-50 rounded-xl border dark:border-slate-800 border-slate-200 space-y-1">
+                <span className="text-[10px] font-mono dark:text-slate-500 text-slate-400 uppercase">Content Summary</span>
+                <p className="dark:text-slate-300 text-slate-700 leading-relaxed pt-1">{inspectingDoc.description}</p>
                 {inspectingDoc.description_source && (
-                  <span className="inline-block mt-2 text-[10px] font-mono text-sky-400 bg-sky-950/40 px-2 py-0.5 rounded border border-sky-800/40">
+                  <span className="inline-block mt-2 text-[10px] font-mono text-sky-500 dark:bg-sky-950/40 bg-sky-50 px-2 py-0.5 rounded border dark:border-sky-800/40 border-sky-200">
                     Source: {inspectingDoc.description_source.replace("_", " ")}
                   </span>
                 )}
@@ -1038,9 +1039,9 @@ export function PacketWorkspace() {
             )}
 
             {/* Ingestion & Searchability */}
-            <div className="p-3.5 bg-slate-950/70 rounded-xl border border-slate-800 space-y-1">
-              <span className="text-[10px] font-mono text-slate-500 uppercase">OCR / Searchable Status</span>
-              <p className="text-slate-300 font-mono">
+            <div className="p-3.5 dark:bg-slate-950/70 bg-slate-50 rounded-xl border dark:border-slate-800 border-slate-200 space-y-1">
+              <span className="text-[10px] font-mono dark:text-slate-500 text-slate-400 uppercase">OCR / Searchable Status</span>
+              <p className="dark:text-slate-300 text-slate-700 font-mono font-medium">
                 {inspectingDoc.is_searchable ? "Searchable text layer active" : "Non-searchable / Raw scan"}
               </p>
             </div>
@@ -1053,53 +1054,53 @@ export function PacketWorkspace() {
         <div className={clsx(
           "border-b px-6 py-4 backdrop-blur-md animate-fade-in shadow-inner",
           verifyResult.status === "VERIFIED"
-            ? "bg-emerald-950/40 border-emerald-800/80"
+            ? "dark:bg-emerald-950/40 bg-emerald-50 dark:border-emerald-800/80 border-emerald-300"
             : verifyResult.status === "NOT_BUILT"
-              ? "bg-amber-950/40 border-amber-800/80"
-              : "bg-rose-950/40 border-rose-800/80"
+              ? "dark:bg-amber-950/40 bg-amber-50 dark:border-amber-800/80 border-amber-300"
+              : "dark:bg-rose-950/40 bg-rose-50 dark:border-rose-800/80 border-rose-300"
         )}>
           <div className="flex items-start gap-4 max-w-6xl mx-auto">
             <div className="shrink-0 mt-0.5">
               {verifyResult.status === "VERIFIED" ? (
-                <CheckCircle2 className="h-6 w-6 text-emerald-400" />
+                <CheckCircle2 className="h-6 w-6 text-emerald-500" />
               ) : verifyResult.status === "NOT_BUILT" ? (
-                <AlertTriangle className="h-6 w-6 text-amber-400" />
+                <AlertTriangle className="h-6 w-6 text-amber-500" />
               ) : (
-                <XCircle className="h-6 w-6 text-rose-400" />
+                <XCircle className="h-6 w-6 text-rose-500" />
               )}
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-baseline gap-3">
                 <h3 className={clsx(
                   "text-base font-display font-bold",
-                  verifyResult.status === "VERIFIED" ? "text-emerald-200" :
-                  verifyResult.status === "NOT_BUILT" ? "text-amber-200" : "text-rose-200"
+                  verifyResult.status === "VERIFIED" ? "dark:text-emerald-200 text-emerald-800" :
+                  verifyResult.status === "NOT_BUILT" ? "dark:text-amber-200 text-amber-800" : "dark:text-rose-200 text-rose-800"
                 )}>
                   {verifyResult.status === "VERIFIED" ? "PACKET CRYPTOGRAPHICALLY VERIFIED" :
                    verifyResult.status === "NOT_BUILT" ? "NOT YET BUILT" : "VERIFICATION FAILED"}
                 </h3>
                 {verifyResult.bates_start && verifyResult.bates_end && (
-                  <span className="text-xs text-slate-300 font-mono bg-slate-900/80 px-2 py-0.5 rounded border border-slate-700">
+                  <span className="text-xs dark:text-slate-300 text-slate-700 font-mono dark:bg-slate-900/80 bg-white px-2 py-0.5 rounded border dark:border-slate-700 border-slate-300">
                     {verifyResult.bates_start} → {verifyResult.bates_end}
                   </span>
                 )}
               </div>
-              <div className="mt-1 text-xs text-slate-400 font-mono">
+              <div className="mt-1 text-xs dark:text-slate-400 text-slate-600 font-mono">
                 {verifyResult.page_count} pages · {verifyResult.exhibits} exhibits
               </div>
               <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-2">
                 {verifyResult.checks.map((check: any) => (
                   <div key={check.name} className="flex items-center gap-2 text-xs font-mono">
                     {check.passed ? (
-                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
                     ) : (
-                      <XCircle className="h-3.5 w-3.5 text-rose-400 shrink-0" />
+                      <XCircle className="h-3.5 w-3.5 text-rose-500 shrink-0" />
                     )}
-                    <span className={clsx("truncate", check.passed ? "text-slate-300" : "text-rose-300 font-semibold")}>
+                    <span className={clsx("truncate", check.passed ? "dark:text-slate-300 text-slate-700" : "text-rose-600 font-semibold")}>
                       {check.name.replace(/_/g, " ")}
                     </span>
                     {check.detail && !check.passed && (
-                      <span className="text-[10px] text-rose-400 truncate hidden lg:inline" title={check.detail}>
+                      <span className="text-[10px] text-rose-500 truncate hidden lg:inline" title={check.detail}>
                         ({check.detail})
                       </span>
                     )}
@@ -1109,7 +1110,7 @@ export function PacketWorkspace() {
             </div>
             <button
               onClick={() => setVerifyResult(null)}
-              className="shrink-0 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors"
+              className="shrink-0 dark:text-slate-400 text-slate-500 hover:text-slate-900 dark:hover:text-white p-1 rounded-lg dark:hover:bg-slate-800 hover:bg-slate-200 transition-colors"
             >
               <X className="h-4 w-4" />
             </button>
@@ -1120,8 +1121,8 @@ export function PacketWorkspace() {
       {/* Main Workspace Split View */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Navigator Sidebar */}
-        <aside className="w-72 border-r border-slate-800/80 bg-slate-900/60 flex flex-col overflow-hidden backdrop-blur-md shrink-0">
-          <div className="p-3 border-b border-slate-800/80">
+        <aside className="w-72 border-r dark:border-slate-800/80 border-slate-200/90 dark:bg-slate-900/60 bg-white flex flex-col overflow-hidden backdrop-blur-md shrink-0">
+          <div className="p-3 border-b dark:border-slate-800/80 border-slate-200/80">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
               <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="documents" className="text-xs py-1">Docs</TabsTrigger>
@@ -1137,10 +1138,10 @@ export function PacketWorkspace() {
                 {docsLoading && <LoadingState message="Loading documents..." />}
                 {docsError && <ErrorState message={docsError.message} onRetry={refetchDocs} />}
                 {!docsLoading && !docsError && (!documents || documents.length === 0) && (
-                  <div className="text-center py-12 text-slate-500">
-                    <FileText className="h-8 w-8 mx-auto mb-2 text-slate-600" />
-                    <p className="text-xs font-medium text-slate-400 font-display">No documents yet.</p>
-                    <p className="text-[11px] text-slate-500 mt-1">Upload PDF, DOCX, or scans.</p>
+                  <div className="text-center py-12 dark:text-slate-500 text-slate-400">
+                    <FileText className="h-8 w-8 mx-auto mb-2 dark:text-slate-600 text-slate-400" />
+                    <p className="text-xs font-medium dark:text-slate-400 text-slate-600 font-display">No documents yet.</p>
+                    <p className="text-[11px] dark:text-slate-500 text-slate-400 mt-1">Upload PDF, DOCX, or scans.</p>
                   </div>
                 )}
                 {sortedDocs.map((doc, index) => (
@@ -1150,7 +1151,7 @@ export function PacketWorkspace() {
                       "p-3 rounded-xl border transition-all duration-150 group",
                       selectedDoc?.id === doc.id
                         ? "border-indigo-500/50 bg-indigo-500/10 shadow-sm"
-                        : "border-slate-800/80 bg-slate-900/40 hover:border-slate-700 hover:bg-slate-800/40"
+                        : "dark:border-slate-800/80 border-slate-200/80 dark:bg-slate-900/40 bg-slate-50/70 dark:hover:border-slate-700 hover:border-slate-300 dark:hover:bg-slate-800/40 hover:bg-slate-100"
                     )}
                   >
                     <button
@@ -1159,7 +1160,7 @@ export function PacketWorkspace() {
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-xs text-white truncate group-hover:text-indigo-300 transition-colors">{doc.filename}</p>
+                          <p className="font-semibold text-xs dark:text-white text-slate-900 truncate group-hover:text-indigo-500 transition-colors">{doc.filename}</p>
                           <div className="flex items-center gap-1.5 mt-1.5 text-[10px]">
                             <Badge variant={statusBadgeVariants[doc.status] ?? "default"}>
                               {doc.status.replace("_", " ")}
@@ -1169,24 +1170,24 @@ export function PacketWorkspace() {
                             </Badge>
                           </div>
                           {doc.bates_range && (
-                            <p className="text-xs text-sky-400 mt-1 font-mono font-medium">{doc.bates_range}</p>
+                            <p className="text-xs text-sky-500 mt-1 font-mono font-medium">{doc.bates_range}</p>
                           )}
                           {doc.description && (
                             <div className="mt-1">
-                              <p className="text-xs text-slate-400 truncate" title={doc.description}>{doc.description}</p>
+                              <p className="text-xs dark:text-slate-400 text-slate-500 truncate" title={doc.description}>{doc.description}</p>
                             </div>
                           )}
                         </div>
                       </div>
                     </button>
-                    <div className="flex items-center gap-1 mt-2.5 pt-2 border-t border-slate-800/80">
+                    <div className="flex items-center gap-1 mt-2.5 pt-2 border-t dark:border-slate-800/80 border-slate-200/80">
                       <button
                         title="Quick Inspect"
                         onClick={() => {
                           setInspectingDoc(doc);
                           setIsDocInspectorOpen(true);
                         }}
-                        className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-indigo-400 transition-colors"
+                        className="p-1 rounded-lg dark:hover:bg-slate-800 hover:bg-slate-200 dark:text-slate-400 text-slate-500 hover:text-indigo-500 transition-colors"
                       >
                         <Info className="h-3.5 w-3.5" />
                       </button>
@@ -1194,7 +1195,7 @@ export function PacketWorkspace() {
                         title="Move up"
                         onClick={() => handleMoveDocument(doc, "up")}
                         disabled={index === 0 || reorderDocument.isPending}
-                        className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white disabled:opacity-30 transition-colors"
+                        className="p-1 rounded-lg dark:hover:bg-slate-800 hover:bg-slate-200 dark:text-slate-400 text-slate-500 hover:text-slate-900 dark:hover:text-white disabled:opacity-30 transition-colors"
                       >
                         <ArrowUp className="h-3.5 w-3.5" />
                       </button>
@@ -1202,7 +1203,7 @@ export function PacketWorkspace() {
                         title="Move down"
                         onClick={() => handleMoveDocument(doc, "down")}
                         disabled={index === sortedDocs.length - 1 || reorderDocument.isPending}
-                        className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white disabled:opacity-30 transition-colors"
+                        className="p-1 rounded-lg dark:hover:bg-slate-800 hover:bg-slate-200 dark:text-slate-400 text-slate-500 hover:text-slate-900 dark:hover:text-white disabled:opacity-30 transition-colors"
                       >
                         <ArrowDown className="h-3.5 w-3.5" />
                       </button>
@@ -1210,7 +1211,7 @@ export function PacketWorkspace() {
                         title="Download original"
                         onClick={() => handleDownloadDocument(doc)}
                         disabled={downloadDocument.isPending}
-                        className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-sky-400 disabled:opacity-30 transition-colors"
+                        className="p-1 rounded-lg dark:hover:bg-slate-800 hover:bg-slate-200 dark:text-slate-400 text-slate-500 hover:text-sky-500 disabled:opacity-30 transition-colors"
                       >
                         <Download className="h-3.5 w-3.5" />
                       </button>
@@ -1218,7 +1219,7 @@ export function PacketWorkspace() {
                         title="Delete document"
                         onClick={() => handleDeleteDocument(doc)}
                         disabled={deleteDocument.isPending}
-                        className="p-1 rounded-lg hover:bg-rose-500/10 text-slate-400 hover:text-rose-400 disabled:opacity-30 ml-auto transition-colors"
+                        className="p-1 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-500/10 dark:text-slate-400 text-slate-500 hover:text-rose-500 disabled:opacity-30 ml-auto transition-colors"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -1236,9 +1237,9 @@ export function PacketWorkspace() {
 
             {activeTab === "processing" && (
               <div className="space-y-3">
-                <div className="p-3.5 bg-sky-950/30 rounded-xl border border-sky-800/60">
-                  <p className="text-xs font-semibold text-sky-300">Processing Pipeline</p>
-                  <p className="text-[11px] text-sky-400/80 font-mono mt-1">
+                <div className="p-3.5 dark:bg-sky-950/30 bg-sky-50 rounded-xl border dark:border-sky-800/60 border-sky-200">
+                  <p className="text-xs font-semibold dark:text-sky-300 text-sky-800">Processing Pipeline</p>
+                  <p className="text-[11px] dark:text-sky-400/80 text-sky-600 font-mono mt-1">
                     {processingStatus?.status_breakdown?.queued ?? 0} queued |{" "}
                     {processingStatus?.status_breakdown?.processing ?? 0} processing |{" "}
                     {processingStatus?.status_breakdown?.failed ?? 0} failed
@@ -1246,13 +1247,13 @@ export function PacketWorkspace() {
                 </div>
                 <div className="space-y-2">
                   {processingStatus?.documents?.filter((d) => d.status !== "completed").map((doc) => (
-                    <div key={doc.id} className="p-3 bg-slate-900 rounded-xl border border-slate-800 space-y-1.5">
-                      <p className="text-xs font-semibold text-white truncate">{doc.filename}</p>
+                    <div key={doc.id} className="p-3 dark:bg-slate-900 bg-white rounded-xl border dark:border-slate-800 border-slate-200 space-y-1.5 shadow-sm">
+                      <p className="text-xs font-semibold dark:text-white text-slate-900 truncate">{doc.filename}</p>
                       <div className="flex items-center gap-2">
                         <Badge variant={statusBadgeVariants[doc.status] ?? "default"}>
                           {doc.status.replace("_", " ")}
                         </Badge>
-                        {doc.error && <span className="text-[11px] text-rose-400 truncate">{doc.error}</span>}
+                        {doc.error && <span className="text-[11px] text-rose-500 truncate">{doc.error}</span>}
                       </div>
                       {doc.status === "failed" && (
                         <Button
@@ -1269,12 +1270,12 @@ export function PacketWorkspace() {
                     </div>
                   ))}
                   {(!processingStatus?.documents || processingStatus.documents.length === 0) && (
-                    <p className="text-center text-xs text-slate-500 py-6">
+                    <p className="text-center text-xs dark:text-slate-500 text-slate-400 py-6">
                       No documents in the queue.
                     </p>
                   )}
                   {processingStatus?.documents?.every((d) => d.status === "completed") && (
-                    <p className="text-center text-xs text-emerald-400 font-medium py-6 font-mono">
+                    <p className="text-center text-xs text-emerald-500 font-medium py-6 font-mono">
                       All documents processed.
                     </p>
                   )}
@@ -1284,9 +1285,9 @@ export function PacketWorkspace() {
 
             {activeTab === "review" && (
               <div className="space-y-3">
-                <div className="p-3.5 bg-indigo-950/30 rounded-xl border border-indigo-800/60">
-                  <p className="text-xs font-semibold text-indigo-300">AI Review Queue</p>
-                  <p className="text-[11px] text-indigo-400 font-mono mt-1">
+                <div className="p-3.5 dark:bg-indigo-950/30 bg-indigo-50 rounded-xl border dark:border-indigo-800/60 border-indigo-200">
+                  <p className="text-xs font-semibold dark:text-indigo-300 text-indigo-800">AI Review Queue</p>
+                  <p className="text-[11px] dark:text-indigo-400 text-indigo-600 font-mono mt-1">
                     {processingStatus?.status_breakdown?.waiting_review ?? 0} documents awaiting review
                   </p>
                 </div>
@@ -1294,15 +1295,15 @@ export function PacketWorkspace() {
                   {processingStatus?.documents
                     ?.filter((d) => d.status === "waiting_review" || d.status === "ai_analysis")
                     .map((doc) => (
-                      <div key={doc.id} className="p-3 bg-slate-900 rounded-xl border border-slate-800">
-                        <p className="text-xs font-semibold text-white truncate">{doc.filename}</p>
-                        <p className="text-[11px] text-slate-400 mt-1">
+                      <div key={doc.id} className="p-3 dark:bg-slate-900 bg-white rounded-xl border dark:border-slate-800 border-slate-200 shadow-sm">
+                        <p className="text-xs font-semibold dark:text-white text-slate-900 truncate">{doc.filename}</p>
+                        <p className="text-[11px] dark:text-slate-400 text-slate-500 mt-1">
                           {doc.status === "waiting_review" ? "Awaiting approval of AI changes" : "AI analysis in progress"}
                         </p>
                       </div>
                     ))}
                   {(!processingStatus?.documents?.some((d) => d.status === "waiting_review" || d.status === "ai_analysis")) && (
-                    <p className="text-center text-xs text-slate-500 py-6">No documents awaiting review.</p>
+                    <p className="text-center text-xs dark:text-slate-500 text-slate-400 py-6">No documents awaiting review.</p>
                   )}
                   <Button variant="outline" size="sm" className="w-full justify-start gap-2 text-xs" onClick={() => setActiveTab("ai-changes")}>
                     <Send className="h-3.5 w-3.5" />
@@ -1315,8 +1316,8 @@ export function PacketWorkspace() {
         </aside>
 
         {/* Center Panel */}
-        <main className="flex-1 flex flex-col overflow-hidden min-w-0 bg-slate-950">
-          <div className="p-3 px-6 border-b border-slate-800 bg-slate-900/50 flex items-center justify-between">
+        <main className="flex-1 flex flex-col overflow-hidden min-w-0 dark:bg-slate-950 bg-slate-50">
+          <div className="p-3 px-6 border-b dark:border-slate-800 border-slate-200 dark:bg-slate-900/50 bg-white/70 flex items-center justify-between">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="hidden md:flex">
               <TabsList>
                 <TabsTrigger value="documents">Document Viewer</TabsTrigger>
@@ -1328,15 +1329,15 @@ export function PacketWorkspace() {
             </Tabs>
           </div>
 
-          <div className="flex-1 overflow-auto p-6 bg-slate-950">
+          <div className="flex-1 overflow-auto p-6 dark:bg-slate-950 bg-slate-50">
             {activeTab === "ai-changes" && selectedDoc && (
               <AiChangesPanel packetId={packetId} selectedDoc={selectedDoc} />
             )}
             {activeTab === "ai-changes" && !selectedDoc && (
-              <div className="max-w-4xl mx-auto bg-slate-900/60 rounded-2xl border border-slate-800 p-12 text-center text-slate-400">
-                <FileText className="h-10 w-10 mx-auto text-slate-600 mb-3" />
-                <p className="text-slate-300 font-medium font-display">Select a document to run AI analysis</p>
-                <p className="text-xs text-slate-500 mt-1">Choose an exhibit from the left sidebar to generate proposals.</p>
+              <div className="max-w-4xl mx-auto dark:bg-slate-900/60 bg-white rounded-2xl border dark:border-slate-800 border-slate-200 p-12 text-center dark:text-slate-400 text-slate-500 shadow-sm">
+                <FileText className="h-10 w-10 mx-auto dark:text-slate-600 text-slate-400 mb-3" />
+                <p className="dark:text-slate-300 text-slate-700 font-medium font-display">Select a document to run AI analysis</p>
+                <p className="text-xs dark:text-slate-500 text-slate-400 mt-1">Choose an exhibit from the left sidebar to generate proposals.</p>
               </div>
             )}
             {activeTab === "privilege" && <PrivilegePanel packetId={packetId} documents={documents} />}
@@ -1344,13 +1345,13 @@ export function PacketWorkspace() {
             {activeTab === "audit" && <AuditPanel packetId={packetId} />}
 
             {activeTab === "documents" && (
-              <div className="max-w-5xl mx-auto bg-slate-900/70 rounded-2xl border border-slate-800/90 p-6 shadow-xl space-y-6">
+              <div className="max-w-5xl mx-auto dark:bg-slate-900/70 bg-white rounded-2xl border dark:border-slate-800/90 border-slate-200/90 p-6 shadow-sm space-y-6">
                 {selectedDoc ? (
                   <>
-                    <div className="flex items-center justify-between pb-4 border-b border-slate-800/80">
+                    <div className="flex items-center justify-between pb-4 border-b dark:border-slate-800/80 border-slate-200/80">
                       <div>
-                        <h2 className="text-lg font-display font-bold text-white">{selectedDoc.filename}</h2>
-                        <p className="text-xs text-slate-400 font-mono mt-0.5">Exhibit Page Count: {selectedDoc.page_count}</p>
+                        <h2 className="text-lg font-display font-bold dark:text-white text-slate-900">{selectedDoc.filename}</h2>
+                        <p className="text-xs dark:text-slate-400 text-slate-500 font-mono mt-0.5">Exhibit Page Count: {selectedDoc.page_count}</p>
                       </div>
                       <div className="flex items-center gap-2">
                         <Button
@@ -1362,7 +1363,7 @@ export function PacketWorkspace() {
                             setIsDocInspectorOpen(true);
                           }}
                         >
-                          <Info className="h-3.5 w-3.5 text-indigo-400" />
+                          <Info className="h-3.5 w-3.5 text-indigo-500" />
                           Inspect
                         </Button>
                         <Button
@@ -1395,40 +1396,40 @@ export function PacketWorkspace() {
                       />
                     </div>
 
-                    <div className="grid grid-cols-3 gap-4 text-xs font-mono pt-4 border-t border-slate-800/80">
-                      <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
-                        <p className="text-slate-500 uppercase tracking-wider text-[10px]">Document Type</p>
-                        <p className="text-slate-200 font-semibold mt-1">{selectedDoc.document_type.toUpperCase()}</p>
+                    <div className="grid grid-cols-3 gap-4 text-xs font-mono pt-4 border-t dark:border-slate-800/80 border-slate-200/80">
+                      <div className="p-3 rounded-xl dark:bg-slate-950/60 bg-slate-50 border dark:border-slate-800 border-slate-200">
+                        <p className="dark:text-slate-500 text-slate-400 uppercase tracking-wider text-[10px]">Document Type</p>
+                        <p className="dark:text-slate-200 text-slate-800 font-semibold mt-1">{selectedDoc.document_type.toUpperCase()}</p>
                       </div>
-                      <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
-                        <p className="text-slate-500 uppercase tracking-wider text-[10px]">Total Pages</p>
-                        <p className="text-slate-200 font-semibold mt-1">{selectedDoc.page_count}</p>
+                      <div className="p-3 rounded-xl dark:bg-slate-950/60 bg-slate-50 border dark:border-slate-800 border-slate-200">
+                        <p className="dark:text-slate-500 text-slate-400 uppercase tracking-wider text-[10px]">Total Pages</p>
+                        <p className="dark:text-slate-200 text-slate-800 font-semibold mt-1">{selectedDoc.page_count}</p>
                       </div>
-                      <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800">
-                        <p className="text-slate-500 uppercase tracking-wider text-[10px]">Bates Range</p>
-                        <p className="text-sky-400 font-semibold mt-1">{selectedDoc.bates_range || "Not assigned"}</p>
+                      <div className="p-3 rounded-xl dark:bg-slate-950/60 bg-slate-50 border dark:border-slate-800 border-slate-200">
+                        <p className="dark:text-slate-500 text-slate-400 uppercase tracking-wider text-[10px]">Bates Range</p>
+                        <p className="text-sky-500 font-semibold mt-1">{selectedDoc.bates_range || "Not assigned"}</p>
                       </div>
                     </div>
                   </>
                 ) : (
-                  <div className="text-center py-20 text-slate-500">
-                    <FileText className="h-12 w-12 mx-auto mb-3 text-slate-600" />
-                    <p className="text-sm text-slate-300 font-medium font-display">Select a document from the left sidebar to preview</p>
-                    <p className="text-xs text-slate-500 mt-1">Preview native PDFs, OCR extracted text layers, and Bates stamps.</p>
+                  <div className="text-center py-20 dark:text-slate-500 text-slate-400">
+                    <FileText className="h-12 w-12 mx-auto mb-3 dark:text-slate-600 text-slate-400" />
+                    <p className="text-sm dark:text-slate-300 text-slate-700 font-medium font-display">Select a document from the left sidebar to preview</p>
+                    <p className="text-xs dark:text-slate-500 text-slate-400 mt-1">Preview native PDFs, OCR extracted text layers, and Bates stamps.</p>
                   </div>
                 )}
               </div>
             )}
 
             {activeTab === "processing" && (
-              <div className="max-w-5xl mx-auto bg-slate-900/70 rounded-2xl border border-slate-800/90 p-6 shadow-xl space-y-4">
-                <h2 className="text-lg font-display font-bold text-white">Document Processing Status</h2>
+              <div className="max-w-5xl mx-auto dark:bg-slate-900/70 bg-white rounded-2xl border dark:border-slate-800/90 border-slate-200/90 p-6 shadow-sm space-y-4">
+                <h2 className="text-lg font-display font-bold dark:text-white text-slate-900">Document Processing Status</h2>
                 <div className="space-y-2.5">
                   {processingStatus?.documents?.map((doc) => (
-                    <div key={doc.id} className="flex items-center justify-between bg-slate-950/60 border border-slate-800 rounded-xl p-4">
+                    <div key={doc.id} className="flex items-center justify-between dark:bg-slate-950/60 bg-slate-50 border dark:border-slate-800 border-slate-200 rounded-xl p-4">
                       <div className="min-w-0">
-                        <p className="text-sm font-semibold text-white truncate">{doc.filename}</p>
-                        <p className="text-xs font-mono text-slate-400 mt-0.5">
+                        <p className="text-sm font-semibold dark:text-white text-slate-900 truncate">{doc.filename}</p>
+                        <p className="text-xs font-mono dark:text-slate-400 text-slate-500 mt-0.5">
                           {doc.page_count} pages • {doc.is_searchable ? "searchable text" : "no text layer"}
                           {doc.error && ` • ${doc.error}`}
                         </p>

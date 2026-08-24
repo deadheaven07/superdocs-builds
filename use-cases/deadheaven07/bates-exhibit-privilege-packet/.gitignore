@@ -36,6 +36,8 @@ storage/
 *.png
 *.jpg
 *.jpeg
+!docs/**
+!docs/screenshots/*
 
 # IDE
 .idea/

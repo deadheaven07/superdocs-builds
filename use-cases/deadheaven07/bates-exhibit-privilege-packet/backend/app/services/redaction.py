@@ -19,6 +19,8 @@ FALLBACK PATH (LOCAL):
 """
 
 import logging
+from typing import cast
+from uuid import UUID
 
 import fitz
 from sqlalchemy import select
@@ -168,7 +170,7 @@ class RedactionDetectionService:
     async def detect_pii_in_document(
         self,
         session: AsyncSession,
-        document_id: str,
+        document_id: str | UUID,
         categories: list[PIICategory] | None = None,
         siblings: list[Document] | None = None,
     ) -> PIIDetectionResult:
@@ -179,7 +181,8 @@ class RedactionDetectionService:
         service = await self._get_superdocs()
         if service is not None:
             try:
-                return await service.detect_pii(session, document, categories, siblings=siblings)
+                res = await service.detect_pii(session, document, categories, siblings=siblings)
+                return cast(PIIDetectionResult, res)
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     f"SuperDocs detection unavailable for {document.id} "
@@ -253,13 +256,14 @@ class RedactionDetectionService:
     async def reconcile_candidates(
         self,
         session: AsyncSession,
-        document_id: str,
+        document_id: str | UUID,
         candidates: list[DBRedactionCandidate],
     ) -> tuple[list[DBRedactionCandidate], int]:
         """Return (new_candidates, skipped_count) so repeated detection never
         duplicates existing candidates."""
+        target_doc_id = UUID(str(document_id)) if isinstance(document_id, str) else document_id
         result = await session.execute(
-            select(DBRedactionCandidate).where(DBRedactionCandidate.document_id == document_id)
+            select(DBRedactionCandidate).where(DBRedactionCandidate.document_id == target_doc_id)
         )
         existing_keys = {self._candidate_identity(c) for c in result.scalars().all()}
 

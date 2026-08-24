@@ -11,30 +11,30 @@ export function SettingsPage() {
   return (
     <div className="p-8 max-w-4xl mx-auto space-y-8 animate-fade-in">
       {/* Header */}
-      <div className="pb-2 border-b border-slate-800/80">
+      <div className="pb-2 border-b dark:border-slate-800/80 border-slate-200/80">
         <div className="flex items-center gap-3">
-          <h1 className="text-3xl font-display font-bold tracking-tight text-white">System Diagnostics</h1>
-          <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+          <h1 className="text-3xl font-display font-bold tracking-tight dark:text-white text-slate-900">System Diagnostics</h1>
+          <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-medium dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20 bg-emerald-50 text-emerald-700 border border-emerald-300">
             System Operational
           </span>
         </div>
-        <p className="text-slate-400 text-sm mt-1">Runtime infrastructure and verification engine parameters.</p>
+        <p className="dark:text-slate-400 text-slate-600 text-sm mt-1">Runtime infrastructure and verification engine parameters.</p>
       </div>
 
       {/* Diagnostics Grid */}
-      <div className="bg-slate-900/80 rounded-2xl border border-slate-800/90 divide-y divide-slate-800/60 shadow-xl backdrop-blur-md overflow-hidden">
+      <div className="dark:bg-slate-900/80 bg-white rounded-2xl border dark:border-slate-800/90 border-slate-200 divide-y dark:divide-slate-800/60 divide-slate-200 shadow-sm backdrop-blur-md overflow-hidden">
         {rows.map(({ icon: Icon, label, value, status }) => (
-          <div key={label} className="flex items-center justify-between p-5 hover:bg-slate-800/30 transition-colors">
+          <div key={label} className="flex items-center justify-between p-5 dark:hover:bg-slate-800/30 hover:bg-slate-50 transition-colors">
             <div className="flex items-start gap-4">
-              <div className="h-10 w-10 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 shrink-0 mt-0.5">
+              <div className="h-10 w-10 rounded-xl dark:bg-sky-500/10 bg-sky-50 border dark:border-sky-500/20 border-sky-200 flex items-center justify-center text-sky-500 shrink-0 mt-0.5">
                 <Icon className="h-5 w-5" />
               </div>
               <div>
-                <p className="text-sm font-semibold text-white">{label}</p>
-                <p className="text-xs text-slate-400 mt-1 font-mono">{value}</p>
+                <p className="text-sm font-semibold dark:text-white text-slate-900">{label}</p>
+                <p className="text-xs dark:text-slate-400 text-slate-500 mt-1 font-mono">{value}</p>
               </div>
             </div>
-            <span className="px-2.5 py-1 text-xs font-mono font-medium rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">
+            <span className="px-2.5 py-1 text-xs font-mono font-medium rounded-full dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20 bg-emerald-50 text-emerald-700 border border-emerald-300 shrink-0">
               {status}
             </span>
           </div>
@@ -43,22 +43,22 @@ export function SettingsPage() {
 
       {/* Legal & Architectural Guarantees Card */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="bg-slate-900/60 rounded-2xl border border-slate-800 p-5 space-y-2">
-          <div className="flex items-center gap-2 text-sky-400">
+        <div className="dark:bg-slate-900/60 bg-white rounded-2xl border dark:border-slate-800 border-slate-200 p-5 space-y-2 shadow-sm">
+          <div className="flex items-center gap-2 text-sky-500">
             <ShieldCheck className="h-5 w-5" />
-            <p className="font-semibold text-white text-sm">Bates Contiguity Invariant</p>
+            <p className="font-semibold dark:text-white text-slate-900 text-sm">Bates Contiguity Invariant</p>
           </div>
-          <p className="text-xs text-slate-400 leading-relaxed">
-            Packets use a configurable prefix (default <code className="text-sky-300 font-mono">CASE-</code>), sequential start number, and zero-padding width. Reordering dynamically updates contiguous sequence numbering.
+          <p className="text-xs dark:text-slate-400 text-slate-600 leading-relaxed">
+            Packets use a configurable prefix (default <code className="dark:text-sky-300 text-sky-600 font-mono font-bold">CASE-</code>), sequential start number, and zero-padding width. Reordering dynamically updates contiguous sequence numbering.
           </p>
         </div>
 
-        <div className="bg-slate-900/60 rounded-2xl border border-slate-800 p-5 space-y-2">
-          <div className="flex items-center gap-2 text-indigo-400">
+        <div className="dark:bg-slate-900/60 bg-white rounded-2xl border dark:border-slate-800 border-slate-200 p-5 space-y-2 shadow-sm">
+          <div className="flex items-center gap-2 text-indigo-500">
             <Lock className="h-5 w-5" />
-            <p className="font-semibold text-white text-sm">Byte-Scrub Redaction & Manifest</p>
+            <p className="font-semibold dark:text-white text-slate-900 text-sm">Byte-Scrub Redaction & Manifest</p>
           </div>
-          <p className="text-xs text-slate-400 leading-relaxed">
+          <p className="text-xs dark:text-slate-400 text-slate-600 leading-relaxed">
             Redacted bytes are permanently eliminated from PDF streams with multi-pass residue verification. Every exported exhibit and manifest entry is sealed with cryptographic SHA-256 hashes.
           </p>
         </div>

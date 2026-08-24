@@ -17,13 +17,13 @@ export function Badge({
   icon,
 }: BadgeProps) {
   const variantStyles = {
-    default: "bg-slate-800 text-slate-300 border-slate-700/80",
-    success: "bg-emerald-950/70 text-emerald-300 border-emerald-800/60 shadow-sm shadow-emerald-900/20",
-    warning: "bg-amber-950/70 text-amber-300 border-amber-800/60 shadow-sm shadow-amber-900/20",
-    danger: "bg-rose-950/70 text-rose-300 border-rose-800/60 shadow-sm shadow-rose-900/20",
-    purple: "bg-purple-950/70 text-purple-300 border-purple-800/60 shadow-sm shadow-purple-900/20",
-    indigo: "bg-indigo-950/70 text-indigo-300 border-indigo-800/60 shadow-sm shadow-indigo-900/20",
-    outline: "bg-transparent text-slate-400 border-slate-700 hover:border-slate-500",
+    default: "dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700/80 bg-slate-100 text-slate-700 border-slate-300",
+    success: "dark:bg-emerald-950/70 dark:text-emerald-300 dark:border-emerald-800/60 bg-emerald-50 text-emerald-700 border-emerald-300 shadow-sm",
+    warning: "dark:bg-amber-950/70 dark:text-amber-300 dark:border-amber-800/60 bg-amber-50 text-amber-700 border-amber-300 shadow-sm",
+    danger: "dark:bg-rose-950/70 dark:text-rose-300 dark:border-rose-800/60 bg-rose-50 text-rose-700 border-rose-300 shadow-sm",
+    purple: "dark:bg-purple-950/70 dark:text-purple-300 dark:border-purple-800/60 bg-purple-50 text-purple-700 border-purple-300 shadow-sm",
+    indigo: "dark:bg-indigo-950/70 dark:text-indigo-300 dark:border-indigo-800/60 bg-indigo-50 text-indigo-700 border-indigo-300 shadow-sm",
+    outline: "bg-transparent dark:text-slate-400 text-slate-600 dark:border-slate-700 border-slate-300 dark:hover:border-slate-500 hover:border-slate-400",
   }[variant];
 
   const sizeStyles = {
