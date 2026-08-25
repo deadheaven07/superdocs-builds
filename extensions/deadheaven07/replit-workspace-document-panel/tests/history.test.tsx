@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import React, { act } from 'react';
+import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { HistoryTab } from '../src/components/HistoryTab';
 import { DocumentVersion } from '../src/types/superdocs';

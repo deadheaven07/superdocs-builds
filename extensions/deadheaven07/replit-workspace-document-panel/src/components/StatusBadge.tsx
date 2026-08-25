@@ -28,12 +28,12 @@ export function StatusBadge({ step, progress, error, canRetry, sessionId, onRetr
   const isActive = step !== 'idle' && step !== 'completed' && step !== 'failed';
 
   return (
-    <div className="p-3 rounded-lg border bg-white shadow-xs">
+    <div className="p-3.5 rounded-xl border border-gray-200 bg-white shadow-xs">
       {/* Progress workflow */}
       <div className="mb-3">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 rounded text-xs font-semibold bg-gray-100 text-gray-800">
+            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-gray-100 text-gray-800 border border-gray-200">
               {stepInfo?.label || step}
             </span>
             {sessionId && (
@@ -54,13 +54,13 @@ export function StatusBadge({ step, progress, error, canRetry, sessionId, onRetr
             return (
               <div key={stepKey} className="flex items-center">
                 <div className="relative flex-shrink-0">
-                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium transition-all ${
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold transition-all ${
                     isCompleted ? 'bg-primary-600 text-white' :
                     isCurrent ? 'bg-primary-600 text-white animate-pulse' :
                     'bg-gray-200 text-gray-400'
                   }`}>
                     {isCompleted && (
-                      <svg className="w-4 h-4 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <svg className="w-3.5 h-3.5 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                       </svg>
                     )}
@@ -83,7 +83,7 @@ export function StatusBadge({ step, progress, error, canRetry, sessionId, onRetr
       {/* Current step label */}
       <div className="flex items-center justify-between text-xs">
         <div className="flex items-center gap-2">
-          <span className={`px-2 py-0.5 rounded font-medium ${
+          <span className={`px-2.5 py-0.5 rounded-full font-semibold ${
             step === 'failed' ? 'bg-red-100 text-red-700' :
             step === 'completed' ? 'bg-green-100 text-green-700' :
             step === 'idle' ? 'bg-gray-100 text-gray-700' :
@@ -94,20 +94,20 @@ export function StatusBadge({ step, progress, error, canRetry, sessionId, onRetr
           {progress && <span className="text-gray-600">{progress}</span>}
         </div>
         {isActive && (
-          <span className="text-gray-400 animate-pulse font-mono text-2xs">Active</span>
+          <span className="text-primary-600 animate-pulse font-mono text-[10px] font-bold">● ACTIVE</span>
         )}
       </div>
       
       {error && (
-        <div className="mt-2 p-2 text-sm text-red-600 bg-red-50 rounded border border-red-200 flex items-start gap-2" role="alert">
+        <div className="mt-2.5 p-3 text-xs text-red-700 bg-red-50 rounded-xl border border-red-200 flex items-start gap-2 animate-fade-in" role="alert">
           <svg className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.36 0L3.36 16c-.77 1.333.192 3 1.732 3z" />
           </svg>
-          <span className="text-red-600 flex-1">Error: {error}</span>
+          <span className="text-red-700 font-medium flex-1">Error: {error}</span>
           {canRetry && onRetry && (
             <button
               onClick={onRetry}
-              className="px-3 py-1 text-xs font-medium bg-red-600 text-white rounded hover:bg-red-700 transition-colors focus:ring-2 focus:ring-red-500 focus:ring-offset-2 cursor-pointer"
+              className="px-3 py-1 text-xs font-semibold bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors focus:ring-2 focus:ring-red-500 focus:ring-offset-2 cursor-pointer shadow-xs"
               aria-label="Retry"
             >
               Retry
@@ -116,7 +116,7 @@ export function StatusBadge({ step, progress, error, canRetry, sessionId, onRetr
           {onDismiss && (
             <button
               onClick={onDismiss}
-              className="px-3 py-1 text-xs font-medium bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 cursor-pointer"
+              className="px-3 py-1 text-xs font-semibold bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 cursor-pointer"
               aria-label="Dismiss"
             >
               Dismiss

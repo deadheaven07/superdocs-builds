@@ -2,10 +2,10 @@ import { useState, useEffect, useMemo } from 'react';
 import { ProposedChangeBatch, ProposedChange } from '../types/superdocs';
 
 const OPERATION_STYLES: Record<string, { bg: string; text: string; border: string; label: string }> = {
-  replace: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', label: 'Replace' },
+  replace: { bg: 'bg-primary-50', text: 'text-primary-700', border: 'border-primary-400', label: 'Replace' },
   insert: { bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-200', label: 'Insert' },
   delete: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200', label: 'Delete' },
-  move: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', label: 'Move' },
+  move: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', label: 'Move' },
 };
 
 function formatHtmlSnippet(html: string): string {
@@ -29,8 +29,10 @@ function ChangeItem({ change, isSelected, onToggle, disabled }: ChangeItemProps)
 
   return (
     <div
-      className={`border rounded-lg p-4 transition-all ${
-        isSelected ? `${opStyle.border} bg-white shadow-sm ring-1 ring-primary-500` : 'border-gray-200 bg-gray-50 opacity-75'
+      className={`border rounded-xl p-4 transition-all card-hover ${
+        isSelected
+          ? `${opStyle.border} bg-white shadow-sm ring-1 ring-primary-500`
+          : 'border-gray-200 bg-gray-50 opacity-80'
       }`}
       aria-label={`Change ${change.change_id}: ${opStyle.label}`}
     >
@@ -45,30 +47,30 @@ function ChangeItem({ change, isSelected, onToggle, disabled }: ChangeItemProps)
             className="w-4 h-4 text-primary-600 rounded border-gray-300 focus:ring-primary-500 cursor-pointer"
           />
           <label htmlFor={`change-${change.change_id}`} className="cursor-pointer flex items-center gap-2">
-            <span className={`px-2 py-0.5 text-xs font-medium rounded ${opStyle.bg} ${opStyle.text}`}>
+            <span className={`px-2 py-0.5 text-xs font-semibold rounded-md border ${opStyle.bg} ${opStyle.text} ${opStyle.border}`}>
               {opStyle.label}
             </span>
             <span className="text-xs text-gray-400 font-mono">{change.change_id}</span>
           </label>
         </div>
-        <span className={`text-xs px-2 py-0.5 rounded font-medium ${isSelected ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-600'}`}>
+        <span className={`text-[11px] px-2.5 py-0.5 rounded-full font-semibold ${isSelected ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-600'}`}>
           {isSelected ? 'Included in approval' : 'Excluded'}
         </span>
       </div>
 
       {change.ai_explanation && (
-        <p className="text-sm text-gray-600 mb-3 flex-1">{change.ai_explanation}</p>
+        <p className="text-sm text-gray-700 mb-3 font-normal">{change.ai_explanation}</p>
       )}
 
       {(change.old_html || change.new_html) && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
           {change.old_html && (
-            <div className="bg-red-50 border border-red-200 rounded p-3">
-              <div className="flex items-center gap-2 mb-1">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+              <div className="flex items-center gap-2 mb-1.5">
                 <svg className="w-4 h-4 text-red-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
-                <span className="font-medium text-red-700">Removed</span>
+                <span className="font-semibold text-red-700">Removed</span>
               </div>
               <pre className="whitespace-pre-wrap text-red-800 max-h-40 overflow-auto font-mono text-xs">
                 {formatHtmlSnippet(change.old_html)}{change.old_html.length > 400 ? '...' : ''}
@@ -76,12 +78,12 @@ function ChangeItem({ change, isSelected, onToggle, disabled }: ChangeItemProps)
             </div>
           )}
           {change.new_html && (
-            <div className="bg-green-50 border border-green-200 rounded p-3">
-              <div className="flex items-center gap-2 mb-1">
+            <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+              <div className="flex items-center gap-2 mb-1.5">
                 <svg className="w-4 h-4 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
-                <span className="font-medium text-green-700">Added</span>
+                <span className="font-semibold text-green-700">Added</span>
               </div>
               <pre className="whitespace-pre-wrap text-green-800 max-h-40 overflow-auto font-mono text-xs">
                 {formatHtmlSnippet(change.new_html)}{change.new_html.length > 400 ? '...' : ''}
@@ -148,13 +150,13 @@ export function ReviewTab({
 
   if (!proposedChanges || proposedChanges.changes.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-gray-500">
-        <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+      <div className="flex flex-col items-center justify-center py-16 text-gray-500">
+        <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mb-4 shadow-sm">
           <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
         </div>
-        <p className="text-gray-600 font-medium">No proposed changes</p>
+        <p className="text-gray-800 font-semibold text-base">No proposed changes</p>
         <p className="text-sm text-gray-500 mt-1 max-w-xs text-center">
           {step === 'polling' && 'Waiting for SuperDocs to process...'}
           {step === 'generating' && 'Generating initial document...'}
@@ -170,13 +172,13 @@ export function ReviewTab({
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-gray-50 p-3 rounded-lg border border-gray-200">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white p-4 rounded-xl border border-gray-200 shadow-xs">
         <div>
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-gray-900">
+            <span className="font-semibold text-gray-900 text-sm">
               {allChanges.length} Proposed Change{allChanges.length !== 1 ? 's' : ''}
             </span>
-            <span className="text-xs bg-primary-100 text-primary-800 font-medium px-2 py-0.5 rounded-full">
+            <span className="text-xs bg-primary-100 text-primary-800 font-semibold px-2.5 py-0.5 rounded-full">
               {selectedChanges.length} of {allChanges.length} Selected
             </span>
           </div>
@@ -194,7 +196,7 @@ export function ReviewTab({
               type="button"
               onClick={handleSelectAll}
               disabled={disabled || selectedChanges.length === allChanges.length}
-              className="px-2.5 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
+              className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-gray-50 border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 transition-colors"
             >
               Select All
             </button>
@@ -202,7 +204,7 @@ export function ReviewTab({
               type="button"
               onClick={handleDeselectAll}
               disabled={disabled || selectedChanges.length === 0}
-              className="px-2.5 py-1 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50"
+              className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-gray-50 border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 transition-colors"
             >
               Deselect All
             </button>
@@ -210,19 +212,19 @@ export function ReviewTab({
         )}
 
         {proposedChanges.continue_prompt && (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2.5 text-xs text-yellow-800 w-full sm:w-auto">
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 w-full sm:w-auto">
             <div className="flex items-start gap-2">
-              <svg className="w-4 h-4 text-yellow-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <svg className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <span className="text-yellow-800">{String(proposedChanges.continue_prompt)}</span>
+              <span className="text-amber-900">{String(proposedChanges.continue_prompt)}</span>
             </div>
           </div>
         )}
       </div>
 
       {/* Changes List */}
-      <div className="space-y-3 max-h-[500px] overflow-auto" role="list" aria-label="Proposed changes">
+      <div className="space-y-3 max-h-[500px] overflow-auto pr-1" role="list" aria-label="Proposed changes">
         {allChanges.map((change) => (
           <ChangeItem
             key={change.change_id}
@@ -241,7 +243,7 @@ export function ReviewTab({
             <button
               onClick={() => onApprove(true, selectedChanges)}
               disabled={disabled || selectedChanges.length === 0}
-              className="flex-1 px-4 py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus:ring-2 focus:ring-green-500 focus:ring-offset-2 flex items-center justify-center gap-2"
+              className="flex-1 px-4 py-2.5 bg-green-600 text-white rounded-xl font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all focus:ring-2 focus:ring-green-500 focus:ring-offset-2 flex items-center justify-center gap-2 shadow-xs"
               aria-label={`Approve ${selectedChanges.length} selected changes`}
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -252,7 +254,7 @@ export function ReviewTab({
             <button
               onClick={() => onApprove(false, allChanges)}
               disabled={disabled}
-              className="px-4 py-2.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus:ring-2 focus:ring-red-500 focus:ring-offset-2 flex items-center justify-center gap-2"
+              className="px-4 py-2.5 bg-red-600 text-white rounded-xl font-semibold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all focus:ring-2 focus:ring-red-500 focus:ring-offset-2 flex items-center justify-center gap-2 shadow-xs"
               aria-label="Reject all changes"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -268,7 +270,7 @@ export function ReviewTab({
             <button
               onClick={() => onContinue(true)}
               disabled={disabled}
-              className="flex-1 px-4 py-2.5 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 flex items-center justify-center gap-2"
+              className="flex-1 px-4 py-2.5 bg-primary-600 text-white rounded-xl font-semibold hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 flex items-center justify-center gap-2 shadow-xs"
               aria-label="Continue"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -279,7 +281,7 @@ export function ReviewTab({
             <button
               onClick={() => onContinue(false)}
               disabled={disabled}
-              className="px-4 py-2.5 bg-gray-600 text-white rounded-lg font-medium hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+              className="px-4 py-2.5 bg-gray-600 text-white rounded-xl font-semibold hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
               aria-label="Stop"
             >
               Stop
@@ -288,7 +290,7 @@ export function ReviewTab({
         )}
         
         {step === 'completed' && (
-          <div className="flex-1 text-center text-green-600 font-medium flex items-center justify-center">
+          <div className="flex-1 text-center text-green-600 font-semibold flex items-center justify-center py-2 bg-green-50 rounded-xl border border-green-200">
             <svg className="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
             </svg>
@@ -297,7 +299,7 @@ export function ReviewTab({
         )}
         
         {isProcessing && (
-          <div className="flex-1 text-center text-gray-500 font-medium flex items-center justify-center">
+          <div className="flex-1 text-center text-gray-500 font-medium flex items-center justify-center py-2">
             <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary-600 mr-2" />
             Processing...
           </div>

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import React, { act } from 'react';
+import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { TemplateGallery, injectVariables } from '../src/components/TemplateGallery';
 import { Template, Prompt } from '../src/types/superdocs';

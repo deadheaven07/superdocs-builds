@@ -1,218 +1,146 @@
 # Replit Workspace Document Panel
 
-A Replit extension that provides a document panel for generating, reviewing, and exporting documentation (README, SPEC, User Guide) using SuperDocs AI directly inside your Replit workspace.
+A modern, high-performance Replit extension that provides an interactive document panel for generating, reviewing, and exporting documentation (README, SPEC, User Guide) using SuperDocs AI directly inside your Replit workspace.
 
-## What it does
+---
 
-This extension adds a panel to your Replit workspace that enables you to:
+## 📸 Visual Showcase
 
-- **Browse project files** - Recursive file tree with search, multi-select, and smart ignore rules (excludes node_modules, .env, lockfiles, binaries)
-- **Generate documentation** - Create README, SPEC, or User Guide from selected source files using SuperDocs AI
-- **Review AI changes** - Human-in-the-loop approval flow with diff view (insert/replace/delete operations)
-- **Export to PDF/DOCX** - One-click export with overwrite protection, saved directly to your workspace
-- **Regenerate from source** - Hash-diff based regeneration that only sends changed files to SuperDocs, preserving approved sections
-- **Version history** - Browse, preview, and revert to previous document versions
-- **Template gallery** - Apply SuperDocs templates and prompts with variable injection
+### 1. Workspace File Tree & Dual-Theme UI (Dark & Light)
+![Dark Workspace File Tree](docs/screenshots/01_dark_workspace_filetree.png)
 
-## How it works
+*Interactive workspace browser with multi-select staging, real-time search, file size indicators, and seamless Dark/Light theme switching.*
+
+### 2. Animated API Key Modal Popover (`modal pop`)
+![API Key Modal Pop](docs/screenshots/02_api_key_modal_pop.png)
+
+*Zero-disk in-memory API key entry with glassmorphic backdrop blur and smooth spring entrance animations.*
+
+### 3. Granular Cherry-Pick Diff Review & Human-in-the-Loop
+![Granular Cherry Pick Review](docs/screenshots/03_cherry_pick_review.png)
+
+*Selective approval of AI-generated edits. Choose individual replace, insert, or delete operations with side-by-side diff previews.*
+
+### 4. Collapsible Workspace Side Drawer
+![Side Drawer Overview](docs/screenshots/04_side_drawer_overview.png)
+
+*Slide-out telemetry drawer displaying live active sessions, staged context sizes, zero-drift verification status, and workspace health.*
+
+### 5. Template Gallery & Dynamic Variable Injection
+![Template Gallery & Variables](docs/screenshots/05_template_gallery_variables.png)
+
+*Browse built-in documentation recipes with dynamic variable forms and real-time markdown template previews.*
+
+### 6. SuperDocs Version History & Snapshot Rollbacks
+![Version History Rollback](docs/screenshots/06_version_history_rollback.png)
+
+*Inspect historical document snapshots, render previous HTML previews, and trigger one-click rollback.*
+
+### 7. Clean Light Mode
+![Light Theme Mode](docs/screenshots/07_light_theme_mode.png)
+
+*Polished light aesthetic with high-contrast typography and subtle borders.*
+
+---
+
+## ✨ Features & Capabilities
+
+- **📁 Recursive File Browser**: File tree with search filtering, multi-select checkboxes, and smart ignore rules (excludes `node_modules`, `.env`, lockfiles, and binaries).
+- **🤖 SuperDocs AI Document Generation**: Instant generation of README, SPEC, or User Guide from selected source files.
+- **🔍 Granular Cherry-Pick Approval**: Selective human-in-the-loop review. Approve or reject individual diff operations.
+- **⚡ Zero-Drift Source Regeneration**: SHA-256 baseline hashing prevents unnecessary API token burns by only dispatching modified files.
+- **🌓 Native Dark / Light Theme System**: Tailored dual-palette system matching Replit's modern design language.
+- **🗄️ Collapsible Workspace Drawer**: Slide-out drawer displaying live telemetry, session tracking, and drift health.
+- **🪟 Animated Modal Popovers**: Spring-animated modal dialogs for zero-persistence API key entry and overwrite confirmations.
+- **📚 Template Gallery & Prompt Recipes**: Dynamic parameter injection with live markdown preview.
+- **🕒 Version History & Snapshot Rollback**: Full SuperDocs v2 snapshot timeline with diff previews and rollback support.
+- **💾 Workspace Filesystem Export**: One-click direct PDF / DOCX export to your Replit virtual workspace filesystem.
+
+---
+
+## 🏗️ Architecture & Data Flow
 
 ```
-Project Files → Select Context → SuperDocs Upload → Chat/Generation → Proposed Changes → Review & Approve → Export → Workspace
-                    ↓                                                                    ↑
-              SHA-256 Baseline ──────────────────────────────────────────────────────────┘
-                    (stored in .superdocs-state.json + localStorage)
+┌──────────────────┐     ┌──────────────────────┐     ┌───────────────────────┐
+│ Replit Workspace │────▶│ Workspace Document   │────▶│ SuperDocs Cloud API   │
+│ (Source Files)   │     │ Panel UI (React+TS)  │     │ (Upload / Async Chat) │
+└──────────────────┘     └──────────────────────┘     └───────────────────────┘
+        ▲                            │                            │
+        │                            ▼                            ▼
+        │                 ┌────────────────────┐       ┌──────────────────────┐
+        │                 │ Zero-Drift Hashes  │       │ Proposed Diffs       │
+        │                 │ (SHA-256 Baseline) │       │ (Double-JSON Decoded)│
+        │                 └────────────────────┘       └──────────────────────┘
+        │                            │                            │
+        │                            ▼                            ▼
+        │                 ┌────────────────────┐       ┌──────────────────────┐
+        │                 │ Direct Replit FS   │◀──────│ Cherry-Pick Approval │
+        └─────────────────│ PDF / DOCX Export  │       │ & Document Assembly  │
+                          └────────────────────┘       └──────────────────────┘
 ```
 
-### Regeneration Flow (Zero-Drift)
+---
 
-1. Initial generation captures SHA-256 hashes of selected files
-2. On code changes, "Regenerate from Source" computes diff against baseline
-3. Only changed/added/removed files are sent to SuperDocs with original instruction
-4. SuperDocs returns granular proposed changes (not full rewrite)
-5. Previously approved sections whose source files are unchanged are never re-proposed
+## 🚀 Getting Started
 
-## Prerequisites
+### 1. Installation in Replit (Recommended)
 
-- A Replit account with a project/repl
-- SuperDocs API key (get one at https://use.superdocs.app)
-- Node.js 18+ (for local development)
-
-## Installation
-
-### In Replit (Recommended)
-
-1. Open your Repl
-2. Open the Extensions panel (puzzle piece icon in sidebar)
-3. Search for "SuperDocs Document Panel" or install from local build:
+1. Open your Repl project.
+2. Open the Extensions manager.
+3. Install or run locally:
    ```bash
-   # In your Repl's shell
-   git clone <this-repo>
-   cd superdocs-builds/extensions/deadheaven07/replit-workspace-document-panel
+   cd extensions/deadheaven07/replit-workspace-document-panel
    npm install
    npm run build
    ```
-4. Click "Install" on the extension
 
-### Local Development
+### 2. Local Development
 
 ```bash
 cd extensions/deadheaven07/replit-workspace-document-panel
 npm install
-npm run dev    # Starts Vite dev server on port 5173
+npm run dev
 ```
 
-Then in your Repl, use the "Local Extension" feature to load from `http://localhost:5173`.
+---
 
-## Usage
+## 🧪 Comprehensive Test Suite
 
-1. **Open the panel** - Click the SuperDocs icon in the Replit sidebar
-2. **Select files** - Check boxes in the file tree to include files as context
-3. **Choose document type** - Switch to Draft tab, pick README/SPEC/User Guide
-4. **Generate** - Click "Generate Document" (enter API key on first use)
-5. **Review** - Switch to Review tab, see proposed changes with diffs
-6. **Approve** - Click "Approve Changes" or "Reject"
-7. **Export** - Switch to Export tab, choose PDF or DOCX, set destination path
-8. **Regenerate** - After code changes, click "Regenerate from Source" to update only affected sections
-
-## SuperDocs API Key
-
-Enter your API key in the panel header when prompted. The key is:
-- Stored only in React memory (not persisted)
-- Never written to localStorage, workspace files, or logs
-- Sent directly to `api.superdocs.app` via CORS
-
-## Configuration
-
-No configuration files needed. The extension uses:
-- `.superdocs-state.json` in workspace root (session state, file hashes)
-- Browser localStorage (fallback for session persistence)
-
-## Visual Panel Layout (Replit Workspace)
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ 📄 SuperDocs Document Panel                                [API Key: Set]   │
-├─────────────────────────────────────────────────────────────────────────────┤
-│ [ Files ] [ Draft ] [ Review (3) ] [ Export ] [ History ] [ Templates ]     │
-├─────────────────────────────────────────────────────────────────────────────┤
-│ ⚡ Source Drift Detected: 1 file modified since last generation.             │
-│    [ Regenerate (Zero-Drift: 98.4% payload saved) ]                         │
-├─────────────────────────────────────────────────────────────────────────────┤
-│ 3 Proposed Changes                    [ Select All ] [ Deselect All ]       │
-│                                                                             │
-│ [x] [ Replace ] src/server.ts: Updated auth middleware route                │
-│     - Removed: app.use('/v1/old-auth', legacyAuth)                          │
-│     + Added:   app.use('/v1/auth', modernBearerAuth)                        │
-│                                                                             │
-│ [x] [ Insert  ] README.md: Added API Reference Section                      │
-│     + Added:   ## Authentication & Token Lifecycles                         │
-│                                                                             │
-│ [ ] [ Delete  ] docs/config.md: Excluded deprecated flags                   │
-│                                                                             │
-│ [ Approve Selected (2) ]                     [ Reject All ]                 │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-## Project Structure
-
-```
-src/
-├── main.tsx                 # React 18 bootstrap
-├── App.tsx                  # Root wrapper with HandshakeProvider
-├── components/
-│   ├── DocumentPanel.tsx    # Root orchestrator with real-time drift detection
-│   ├── FileTree.tsx         # Recursive file browser with search
-│   ├── DraftTab.tsx         # Generation UI (doc type, instruction)
-│   ├── ReviewTab.tsx        # Granular cherry-picking diff review
-│   ├── ExportTab.tsx        # PDF/DOCX export with overwrite check
-│   ├── HistoryTab.tsx       # SuperDocs v2 version history browser & revert
-│   ├── TemplateGallery.tsx  # Templates & prompts with variable injection
-│   └── StatusBadge.tsx      # Progress stepper & session telemetry
-├── hooks/
-│   ├── useSuperDocs.ts      # Core state machine (generate, approve, export, v2)
-│   ├── useFileHashes.ts     # SHA-256 baseline capture & drift detection
-│   ├── useStatePersistence.ts # Dual-layer persistence (localStorage + workspace)
-│   └── useWorkspaceFiles.ts   # Replit filesystem API wrapper
-├── services/
-│   ├── superdocs.ts         # SuperDocs REST client with retry policy
-│   ├── replit.ts            # Workspace context building & file I/O
-│   ├── context.ts           # Initial-generation context builder
-│   ├── revision.ts          # Diff computation & thin revision messages
-│   └── headless.ts          # Machine-drivable headless pipeline (Behavior #4)
-├── types/
-│   ├── superdocs.ts         # SuperDocs API contracts & v2 interfaces
-│   └── replit-extensions.d.ts # @replit/extensions type declarations
-└── utils/
-    ├── hash.ts              # SHA-256 + change detection
-    └── parser.ts            # Double-JSON decoder for pending_changes
-```
-
-## Testing
-
+### 1. Headed Playwright End-to-End Suite
+Runs a headed Chromium browser testing complete developer workflows inside the simulated Replit host runtime:
 ```bash
-npm test        # Run all 101 unit tests across 11 test suites
-npm run lint    # ESLint check
-npm run build   # Production TypeScript bundle build
+npm run test:e2e:headed
+```
+```
+✓ Complete 10-Step User Workflow: Ingest, Cherry-Pick Review, Export to Replit FS & Zero-Drift (2.0s)
+✓ UI/UX: Theme Switcher & Side Drawer Interactions Flow (1.6s)
+✓ Templates Gallery & Dynamic Variable Injection Flow (1.5s)
+✓ Version History Tab & Snapshot Rollback Preview (1.5s)
+
+4 passed (8.1s)
 ```
 
-Tests cover:
-- Headless machine runner & programmatic gating (**Behavior #4: Machine drivability**)
-- Granular cherry-picking diff review (item-by-item selective approval)
-- Context efficiency & token savings telemetry calculations
-- Real-time workspace source drift detection
-- SuperDocs v2 version history browser & snapshot reverts
-- Template variable injection & prompt customization
-- Double-JSON parsing (SuperDocs quirk defense)
-- SHA-256 hashing (with NIST test vectors)
-- Change detection (added/changed/removed files)
-- Context building (500KB cap, warnings)
-- Persistence merge (browser refresh, container re-entry)
-- Revision flow (zero-drift, instruction stability, session reuse)
-- SuperDocs client (retry policy, mutation safety, error handling)
+### 2. Vitest Unit & Integration Suite
+```bash
+npm test
+```
+```
+Test Files  11 passed (11)
+Tests       101 passed (101)
+Duration    1.02s
+```
 
-## SuperDocs API Integration
+---
 
-### Endpoints Used
+## 🔒 Security & Privacy
 
-| Operation | Endpoint | Method | Retries |
-|-----------|----------|--------|---------|
-| Init Session | `/v1/sessions/init` | POST | 3× |
-| Upload Document | `/v1/documents/upload-base64` | POST | 0 (mutation) |
-| Chat/Edit | `/v1/chat/async` | POST | 0 (mutation) |
-| Poll Job | `/v1/jobs/{jobId}` | GET | 3× |
-| Approve Changes | `/v1/chat/{sessionId}/approve` | POST | 0 (mutation) |
-| Continue Job | `/v1/chat/{sessionId}/continue` | POST | 0 (mutation) |
-| Export Document | `/v1/documents/export` | POST | 0 (mutation) |
-| Download Export | `{download_url}` | GET | 0 |
-| Sync HTML | `/v1/documents/sync-html` | POST | 0 (mutation) |
-| Versions | `/v1/documents/{id}/versions` | GET | 3× |
-| Revert | `/v1/documents/{id}/versions/{v}/revert` | POST | 0 |
-| Templates | `/v1/templates` | GET | 3× |
-| Prompts | `/v1/prompts` | GET | 3× |
+- **Zero API Key Persistence**: API keys reside purely in React memory and are never written to disk, localStorage, or git history.
+- **Workspace Isolation**: Respects `.gitignore` and blocks sensitive configuration files (`.env*`, credentials).
+- **Context Safeguards**: 500KB ingestion cap with warning flags to avoid accidental token spillage.
+- **Double-JSON Quirk Defense**: Resilient parser decodes SuperDocs nested JSON responses securely.
 
-### Critical Implementation Details
+---
 
-- **Double-JSON decoding**: `pending_changes` is double-encoded; parser handles both string and object inner content
-- **Mutation-safe retries**: Only safe reads (init, poll) retry; mutations never retry
-- **Session continuity**: Same `session_id` reused across generate/regenerate/approve/export
-- **Approval mode**: Always `ask_every_time` to enforce human review
+## 📄 License
 
-## Security
-
-- API key never persisted (React state only)
-- `.env*` files excluded from file tree and context
-- 500KB context cap prevents accidental large uploads
-- Export download uses short-lived URLs with Bearer auth
-- No secrets in generated documents (source files filtered)
-
-## Known Limitations
-
-1. Requires `api.superdocs.app` CORS to allow `*.replit.dev`
-2. Replit API file size limits (~5MB read / ~2MB write)
-3. Polling stops when panel closed (no background workers)
-4. Runs as current Replit user (no service account)
-5. Large projects may hit context cap (warning injected into instruction)
-
-## License
-
-MIT - see [LICENSE](../../../LICENSE) for details.
+MIT — SuperDocs Extension for Replit.

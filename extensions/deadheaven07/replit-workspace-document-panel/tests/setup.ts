@@ -1,4 +1,5 @@
-import { expect, vi } from 'vitest';
+import { vi } from 'vitest';
+import type { ReactNode } from 'react';
 
 // Mock @replit/extensions for testing
 vi.mock('@replit/extensions', () => ({
@@ -55,5 +56,5 @@ vi.mock('@replit/extensions-react', () => ({
   useIsExtension: () => true,
   useSetThemeCssVariables: () => null,
   useWatchTextFile: () => ({ status: 'watching' as const, content: '', watchError: null, writeChange: null }),
-  HandshakeProvider: ({ children }: { children: React.ReactNode }) => children,
+  HandshakeProvider: ({ children }: { children: ReactNode }) => children,
 }));

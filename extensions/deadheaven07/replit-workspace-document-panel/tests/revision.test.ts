@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { buildProjectContext } from '../src/services/replit';
 import { computeSourceDiff, buildRevisionMessage, planRegeneration, SourceDiff } from '../src/services/revision';
 import { computeFileHashesAsync, detectChangedFiles } from '../src/utils/hash';
-import { createSuperDocsClient, SuperDocsClient } from '../src/services/superdocs';
+import { createSuperDocsClient } from '../src/services/superdocs';
 
 const mockFiles = new Map([
   ['src/main.ts', 'export function main() { console.log("hello"); }'],
@@ -259,6 +259,7 @@ describe('Revision flow regression tests', () => {
         session_id: uploadResult.session_id,
       });
       
+      expect(jobId1).toBe('job-1');
       expect(uploadResult.session_id).toBe('session-123');
       
       // Revision - should reuse same session

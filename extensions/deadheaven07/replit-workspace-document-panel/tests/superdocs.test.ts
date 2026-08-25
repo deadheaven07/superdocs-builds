@@ -196,7 +196,7 @@ describe('SuperDocsClient', () => {
         session_id: 'session-123',
         job_id: 'job-789',
         approved: true,
-        changes: [{ change_id: 'ch-1', operation: 'replace' }],
+        changes: [{ change_id: 'ch-1', operation: 'replace', ai_explanation: 'Test explanation' }],
       });
 
       expect(status.job_id).toBe('job-789');

@@ -62,15 +62,15 @@ export function ExportTab({ onExport, checkFileExists, disabled, step, defaultDe
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div>
-        <h3 className="text-sm font-medium text-gray-900 mb-1">Export Document</h3>
-        <p className="text-xs text-gray-500">Export the finished document and save it to your workspace.</p>
+      <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-xs">
+        <h3 className="text-sm font-bold text-gray-900 mb-1">Export Document</h3>
+        <p className="text-xs text-gray-500">Export the finished document and save it to your workspace filesystem.</p>
       </div>
 
       {/* Format Selection */}
       <div className="mb-4">
-        <label className="block text-sm font-medium text-gray-700 mb-2">Export Format</label>
-        <div className="grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="Export format">
+        <label className="block text-xs font-semibold text-gray-700 mb-2">Export Format</label>
+        <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-label="Export format">
           {['pdf', 'docx'].map((f) => (
             <button
               key={f}
@@ -78,19 +78,16 @@ export function ExportTab({ onExport, checkFileExists, disabled, step, defaultDe
               role="radio"
               aria-checked={format === f}
               onClick={() => setFormat(f as 'pdf' | 'docx')}
-              className={`relative flex-1 rounded-lg border-2 text-sm font-medium text-center transition-all focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 ${
+              className={`relative flex-1 rounded-xl border-2 p-4 text-center transition-all card-hover cursor-pointer ${
                 format === f
-                  ? 'border-primary-500 bg-primary-50 text-primary-700 shadow-sm'
-                  : 'border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50'
+                  ? 'border-primary-500 bg-primary-50 text-primary-700 shadow-sm ring-1 ring-primary-500'
+                  : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 shadow-xs'
               }`}
             >
-              <div className="font-medium">{f.toUpperCase()}</div>
-              <div className="text-xs text-gray-500 mt-0.5">
+              <div className="font-bold text-sm">{f.toUpperCase()}</div>
+              <div className="text-xs text-gray-500 mt-1">
                 {f === 'pdf' ? 'Portable Document Format' : 'Microsoft Word Document'}
               </div>
-              {format === f && (
-                <div className="absolute -bottom-0.5 left-1/2 transform -translate-x-1/2 w-1.5 h-1.5 bg-primary-500 rounded-full" />
-              )}
             </button>
           ))}
         </div>
@@ -98,49 +95,49 @@ export function ExportTab({ onExport, checkFileExists, disabled, step, defaultDe
 
       {/* Destination */}
       <div className="mb-4">
-        <label className="block text-sm font-medium text-gray-700 mb-2">Destination Path</label>
+        <label className="block text-xs font-semibold text-gray-700 mb-2">Destination Path</label>
         <input
           type="text"
           value={destination}
           onChange={(e) => setDestination(e.target.value)}
           placeholder="e.g., docs/README.pdf"
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-sm font-mono transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-xs font-mono transition-all disabled:opacity-50 disabled:cursor-not-allowed bg-white"
           disabled={disabled || exporting}
         />
-        <p className="text-xs text-gray-500 mt-1">
-          Path relative to project root. Parent directories will be created automatically.
+        <p className="text-[11px] text-gray-500 mt-1.5">
+          Path relative to project root. Parent directories will be created automatically in your Repl.
         </p>
       </div>
 
       {/* Error/Success */}
       {error && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 flex items-start gap-2" role="alert">
+        <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2 animate-fade-in" role="alert">
           <svg className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.36 0L3.36 16c-.77 1.333.192 3 1.732 3z" />
           </svg>
-          <span className="text-red-700">Error: {error}</span>
+          <span className="text-red-700 font-medium">Error: {error}</span>
         </div>
       )}
 
       {success && (
-        <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700 flex items-start gap-2" role="status">
+        <div className="p-3.5 bg-green-50 border border-green-200 rounded-xl text-xs text-green-700 flex items-start gap-2 animate-fade-in" role="status">
           <svg className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
           </svg>
-          <span className="text-green-700">{success}</span>
+          <span className="text-green-700 font-semibold">{success}</span>
         </div>
       )}
 
       {/* Overwrite Confirmation */}
       {showConfirm && pendingExport && (
-        <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+        <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl animate-fade-in" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
           <div className="flex items-start gap-3">
-            <svg className="w-6 h-6 text-yellow-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <svg className="w-6 h-6 text-amber-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.36 0L3.36 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
             <div>
-              <h4 id="confirm-title" className="font-medium text-yellow-800">File already exists</h4>
-              <p className="text-sm text-yellow-700 mt-1">
+              <h4 id="confirm-title" className="font-bold text-amber-900 text-sm">File already exists</h4>
+              <p className="text-xs text-amber-800 mt-1">
                 <strong className="font-mono">{pendingExport.destination}</strong> already exists. Overwrite it?
               </p>
             </div>
@@ -149,13 +146,13 @@ export function ExportTab({ onExport, checkFileExists, disabled, step, defaultDe
             <button
               onClick={confirmExport}
               disabled={exporting}
-              className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+              className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg text-xs font-semibold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all focus:ring-2 focus:ring-red-500 focus:ring-offset-2 shadow-xs"
             >
               Overwrite
             </button>
             <button
               onClick={cancelExport}
-              className="px-4 py-2 bg-gray-600 text-white rounded-lg text-sm font-medium hover:bg-gray-700 focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+              className="px-4 py-2 bg-gray-600 text-white rounded-lg text-xs font-semibold hover:bg-gray-700 focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 transition-colors"
             >
               Cancel
             </button>
@@ -167,7 +164,7 @@ export function ExportTab({ onExport, checkFileExists, disabled, step, defaultDe
       <button
         onClick={checkAndExport}
         disabled={disabled || exporting || step !== 'completed' || showConfirm}
-        className="w-full px-4 py-2.5 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+        className="w-full px-4 py-3 bg-primary-600 text-white rounded-xl font-semibold hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 shadow-sm flex items-center justify-center gap-2"
       >
         {exporting ? (
           <>
@@ -185,7 +182,7 @@ export function ExportTab({ onExport, checkFileExists, disabled, step, defaultDe
       </button>
 
       {step !== 'completed' && !showConfirm && (
-        <p className="text-center text-sm text-gray-500">
+        <p className="text-center text-xs text-gray-500">
           Complete the document generation and approval process first.
         </p>
       )}

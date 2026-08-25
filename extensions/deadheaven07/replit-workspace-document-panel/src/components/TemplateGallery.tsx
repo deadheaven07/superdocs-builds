@@ -85,11 +85,16 @@ export function TemplateGallery({
       {/* Templates section */}
       <section>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-gray-900">Template Gallery</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-bold text-gray-900">Template Gallery</h2>
+            <span className="text-[10px] bg-primary-100 text-primary-700 px-2 py-0.5 rounded-full font-semibold">
+              PRE-BUILT
+            </span>
+          </div>
           <button
             onClick={onLoadTemplates}
             disabled={templatesLoading}
-            className="px-3 py-1.5 text-xs font-medium bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50 transition-colors focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+            className="px-3 py-1.5 text-xs font-semibold bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 transition-colors focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 shadow-xs"
           >
             {templatesLoading ? 'Loading...' : 'Refresh'}
           </button>
@@ -101,19 +106,25 @@ export function TemplateGallery({
             <span>Loading templates...</span>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
             {(templates || []).map((template) => (
               <button
                 key={template.id}
                 onClick={() => selectTemplate(template)}
                 disabled={disabled}
-                className={`text-left border rounded-lg p-4 transition-colors disabled:opacity-50 ${selected?.kind === 'template' && selected.id === template.id ? 'border-primary-400 bg-primary-50' : 'border-gray-200 bg-white hover:border-gray-300'}`}
+                className={`text-left border rounded-xl p-4 transition-all card-hover disabled:opacity-50 cursor-pointer ${
+                  selected?.kind === 'template' && selected.id === template.id
+                    ? 'border-primary-500 bg-primary-50 ring-2 ring-primary-500 shadow-sm'
+                    : 'border-gray-200 bg-white hover:border-gray-300 shadow-xs'
+                }`}
               >
-                <p className="font-medium text-gray-900">{template.name}</p>
-                <p className="text-xs text-gray-500 mt-1 line-clamp-2">{template.description}</p>
-                <span className="inline-block mt-2 px-2 py-0.5 text-[10px] font-medium bg-gray-100 text-gray-600 rounded uppercase">
-                  {template.document_type}
-                </span>
+                <div className="flex items-start justify-between gap-2">
+                  <p className="font-semibold text-gray-900 text-sm">{template.name}</p>
+                  <span className="px-2 py-0.5 text-[10px] font-semibold bg-gray-100 text-gray-600 rounded uppercase tracking-wider border border-gray-200">
+                    {template.document_type}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 mt-1.5 line-clamp-2">{template.description}</p>
               </button>
             ))}
             {templates && templates.length === 0 && (
@@ -126,11 +137,16 @@ export function TemplateGallery({
       {/* Prompts section */}
       <section>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-gray-900">Prompt Library</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-bold text-gray-900">Prompt Library</h2>
+            <span className="text-[10px] bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full font-semibold">
+              RECIPES
+            </span>
+          </div>
           <button
             onClick={onLoadPrompts}
             disabled={templatesLoading}
-            className="px-3 py-1.5 text-xs font-medium bg-gray-100 text-gray-700 rounded hover:bg-gray-200 disabled:opacity-50 transition-colors focus:ring-2 focus:ring-gray-500 focus:ring-offset-2"
+            className="px-3 py-1.5 text-xs font-semibold bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 transition-colors focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 shadow-xs"
           >
             {templatesLoading ? 'Loading...' : 'Refresh'}
           </button>
@@ -142,16 +158,20 @@ export function TemplateGallery({
             <span>Loading prompts...</span>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
             {(prompts || []).map((prompt) => (
               <button
                 key={prompt.id}
                 onClick={() => selectPrompt(prompt)}
                 disabled={disabled}
-                className={`text-left border rounded-lg p-4 transition-colors disabled:opacity-50 ${selected?.kind === 'prompt' && selected.id === prompt.id ? 'border-primary-400 bg-primary-50' : 'border-gray-200 bg-white hover:border-gray-300'}`}
+                className={`text-left border rounded-xl p-4 transition-all card-hover disabled:opacity-50 cursor-pointer ${
+                  selected?.kind === 'prompt' && selected.id === prompt.id
+                    ? 'border-primary-500 bg-primary-50 ring-2 ring-primary-500 shadow-sm'
+                    : 'border-gray-200 bg-white hover:border-gray-300 shadow-xs'
+                }`}
               >
-                <p className="font-medium text-gray-900">{prompt.name}</p>
-                <p className="text-xs text-gray-500 mt-1 line-clamp-2">{prompt.description}</p>
+                <p className="font-semibold text-gray-900 text-sm">{prompt.name}</p>
+                <p className="text-xs text-gray-500 mt-1.5 line-clamp-2">{prompt.description}</p>
               </button>
             ))}
             {prompts && prompts.length === 0 && (
@@ -163,8 +183,8 @@ export function TemplateGallery({
 
       {/* Variable injection form */}
       {selected && (activeTemplate || activePrompt) && (
-        <section className="border border-gray-200 rounded-lg p-4 bg-white">
-          <h3 className="text-sm font-semibold text-gray-900 mb-1">
+        <section className="border border-gray-200 rounded-xl p-5 bg-white shadow-sm animate-fade-in">
+          <h3 className="text-sm font-bold text-gray-900 mb-1">
             {activeTemplate ? activeTemplate.name : activePrompt?.name}
           </h3>
           <p className="text-xs text-gray-500 mb-4">
@@ -172,10 +192,10 @@ export function TemplateGallery({
           </p>
 
           {activeVariables.length > 0 ? (
-            <div className="space-y-3 mb-4">
+            <div className="space-y-3.5 mb-5">
               {activeVariables.map((variable) => (
                 <div key={variable.name}>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">
                     {variable.name}
                     {variable.required && <span className="text-red-500"> *</span>}
                   </label>
@@ -184,7 +204,7 @@ export function TemplateGallery({
                     value={variableValues[variable.name] ?? ''}
                     onChange={(e) => setVariableValues(prev => ({ ...prev, [variable.name]: e.target.value }))}
                     placeholder={variable.description}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-sm"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 text-xs font-mono"
                   />
                 </div>
               ))}
@@ -193,8 +213,8 @@ export function TemplateGallery({
             <p className="text-xs text-gray-500 mb-4">This {activeTemplate ? 'template' : 'prompt'} has no variables.</p>
           )}
 
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 mb-4">
-            <p className="text-xs font-medium text-gray-500 mb-1">Preview</p>
+          <div className="bg-gray-50 border border-gray-200 rounded-xl p-3.5 mb-5">
+            <p className="text-xs font-semibold text-gray-600 mb-1.5">Preview</p>
             <pre className="whitespace-pre-wrap text-xs font-mono text-gray-800 max-h-40 overflow-auto">
               {injectVariables(activeTemplate?.default_content ?? activePrompt?.template ?? '', variableValues)}
             </pre>
@@ -203,7 +223,7 @@ export function TemplateGallery({
           <button
             onClick={handleApply}
             disabled={disabled}
-            className="w-full px-4 py-2.5 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 disabled:opacity-50 transition-colors focus:ring-2 focus:ring-primary-500 focus:ring-offset-2"
+            className="w-full px-4 py-2.5 bg-primary-600 text-white rounded-xl font-semibold hover:bg-primary-700 disabled:opacity-50 transition-all focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 shadow-xs"
           >
             Apply {activeTemplate ? 'Template' : 'Prompt'}
           </button>
