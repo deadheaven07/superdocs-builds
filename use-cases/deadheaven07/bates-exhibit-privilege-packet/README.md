@@ -20,6 +20,12 @@
 | Headed E2E Playwright Suite | **2/2 passing** | `npx playwright test` | 12-step legal litigation workflow + persistent theme toggle |
 | Live Cloud E2E Integration | **112/112 checks** | `python live_e2e_phase13.py` | Standalone verification script against running server + real SuperDocs API |
 
+## 🎥 Task 2.1 Workflow
+
+![Task 2.1 Workflow](./docs/task-2-1-demo.gif)
+
+Upload → OCR → Bates Stamp → AI Review → Human Approval → Final Packet → Verification
+
 ## User Interface & Application Screenshots
 
 ### 🌙 Dark Mode Dashboard
