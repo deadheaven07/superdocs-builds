@@ -38,6 +38,9 @@ storage/
 *.jpeg
 !docs/**
 !docs/screenshots/*
+!backend/corpus/*
+!backend/app/tests/evaluation/corpus/*
+!frontend/e2e/fixtures/*
 
 # IDE
 .idea/
