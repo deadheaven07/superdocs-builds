@@ -6,19 +6,19 @@
 
 **Who it's for:** Litigation support teams and legal analysts who manually assemble exhibit packets — a process that currently takes hours of copy-paste-redact-stamp work and is prone to human error (missing Bates numbers, leaked PII, broken privilege logs).
 
-**Measured results:**
+**Measured results (Unified Suite: 314 Automated Tests):**
 
-| Metric | Result | Command to Verify |
-|---|---|---|
-| Offline Evidence & Logic Tests | **86/86 passing** (zero dependencies, no DB, no API key, `DEBUG=false`) | `make test-offline` |
-| Offline Evidence & Benchmark Harness | **39/39 passing** (precision/recall, residue safety, journal continuity) | `make evidence-offline` |
-| DB-Backed Evidence & Kill Matrix | **71/71 passing** (kill matrix, crash recovery, OCR search, requires PostgreSQL) | `make evidence-db` |
-| Full Backend DB Suite | **307/307 passing** (PostgreSQL-backed at `TEST_DATABASE_URL`, `DEBUG=false`) | `make test-db` |
-| Frontend Component Tests | **7/7 passing** (Vitest) | `make test-frontend` |
-| Headed E2E Playwright Suite | **2/2 passing** (Complete 12-Step Legal Workflow + Theme Switcher) | `npx playwright test` (in `frontend/`) |
-| TypeScript Compiler | **clean** (zero errors) | `npx tsc --noEmit` (in `frontend/`) |
-| Production Build | **succeeds** | `npm run build` (in `frontend/`) |
-| Live E2E Integration | **112/112 checks** against running server + real SuperDocs API | `python live_e2e_phase13.py` |
+| Test Suite / Target | Result | Command to Verify | Notes |
+|---|---|---|---|
+| **Canonical All-in-One Suite** | **314/314 passing** | `make test-all` | Runs full offline suite + 307-test backend DB suite + frontend tests |
+| Full Backend DB Suite | **307/307 passing** | `make test-db` | PostgreSQL-backed at `TEST_DATABASE_URL`, passes with `SUPERDOCS_API_KEY` unset |
+| ↳ Offline Unit & Safety Tier | **86/86 passing** | `make test-offline` | Zero dependencies, no DB, no API key, `DEBUG=false` |
+| ↳ Offline Benchmark & Residue | **39/39 passing** | `make evidence-offline` | Ground truth precision/recall, 12 redaction residue proofs |
+| ↳ DB-Backed Kill Matrix Tier | **71/71 passing** | `make evidence-db` | Adversarial crash recovery (K1–K9), zero double-stamping, OCR search |
+| Frontend Component & Type Suite | **7/7 passing** | `make test-frontend` | Vitest component tests + strict TypeScript compile (`tsc --noEmit` clean) |
+| Production Frontend Build | **succeeds** | `npm run build` (in `frontend/`) | Vite production bundle compiles cleanly |
+| Headed E2E Playwright Suite | **2/2 passing** | `npx playwright test` | 12-step legal litigation workflow + persistent theme toggle |
+| Live Cloud E2E Integration | **112/112 checks** | `python live_e2e_phase13.py` | Standalone verification script against running server + real SuperDocs API |
 
 ## User Interface & Application Screenshots
 
