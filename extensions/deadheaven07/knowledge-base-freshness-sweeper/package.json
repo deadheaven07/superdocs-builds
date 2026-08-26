@@ -1,0 +1,50 @@
+{
+  "name": "@superdocs/knowledge-base-freshness-sweeper",
+  "version": "1.0.0",
+  "description": "Multi-stage impact discovery, surgical editing, and portfolio freshness sweeper for knowledge-base maintenance.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "sweep": "tsx src/cli/index.ts sweep",
+    "evaluate": "tsx src/cli/index.ts evaluate",
+    "server": "tsx src/api/server.ts"
+  },
+  "keywords": [
+    "superdocs",
+    "knowledge-base",
+    "freshness-sweeper",
+    "surgical-editing",
+    "documentation-maintenance",
+    "change-impact-analysis"
+  ],
+  "author": "Harsh Raghuwanshi <deadheaven07>",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "diff": "^7.0.0",
+    "express": "^4.21.2",
+    "lucide-react": "^1.16.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/diff": "^7.0.2",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.1",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3",
+    "vitest": "^2.1.8"
+  }
+}
