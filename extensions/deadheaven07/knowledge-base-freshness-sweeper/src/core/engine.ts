@@ -17,6 +17,7 @@ import { analyzeScreenshots } from './screenshot-analyzer.js';
 import { calculatePortfolioMetrics } from './freshness-score.js';
 import { enforceBudgetGuard, DEFAULT_BUDGET_CONFIG } from './budget-guard.js';
 import { ArticleSearchIndex } from './search-index.js';
+import { SuperDocsClient } from './superdocs-client.js';
 
 export class KnowledgeBaseSweeper {
   private articles: Map<string, Article> = new Map();
@@ -25,6 +26,7 @@ export class KnowledgeBaseSweeper {
   private proposals: Map<string, EditProposal> = new Map(); // key: proposal_id
   private screenshotAssessments: Map<string, ScreenshotAssessment[]> = new Map(); // key: article_id
   private searchIndex: ArticleSearchIndex = new ArticleSearchIndex();
+  private superdocsClient: SuperDocsClient;
   private modelCalls: number = 0;
   private actualCost: number = 0.0;
   private budgetConfig: BudgetConfig = DEFAULT_BUDGET_CONFIG;
@@ -32,11 +34,17 @@ export class KnowledgeBaseSweeper {
   constructor(
     articles: Article[] = [],
     changes: ChangeEvent[] = [],
-    budgetConfig: Partial<BudgetConfig> = {}
+    budgetConfig: Partial<BudgetConfig> = {},
+    superdocsApiKey?: string
   ) {
     this.budgetConfig = { ...DEFAULT_BUDGET_CONFIG, ...budgetConfig };
+    this.superdocsClient = new SuperDocsClient({ apiKey: superdocsApiKey });
     this.addArticles(articles);
     this.addChanges(changes);
+  }
+
+  public getSuperDocsClient(): SuperDocsClient {
+    return this.superdocsClient;
   }
 
   public addArticle(article: Article): void {
@@ -239,6 +247,11 @@ export class KnowledgeBaseSweeper {
       assessment.status = 'NOT_AFFECTED';
       assessment.reason = `Proposal ${proposalId} approved. Content updated to current state.`;
       assessment.evidence = [];
+    }
+
+    // Sync to SuperDocs API if configured
+    if (this.superdocsClient.isConfigured()) {
+      this.superdocsClient.applySurgicalPatch(article.id, proposal.proposed_content).catch(() => {});
     }
 
     return { success: true, article, proposal };
