@@ -35,6 +35,12 @@ graph TD
 
 ---
 
+## 🎬 Interactive Workflow Demo
+
+![Knowledge-base Freshness Sweeper Workflow Demo](docs/demo.gif)
+
+---
+
 ## ⚡ 60-Second Reviewer Demo
 
 1. **Run the Deterministic Seeded Benchmark** (32 articles, 5 product changes):

@@ -16,6 +16,7 @@
     "test:e2e:headed": "playwright test --headed",
     "sweep": "tsx src/cli/index.ts sweep",
     "evaluate": "tsx src/cli/index.ts evaluate",
+    "generate:gif": "tsx scripts/generate-demo-gif.ts",
     "server": "tsx src/api/server.ts"
   },
   "keywords": [
@@ -42,9 +43,12 @@
     "@types/diff": "^7.0.2",
     "@types/express": "^5.0.0",
     "@types/node": "^22.10.1",
+    "@types/pngjs": "^6.0.5",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
+    "gif-encoder-2": "^1.0.5",
+    "pngjs": "^7.0.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vite": "^6.0.3",
