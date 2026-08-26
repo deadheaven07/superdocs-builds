@@ -1,6 +1,6 @@
 # Knowledge-base Freshness Sweeper
 
-> **SuperDocs Extension (Task 2.3)**: Deterministic change-impact discovery, surgical sentence-level markdown patching, screenshot staleness detection, and portfolio freshness governance.
+> **SuperDocs Extension (Task 2.3)**: Deterministic change-impact discovery, surgical sentence-level markdown patching, screenshot staleness detection, SuperDocs API integration, and portfolio freshness governance.
 
 ```mermaid
 graph TD
@@ -19,12 +19,13 @@ graph TD
     
     SE --> P[Edit Proposals<br/>status: PENDING]
     
-    subgraph ReviewAndFreshness [Human-in-the-Loop & Metrics]
+    subgraph ReviewAndFreshness [Human-in-the-Loop & Governance]
         P --> HR[Human Review Interface<br/>Unified/Side-by-Side Diff, Evidence Inspector]
         HR -->|Approve| AP[Apply Surgical Patch<br/>Bump Version, Update Article]
         HR -->|Reject| RJ[Reject Proposal<br/>Retain Original Content]
         AP --> FS[Portfolio Freshness & Coverage Score<br/>Defensible Mathematical Formula]
         RJ --> FS
+        AP --> SD[SuperDocs API Integration<br/>POST /v1/documents/:id/edit]
     end
     
     B --> BG[Budget Guard<br/>Pre-flight Cost Estimator & Cap Enforcement]
@@ -106,8 +107,41 @@ Measured across the 32-article seeded evaluation corpus with known ground truth:
 | **Assessment Coverage** | **81.3%** | $100 \times \frac{\text{Healthy} + \text{Affected}}{\text{Total}} = 100 \times \frac{26}{32}$ | Honest disclosure of unassessed fraction |
 | **Stale Screenshots Flagged** | **3** | Visible OCR mismatch detection | `ss-003-1`, `ss-005-1`, `ss-012-1` |
 | **Actual Spend** | **$0.00** | Budget Cap: $1.00 | Free deterministic execution, zero network calls |
-| **Automated Tests** | **25/25 passing** | `npm test` (18 test suites) | Zero-dependency, sub-second execution |
+| **Automated Tests** | **27/27 passing** | `npm test` (19 test suites) | Zero-dependency, sub-second execution |
 | **Playwright Headed E2E** | **1/1 passing** | `npm run test:e2e:headed` | 10-step full workflow verification |
+
+---
+
+## 🔌 SuperDocs API & Platform Integration
+
+The extension integrates directly with the [SuperDocs Platform](https://superdocs.app) via [`src/core/superdocs-client.ts`](src/core/superdocs-client.ts):
+
+```mermaid
+sequenceDiagram
+    participant User as Knowledge Manager
+    participant Sweeper as Sweeper Engine
+    participant AST as Surgical AST Editor
+    participant SuperDocs as SuperDocs Public API
+
+    User->>Sweeper: Run Freshness Sweep
+    Sweeper->>AST: Generate Sentence-Level Patch
+    AST-->>Sweeper: Proposal (PENDING)
+    User->>Sweeper: Approve Proposal
+    Sweeper->>Sweeper: Bump Local Version & Freshness
+    alt SUPERDOCS_API_KEY configured
+        Sweeper->>SuperDocs: POST /v1/documents/:id/edit (mode="surgical")
+        SuperDocs-->>Sweeper: HTTP 200 OK (Document Updated)
+    else Offline / Test Mode
+        Sweeper->>Sweeper: Fallback to Local Patch ($0.00 Cost)
+    end
+```
+
+### Environment Configuration
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `SUPERDOCS_API_KEY` | Optional | `your-key-here` | SuperDocs API key for live document synchronization. When unset or placeholder, system operates in zero-cost offline fallback mode. |
+| `SUPERDOCS_BASE_URL` | Optional | `https://api.superdocs.app` | Base URL for SuperDocs REST API. |
+| `MAX_EVALUATION_COST_USD` | Optional | `1.00` | Pre-flight budget cap enforcing spend limits. |
 
 ---
 
@@ -129,6 +163,7 @@ extensions/deadheaven07/knowledge-base-freshness-sweeper/
 │   ├── core/
 │   │   ├── types.ts                  # Domain models: Article, ChangeEvent, Assessment, EditProposal, etc.
 │   │   ├── engine.ts                 # KnowledgeBaseSweeper orchestrator & multi-doc sweep engine
+│   │   ├── superdocs-client.ts       # SuperDocs REST API & MCP client adapter
 │   │   ├── matcher.ts                # Stage 1 (Deterministic) & Stage 2 (Semantic / Indirect) matchers
 │   │   ├── evidence.ts               # Stage 3 (Sentence-level exact quote & section extractor)
 │   │   ├── classifier.ts             # Stage 4 (Confidence rating & Honest COULD_NOT_ASSESS classifier)
@@ -153,7 +188,7 @@ extensions/deadheaven07/knowledge-base-freshness-sweeper/
 ├── e2e/
 │   └── freshness_sweeper.spec.ts     # Headed Playwright E2E test suite
 └── tests/
-    ├── unit/                         # 17 comprehensive unit test suites
+    ├── unit/                         # 18 comprehensive unit test suites
     └── evaluation/                   # Full-corpus benchmark test suite
 ```
 
@@ -261,7 +296,7 @@ npm run sweep -- --sample 5
 # Run full corpus sweep
 npm run sweep
 
-# Run all 18 test suites (25 unit tests)
+# Run all 19 test suites (27 unit tests)
 npm test
 
 # Run headed Playwright E2E suite
