@@ -4,6 +4,7 @@ dist/
 playwright-results.json
 test-results/
 playwright-report/
+*.tsbuildinfo
 
 # Storage / artifacts
 storage/
