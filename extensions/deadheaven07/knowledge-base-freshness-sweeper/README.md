@@ -45,17 +45,46 @@ graph TD
    ```bash
    npm run sweep -- --sample 5
    ```
-3. **Launch Web UI & REST API Server**:
+3. **Run Headed Playwright E2E User Journey**:
+   ```bash
+   npm run test:e2e:headed
+   ```
+4. **Launch Web UI & REST API Server**:
    ```bash
    npm run dev
    # Open http://localhost:5174 in your browser
    ```
-4. **Inspect in UI**:
-   - **Sweep Dashboard**: Click "Run Full Sweep" to scan the 32-article corpus.
-   - **Surgical Review Queue**: Review proposed sentence-level diffs with verified evidence quotes and structural preservation metrics ($\ge 98.9\%$).
-   - **Approve Proposal**: Click "Approve & Patch" on article `art-001`. Observe the article version bump, surgical patch applied, and portfolio freshness score dynamically increase.
-   - **Screenshot Staleness**: Inspect 3 flagged outdated screenshots with OCR evidence.
-   - **Could Not Assess Tab**: Inspect 6 honest uncertainty disclosures.
+
+---
+
+## 📸 User Interface & Verification Gallery
+
+### 🌙 Dark Mode Dashboard & Real-Time Freshness Score
+![Dark Mode Dashboard](docs/screenshots/01_dashboard_dark.png)
+
+### ☀️ Light Mode Dashboard
+![Light Mode Dashboard](docs/screenshots/02_dashboard_light.png)
+
+### ✂️ Surgical Edit Proposal & Sentence Diff
+![Surgical Review Queue](docs/screenshots/03_surgical_review_queue.png)
+
+### ✅ Proposal Approval Flow (Dynamic Score Recalculation)
+![Proposal Approved](docs/screenshots/04_proposal_approved.png)
+
+### 🔍 Multi-Document Search & Inverted Index Filter
+![KB Search Filter](docs/screenshots/05_kb_search_filter.png)
+
+### 🖼️ Screenshot Staleness Detection (OCR Label Mismatch)
+![Screenshot Staleness](docs/screenshots/06_screenshot_staleness.png)
+
+### 📋 Honest Could-Not-Assess Disclosures
+![Could Not Assess Disclosures](docs/screenshots/07_could_not_assess_disclosures.png)
+
+### 📊 Seeded Benchmark Confusion Matrix & Metrics
+![Benchmark Confusion Matrix](docs/screenshots/08_benchmark_confusion_matrix.png)
+
+### 🛡️ Budget Guard & Pre-Flight Cost Ledger
+![Budget Guard](docs/screenshots/09_budget_guard.png)
 
 ---
 
@@ -78,6 +107,7 @@ Measured across the 32-article seeded evaluation corpus with known ground truth:
 | **Stale Screenshots Flagged** | **3** | Visible OCR mismatch detection | `ss-003-1`, `ss-005-1`, `ss-012-1` |
 | **Actual Spend** | **$0.00** | Budget Cap: $1.00 | Free deterministic execution, zero network calls |
 | **Automated Tests** | **25/25 passing** | `npm test` (18 test suites) | Zero-dependency, sub-second execution |
+| **Playwright Headed E2E** | **1/1 passing** | `npm run test:e2e:headed` | 10-step full workflow verification |
 
 ---
 
@@ -120,6 +150,8 @@ extensions/deadheaven07/knowledge-base-freshness-sweeper/
 │   ├── articles.json                 # 32 seeded help articles across 10 categories
 │   ├── changes.json                  # 5 realistic product change events
 │   └── ground-truth.json             # Deterministic evaluation mappings & rationale
+├── e2e/
+│   └── freshness_sweeper.spec.ts     # Headed Playwright E2E test suite
 └── tests/
     ├── unit/                         # 17 comprehensive unit test suites
     └── evaluation/                   # Full-corpus benchmark test suite
@@ -231,6 +263,9 @@ npm run sweep
 
 # Run all 18 test suites (25 unit tests)
 npm test
+
+# Run headed Playwright E2E suite
+npm run test:e2e:headed
 
 # Build production bundle
 npm run build

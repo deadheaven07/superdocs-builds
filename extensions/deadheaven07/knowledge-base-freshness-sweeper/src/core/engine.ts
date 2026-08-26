@@ -159,6 +159,16 @@ export class KnowledgeBaseSweeper {
         allScreenshots.push(...ssAssessments);
       }
 
+      // Deduplicate screenshot assessments by screenshot_id (preferring REPLACEMENT_REQUIRED > COULD_NOT_ASSESS > OK)
+      const dedupedScreenshotsMap = new Map<string, ScreenshotAssessment>();
+      for (const ss of allScreenshots) {
+        const existing = dedupedScreenshotsMap.get(ss.screenshot_id);
+        if (!existing || ss.status === 'SCREENSHOT_REPLACEMENT_REQUIRED' || (ss.status === 'COULD_NOT_ASSESS' && existing.status === 'SCREENSHOT_OK')) {
+          dedupedScreenshotsMap.set(ss.screenshot_id, ss);
+        }
+      }
+      const dedupedScreenshots = Array.from(dedupedScreenshotsMap.values());
+
       // If screenshot could not be assessed and article is otherwise unchanged, roll up to COULD_NOT_ASSESS
       if (allScreenshots.some(s => s.status === 'COULD_NOT_ASSESS') && combinedAssessment?.status === 'NOT_AFFECTED') {
         combinedAssessment = {
@@ -180,8 +190,8 @@ export class KnowledgeBaseSweeper {
       if (combinedAssessment) {
         this.assessments.set(article.id, combinedAssessment);
       }
-      if (allScreenshots.length > 0) {
-        this.screenshotAssessments.set(article.id, allScreenshots);
+      if (dedupedScreenshots.length > 0) {
+        this.screenshotAssessments.set(article.id, dedupedScreenshots);
       }
     }
 
