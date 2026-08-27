@@ -23,8 +23,10 @@ export class SuperDocsClient {
   private timeoutMs: number;
 
   constructor(config: SuperDocsConfig = {}) {
-    this.apiKey = config.apiKey || process.env.SUPERDOCS_API_KEY || 'your-key-here';
-    this.baseUrl = (config.baseUrl || process.env.SUPERDOCS_BASE_URL || 'https://api.superdocs.app').replace(/\/$/, '');
+    const envApiKey = typeof process !== 'undefined' && process.env ? process.env.SUPERDOCS_API_KEY : undefined;
+    const envBaseUrl = typeof process !== 'undefined' && process.env ? process.env.SUPERDOCS_BASE_URL : undefined;
+    this.apiKey = config.apiKey || envApiKey || 'your-key-here';
+    this.baseUrl = (config.baseUrl || envBaseUrl || 'https://api.superdocs.app').replace(/\/$/, '');
     this.timeoutMs = config.timeoutMs || 10000;
   }
 

@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,9 +16,12 @@ test.describe('Knowledge-base Freshness Sweeper — Headed User E2E Journey', ()
   });
 
   test('Complete Knowledge Manager Workflow (Sweep -> Evidence -> Surgical Review -> Approve -> Governance)', async ({ page }) => {
+    page.on('console', msg => console.log('BROWSER CONSOLE:', msg.type(), msg.text()));
+    page.on('pageerror', err => console.log('BROWSER PAGE ERROR:', err.message));
+
     // 1. Visit the dashboard
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await page.waitForSelector('h1', { timeout: 15000 });
 
     // Verify Title & Branding
     await expect(page.locator('h1')).toContainText('Knowledge-base Freshness Sweeper');

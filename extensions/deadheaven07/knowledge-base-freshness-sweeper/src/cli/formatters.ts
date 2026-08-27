@@ -1,4 +1,5 @@
 import { PortfolioMetrics, EditProposal } from '../core/types.js';
+import { StatisticalSummary } from '../core/drift-simulator.js';
 
 export const colors = {
   reset: '\x1b[0m',
@@ -39,6 +40,41 @@ export function formatMetricsTable(metrics: PortfolioMetrics): string {
   return lines.join('\n');
 }
 
+export function formatControlArmComparisonTable(
+  sweeper: {
+    precision: StatisticalSummary;
+    recall: StatisticalSummary;
+    f1_score: StatisticalSummary;
+    could_not_assess_rate: StatisticalSummary;
+    freshness_score: StatisticalSummary;
+  },
+  control: {
+    precision: StatisticalSummary;
+    recall: StatisticalSummary;
+    f1_score: StatisticalSummary;
+    could_not_assess_rate: StatisticalSummary;
+    freshness_score: StatisticalSummary;
+  },
+  iterations: number
+): string {
+  const lines: string[] = [];
+  lines.push(`\n${colors.bright}${colors.cyan}================ MULTI-RUN DRIFT BENCHMARK (${iterations} INDEPENDENT EPOCHS) ================${colors.reset}`);
+  lines.push(`${colors.bright}Metric                     Multi-Stage Sweeper         Control Arm (Naive Keyword)   Delta${colors.reset}`);
+  lines.push(`------------------------------------------------------------------------------------------------`);
+  
+  const pDiff = ((sweeper.precision.mean - control.precision.mean) * 100).toFixed(1);
+  const rDiff = ((sweeper.recall.mean - control.recall.mean) * 100).toFixed(1);
+  const f1Diff = (sweeper.f1_score.mean - control.f1_score.mean).toFixed(3);
+
+  lines.push(`Precision:                 ${colors.green}${(sweeper.precision.mean * 100).toFixed(1)}% ± ${(sweeper.precision.stdDev * 100).toFixed(1)}%${colors.reset}            ${(control.precision.mean * 100).toFixed(1)}% ± ${(control.precision.stdDev * 100).toFixed(1)}%            ${colors.green}+${pDiff}%${colors.reset}`);
+  lines.push(`Recall:                    ${colors.green}${(sweeper.recall.mean * 100).toFixed(1)}% ± ${(sweeper.recall.stdDev * 100).toFixed(1)}%${colors.reset}            ${(control.recall.mean * 100).toFixed(1)}% ± ${(control.recall.stdDev * 100).toFixed(1)}%            ${colors.green}+${rDiff}%${colors.reset}`);
+  lines.push(`F1 Score:                  ${colors.green}${sweeper.f1_score.mean.toFixed(3)} ± ${sweeper.f1_score.stdDev.toFixed(3)}${colors.reset}               ${control.f1_score.mean.toFixed(3)} ± ${control.f1_score.stdDev.toFixed(3)}               ${colors.green}+${f1Diff}${colors.reset}`);
+  lines.push(`Could-Not-Assess Rate:     ${colors.yellow}${sweeper.could_not_assess_rate.mean.toFixed(1)}% ± ${sweeper.could_not_assess_rate.stdDev.toFixed(1)}%${colors.reset}             ${control.could_not_assess_rate.mean.toFixed(1)}% ± ${control.could_not_assess_rate.stdDev.toFixed(1)}%             ${colors.cyan}Honest Bucket${colors.reset}`);
+  lines.push(`Portfolio Freshness Score: ${sweeper.freshness_score.mean.toFixed(1)}% ± ${sweeper.freshness_score.stdDev.toFixed(1)}%             ${control.freshness_score.mean.toFixed(1)}% ± ${control.freshness_score.stdDev.toFixed(1)}%             ${colors.dim}Calibrated${colors.reset}`);
+  lines.push(`================================================================================================\n`);
+  return lines.join('\n');
+}
+
 export function formatProposalDiff(proposal: EditProposal): string {
   const lines: string[] = [];
   lines.push(`\n${colors.bright}${colors.yellow}================ PROPOSED SURGICAL EDIT ================${colors.reset}`);
@@ -59,7 +95,5 @@ export function formatProposalDiff(proposal: EditProposal): string {
     lines.push(`${colors.red}- ${span.original_text}${colors.reset}`);
     lines.push(`${colors.green}+ ${span.replacement_text}${colors.reset}`);
   }
-  lines.push(`${colors.bright}${colors.yellow}========================================================${colors.reset}\n`);
-
   return lines.join('\n');
 }

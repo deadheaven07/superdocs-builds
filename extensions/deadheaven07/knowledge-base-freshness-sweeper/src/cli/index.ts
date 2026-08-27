@@ -2,8 +2,10 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { KnowledgeBaseSweeper } from '../core/engine.js';
-import { Article, ChangeEvent, GroundTruthEntry } from '../core/types.js';
-import { formatMetricsTable, formatProposalDiff, colors } from './formatters.js';
+import { Article, ChangeEvent } from '../core/types.js';
+import { CorpusDriftSimulator } from '../core/drift-simulator.js';
+import { loadGroundTruthFromYaml, loadExpectedYaml } from '../core/yaml-loader.js';
+import { formatMetricsTable, formatControlArmComparisonTable, formatProposalDiff, colors } from './formatters.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,8 +14,11 @@ function loadFixtures() {
   const fixturesDir = path.resolve(__dirname, '../../fixtures/corpus');
   const articles: Article[] = JSON.parse(fs.readFileSync(path.join(fixturesDir, 'articles.json'), 'utf-8'));
   const changes: ChangeEvent[] = JSON.parse(fs.readFileSync(path.join(fixturesDir, 'changes.json'), 'utf-8'));
-  const groundTruth: GroundTruthEntry[] = JSON.parse(fs.readFileSync(path.join(fixturesDir, 'ground-truth.json'), 'utf-8'));
-  return { articles, changes, groundTruth };
+  const yamlPath = path.join(fixturesDir, 'expected.yaml');
+  const groundTruth = loadGroundTruthFromYaml(yamlPath);
+  const expectedStructure = loadExpectedYaml(yamlPath);
+
+  return { articles, changes, groundTruth, expectedStructure };
 }
 
 function parseArgs() {
@@ -32,13 +37,13 @@ function parseArgs() {
 
 export function runCli() {
   const { command, sampleSize } = parseArgs();
-  const { articles, changes, groundTruth } = loadFixtures();
+  const { articles, changes, groundTruth, expectedStructure } = loadFixtures();
 
   console.log(`\n${colors.bright}${colors.cyan}SuperDocs — Knowledge-base Freshness Sweeper v1.0.0${colors.reset}`);
-  console.log(`${colors.dim}Loaded ${articles.length} articles and ${changes.length} product change events.${colors.reset}\n`);
+  console.log(`${colors.dim}Loaded ${articles.length} articles, ${changes.length} product changes, and pre-registered expected.yaml (${expectedStructure.protocol}).${colors.reset}\n`);
 
   if (command === 'evaluate') {
-    console.log(`${colors.bright}Running Deterministic Seeded Benchmark (${articles.length} articles)...${colors.reset}`);
+    console.log(`${colors.bright}Running Single-Pass Seeded Baseline (${articles.length} articles)...${colors.reset}`);
     const sweeper = new KnowledgeBaseSweeper(articles, changes);
     const { screenshotAssessments } = sweeper.sweep({ provider: 'deterministic' });
     const metrics = sweeper.getMetrics(groundTruth);
@@ -52,6 +57,11 @@ export function runCli() {
         console.log(`  - [Article ${ss.article_id}] Screenshot ${ss.screenshot_id}: ${ss.reason}`);
       }
     }
+
+    console.log(`\n${colors.bright}Running Multi-Epoch Corpus Drift Simulation vs. Naive Control Arm Baseline...${colors.reset}`);
+    const simulator = new CorpusDriftSimulator(articles, changes, groundTruth);
+    const report = simulator.runSimulation(10);
+    console.log(formatControlArmComparisonTable(report.sweeperStats, report.controlArmStats, report.iterations));
     return;
   }
 
