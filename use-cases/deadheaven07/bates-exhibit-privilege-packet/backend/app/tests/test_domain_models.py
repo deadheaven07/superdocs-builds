@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy.exc import IntegrityError
@@ -285,7 +285,7 @@ class TestPrivilegeDecisionModel:
             bates_start="CASE-000001",
             bates_end="CASE-000010",
             reviewer="john.doe@firm.com",
-            decided_at=datetime.utcnow(),
+            decided_at=datetime.now(timezone.utc),
         )
         test_session.add(decision)
         await test_session.commit()

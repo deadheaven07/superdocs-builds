@@ -370,6 +370,31 @@ class PacketBuilderService:
             )
         return actual_count
 
+    def _inject_pdf_outline(self, pdf_path: Path, manifest_entries: list[ManifestEntry]) -> None:
+        """Inject interactive Table of Contents bookmarks (outlines) into the final PDF packet."""
+        try:
+            doc = fitz.open(pdf_path)
+            toc = []
+            current_page = 1
+            for entry in manifest_entries:
+                desc = entry.description or "Exhibit"
+                short_desc = (desc[:45] + "...") if len(desc) > 45 else desc
+                title = f"{entry.exhibit_identifier}: {short_desc}"
+                toc.append([1, title, current_page])
+                toc.append([2, "Cover Sheet", current_page])
+                if entry.page_count > 1:
+                    toc.append(
+                        [2, f"Document Content ({entry.bates_start} - {entry.bates_end})", current_page + 1]
+                    )
+                current_page += entry.page_count
+            doc.set_toc(toc)
+            temp_out = pdf_path.with_suffix(".tmp.pdf")
+            doc.save(temp_out)
+            doc.close()
+            temp_out.replace(pdf_path)
+        except Exception as exc:
+            logger.warning(f"Could not inject PDF outline bookmarks: {exc}")
+
     async def build_packet(
         self,
         session,
@@ -553,6 +578,7 @@ class PacketBuilderService:
 
         expected_final_pages = sum(exhibit_page_counts)
         self._verify_pdf_page_count(final_packet_path, expected_final_pages, "final packet")
+        self._inject_pdf_outline(final_packet_path, manifest_entries)
 
         exhibit_index_path = final_dir / "exhibit_index.pdf"
         with open(exhibit_index_path, "wb") as f:

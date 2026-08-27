@@ -6,16 +6,16 @@
 
 **Who it's for:** Litigation support teams and legal analysts who manually assemble exhibit packets — a process that currently takes hours of copy-paste-redact-stamp work and is prone to human error (missing Bates numbers, leaked PII, broken privilege logs).
 
-**Measured results (Unified Suite: 314 Automated Tests):**
+**Measured results (Unified Suite: 318 Automated Tests):**
 
 | Test Suite / Target | Result | Command to Verify | Notes |
 |---|---|---|---|
-| **Canonical All-in-One Suite** | **314/314 passing** | `make test-all` | Runs full offline suite + 307-test backend DB suite + frontend tests |
+| **Canonical All-in-One Suite** | **318/318 passing** | `make test-all` | Runs full offline suite + 307-test backend DB suite + frontend tests |
 | Full Backend DB Suite | **307/307 passing** | `make test-db` | PostgreSQL-backed at `TEST_DATABASE_URL`, passes with `SUPERDOCS_API_KEY` unset |
 | ↳ Offline Unit & Safety Tier | **86/86 passing** | `make test-offline` | Zero dependencies, no DB, no API key, `DEBUG=false` |
 | ↳ Offline Benchmark & Residue | **39/39 passing** | `make evidence-offline` | Ground truth precision/recall, 12 redaction residue proofs |
 | ↳ DB-Backed Kill Matrix Tier | **71/71 passing** | `make evidence-db` | Adversarial crash recovery (K1–K9), zero double-stamping, OCR search |
-| Frontend Component & Type Suite | **7/7 passing** | `make test-frontend` | Vitest component tests + strict TypeScript compile (`tsc --noEmit` clean) |
+| Frontend Component & Type Suite | **11/11 passing** | `make test-frontend` | Vitest component tests (PacketList, SearchPage) + strict TypeScript (`tsc --noEmit` clean) |
 | Production Frontend Build | **succeeds** | `npm run build` (in `frontend/`) | Vite production bundle compiles cleanly |
 | Headed E2E Playwright Suite | **2/2 passing** | `npx playwright test` | 12-step legal litigation workflow + persistent theme toggle |
 | Live Cloud E2E Integration | **112/112 checks** | `python live_e2e_phase13.py` | Standalone verification script against running server + real SuperDocs API |
@@ -101,6 +101,7 @@ The system is organized into 12 explicit processing stages with clear input/muta
 - **Privilege marking** — mark documents `privileged` / `not_privileged`, with reason/category, override, and a machine + human-readable privilege log.
 - **AI review** — delegates to the SuperDocs API for drafting/review; sessions are reused per document and failures leave the document in a recoverable state.
 - **Packet build** — cover sheets, stamps, exhibit-index PDF, privilege log, and a `manifest.json` with SHA-256 hashes for the final packet, every exhibit, and every source entry.
+- **Interactive PDF Bookmarks** — hierarchical Table of Contents outlines injected directly into the final PDF packet for immediate Acrobat/e-filing navigation between Exhibit covers and document pages.
 - **Packet verification** — structured verification checks artifacts, Bates contiguity, page counts, SHA-256 hashes, and reconciliation before export.
 - **Content search** — search across document content, filenames, descriptions, and Bates labels with page-level results and snippets.
 - **Validation & integrity** — validation pass before build; manifest SHAs are re-checked at build time.
