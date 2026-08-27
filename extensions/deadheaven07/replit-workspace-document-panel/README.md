@@ -16,15 +16,15 @@ A modern, high-performance Replit extension that provides an interactive documen
 
 *Zero-disk in-memory API key entry with glassmorphic backdrop blur and smooth spring entrance animations.*
 
-### 3. Granular Cherry-Pick Diff Review & Human-in-the-Loop
+### 3. Granular Cherry-Pick Diff Review & Live Rendered Preview
 ![Granular Cherry Pick Review](docs/screenshots/03_cherry_pick_review.png)
 
-*Selective approval of AI-generated edits. Choose individual replace, insert, or delete operations with side-by-side diff previews.*
+*Selective approval of AI-generated edits. Choose individual replace, insert, or delete operations with side-by-side diff previews and live synthesized document rendering.*
 
 ### 4. Collapsible Workspace Side Drawer
 ![Side Drawer Overview](docs/screenshots/04_side_drawer_overview.png)
 
-*Slide-out telemetry drawer displaying live active sessions, staged context sizes, zero-drift verification status, and workspace health.*
+*Slide-out telemetry drawer displaying live active sessions, staged context sizes, zero-drift verification status, and token savings.*
 
 ### 5. Template Gallery & Dynamic Variable Injection
 ![Template Gallery & Variables](docs/screenshots/05_template_gallery_variables.png)
@@ -47,8 +47,9 @@ A modern, high-performance Replit extension that provides an interactive documen
 
 - **📁 Recursive File Browser**: File tree with search filtering, multi-select checkboxes, and smart ignore rules (excludes `node_modules`, `.env`, lockfiles, and binaries).
 - **🤖 SuperDocs AI Document Generation**: Instant generation of README, SPEC, or User Guide from selected source files.
-- **🔍 Granular Cherry-Pick Approval**: Selective human-in-the-loop review. Approve or reject individual diff operations.
-- **⚡ Zero-Drift Source Regeneration**: SHA-256 baseline hashing prevents unnecessary API token burns by only dispatching modified files.
+- **🔍 Granular Cherry-Pick Approval & Live Preview**: Selective human-in-the-loop review with real-time rendered document synthesis.
+- **🧩 Symbol Outline Harvester (`src/services/outline.ts`)**: AST/Regex symbol extraction (functions, classes, interfaces, routes) providing 90%+ context density under strict token caps.
+- **⚡ Zero-Drift Source Regeneration**: SHA-256 baseline hashing prevents unnecessary API token burns by only dispatching modified files (**91–97% token savings**).
 - **🌓 Native Dark / Light Theme System**: Tailored dual-palette system matching Replit's modern design language.
 - **🗄️ Collapsible Workspace Drawer**: Slide-out drawer displaying live telemetry, session tracking, and drift health.
 - **🪟 Animated Modal Popovers**: Spring-animated modal dialogs for zero-persistence API key entry and overwrite confirmations.
@@ -75,7 +76,7 @@ A modern, high-performance Replit extension that provides an interactive documen
         │                            ▼                            ▼
         │                 ┌────────────────────┐       ┌──────────────────────┐
         │                 │ Direct Replit FS   │◀──────│ Cherry-Pick Approval │
-        └─────────────────│ PDF / DOCX Export  │       │ & Document Assembly  │
+        └─────────────────│ PDF / DOCX Export  │       │ & Live Synthesizer   │
                           └────────────────────┘       └──────────────────────┘
 ```
 
@@ -104,31 +105,34 @@ npm run dev
 
 ---
 
-## 🧪 Comprehensive Test Suite
+## 🧪 Comprehensive Test & Verification Suite
 
-### 1. Headed Playwright End-to-End Suite
+### 1. One-Shot Master Verification
+Run all typecheck, unit, e2e, and build gates in a single command:
+```bash
+npm run verify
+```
+
+### 2. Headed Playwright End-to-End Suite
 Runs a headed Chromium browser testing complete developer workflows inside the simulated Replit host runtime:
 ```bash
 npm run test:e2e:headed
 ```
-```
-✓ Complete 10-Step User Workflow: Ingest, Cherry-Pick Review, Export to Replit FS & Zero-Drift (2.0s)
-✓ UI/UX: Theme Switcher & Side Drawer Interactions Flow (1.6s)
-✓ Templates Gallery & Dynamic Variable Injection Flow (1.5s)
-✓ Version History Tab & Snapshot Rollback Preview (1.5s)
 
-4 passed (8.1s)
-```
-
-### 2. Vitest Unit & Integration Suite
+### 3. Vitest Unit & Integration Suite
 ```bash
 npm test
 ```
 ```
-Test Files  11 passed (11)
-Tests       101 passed (101)
-Duration    1.02s
+Test Files  12 passed (12)
+Tests       104 passed (104)
+Duration    1.12s
 ```
+
+---
+
+## 📊 Token Efficiency Benchmark
+See [`BENCHMARK.md`](BENCHMARK.md) for full benchmarks comparing zero-drift SHA-256 hashing vs. naive codebase resends.
 
 ---
 

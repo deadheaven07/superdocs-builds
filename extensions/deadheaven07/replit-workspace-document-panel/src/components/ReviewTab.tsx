@@ -118,6 +118,8 @@ export function ReviewTab({
     () => new Set(allChanges.map(c => c.change_id))
   );
 
+  const [viewMode, setViewMode] = useState<'diffs' | 'preview'>('diffs');
+
   // Sync selectedIds when proposedChanges batch changes
   useEffect(() => {
     setSelectedIds(new Set(allChanges.map(c => c.change_id)));
@@ -147,6 +149,14 @@ export function ReviewTab({
     () => allChanges.filter(c => selectedIds.has(c.change_id)),
     [allChanges, selectedIds]
   );
+
+  // Synthesize live document HTML preview based on selected changes
+  const synthesizedPreviewHtml = useMemo(() => {
+    return selectedChanges
+      .map(c => c.new_html || (c.operation === 'delete' ? '' : c.old_html || ''))
+      .filter(Boolean)
+      .join('\n\n');
+  }, [selectedChanges]);
 
   if (!proposedChanges || proposedChanges.changes.length === 0) {
     return (
@@ -189,27 +199,46 @@ export function ReviewTab({
           </p>
         </div>
 
-        {/* Quick select controls */}
-        {step === 'awaiting_approval' && (
-          <div className="flex items-center gap-2 text-xs">
+        {/* View Mode & Selection Controls */}
+        <div className="flex items-center gap-2">
+          <div className="bg-gray-100 p-0.5 rounded-lg flex items-center border border-gray-200">
             <button
               type="button"
-              onClick={handleSelectAll}
-              disabled={disabled || selectedChanges.length === allChanges.length}
-              className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-gray-50 border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 transition-colors"
+              onClick={() => setViewMode('diffs')}
+              className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${viewMode === 'diffs' ? 'bg-white text-primary-700 shadow-xs' : 'text-gray-600 hover:text-gray-900'}`}
             >
-              Select All
+              Diffs ({allChanges.length})
             </button>
             <button
               type="button"
-              onClick={handleDeselectAll}
-              disabled={disabled || selectedChanges.length === 0}
-              className="px-3 py-1.5 text-xs font-semibold text-gray-700 bg-gray-50 border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 transition-colors"
+              onClick={() => setViewMode('preview')}
+              className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${viewMode === 'preview' ? 'bg-white text-primary-700 shadow-xs' : 'text-gray-600 hover:text-gray-900'}`}
             >
-              Deselect All
+              Live Preview
             </button>
           </div>
-        )}
+
+          {step === 'awaiting_approval' && (
+            <div className="flex items-center gap-1.5 text-xs">
+              <button
+                type="button"
+                onClick={handleSelectAll}
+                disabled={disabled || selectedChanges.length === allChanges.length}
+                className="px-2.5 py-1 text-xs font-semibold text-gray-700 bg-gray-50 border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 transition-colors"
+              >
+                Select All
+              </button>
+              <button
+                type="button"
+                onClick={handleDeselectAll}
+                disabled={disabled || selectedChanges.length === 0}
+                className="px-2.5 py-1 text-xs font-semibold text-gray-700 bg-gray-50 border border-gray-300 rounded-lg hover:bg-gray-100 disabled:opacity-50 transition-colors"
+              >
+                Deselect All
+              </button>
+            </div>
+          )}
+        </div>
 
         {proposedChanges.continue_prompt && (
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 w-full sm:w-auto">
@@ -223,18 +252,36 @@ export function ReviewTab({
         )}
       </div>
 
-      {/* Changes List */}
-      <div className="space-y-3 max-h-[500px] overflow-auto pr-1" role="list" aria-label="Proposed changes">
-        {allChanges.map((change) => (
-          <ChangeItem
-            key={change.change_id}
-            change={change}
-            isSelected={selectedIds.has(change.change_id)}
-            onToggle={handleToggle}
-            disabled={disabled || step !== 'awaiting_approval'}
-          />
-        ))}
-      </div>
+      {/* Main Content: Diffs List or Live Preview */}
+      {viewMode === 'diffs' ? (
+        <div className="space-y-3 max-h-[500px] overflow-auto pr-1" role="list" aria-label="Proposed changes">
+          {allChanges.map((change) => (
+            <ChangeItem
+              key={change.change_id}
+              change={change}
+              isSelected={selectedIds.has(change.change_id)}
+              onToggle={handleToggle}
+              disabled={disabled || step !== 'awaiting_approval'}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="border border-gray-200 rounded-xl p-5 bg-white shadow-xs max-h-[500px] overflow-auto">
+          <div className="flex items-center justify-between mb-3 border-b border-gray-200 pb-2">
+            <span className="text-xs font-bold text-gray-800 uppercase tracking-wider">Live Document Preview ({selectedChanges.length} Selected Chunks)</span>
+            <span className="text-[11px] text-gray-400 font-mono">Dynamically updated</span>
+          </div>
+          {synthesizedPreviewHtml ? (
+            <pre className="whitespace-pre-wrap text-xs font-mono text-gray-800 bg-gray-50 p-4 rounded-lg border border-gray-200 max-h-[400px] overflow-auto">
+              {synthesizedPreviewHtml}
+            </pre>
+          ) : (
+            <div className="py-12 text-center text-gray-400 text-xs">
+              No change chunks selected. Select change chunks in the diff list to preview the document.
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Actions */}
       <div className="flex flex-col sm:flex-row gap-3 pt-3 border-t border-gray-200">
