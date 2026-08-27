@@ -15,7 +15,10 @@
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "sweep": "tsx src/cli/index.ts sweep",
+    "sweep:interactive": "tsx src/cli/index.ts sweep --interactive",
+    "export:report": "tsx src/cli/index.ts sweep --export docs/freshness-report.md",
     "evaluate": "tsx src/cli/index.ts evaluate",
+    "verify": "tsx scripts/verify-all.ts",
     "generate:gif": "tsx scripts/generate-demo-gif.ts",
     "server": "tsx src/api/server.ts"
   },
